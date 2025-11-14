@@ -6,19 +6,27 @@ export async function POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
-  const session = await getSessionFromCookies();
-  if (!session) {
-    return NextResponse.json({ error: "Нэвтрэх шаардлагатай" }, { status: 401 });
-  }
-
-  if (session.role !== "student") {
-    return NextResponse.json({ error: "Зөвхөн сурагчид submission илгээх боломжтой" }, { status: 403 });
-  }
-
   try {
+    const session = await getSessionFromCookies();
+    if (!session) {
+      return NextResponse.json({ error: "Нэвтрэх шаардлагатай" }, { status: 401 });
+    }
+
+    if (session.role !== "student") {
+      return NextResponse.json({ error: "Зөвхөн сурагчид submission илгээх боломжтой" }, { status: 403 });
+    }
+
     const params = await context.params;
     const { id: lessonId } = params;
-    const body = await request.json();
+    
+    let body;
+    try {
+      body = await request.json();
+    } catch (jsonError) {
+      console.error('JSON parse error in lesson submit:', jsonError);
+      return NextResponse.json({ error: "Invalid JSON format" }, { status: 400 });
+    }
+
     const { fileUrl } = body;
 
     const submission = submitToLesson(lessonId, session.email, session.name || session.email, fileUrl);
@@ -34,6 +42,9 @@ export async function POST(
     });
   } catch (error: any) {
     console.error("Submit lesson error:", error);
-    return NextResponse.json({ error: "Серверийн алдаа гарлаа" }, { status: 500 });
+    return NextResponse.json({ 
+      error: error.message || "Серверийн алдаа гарлаа",
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    }, { status: 500 });
   }
 }
