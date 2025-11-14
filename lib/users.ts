@@ -1,5 +1,5 @@
 // Supabase-based user storage
-import { supabaseClient } from '../components/supabaseClient';
+import { supabase } from './supabase';
 
 export type User = {
   email: string;
@@ -41,7 +41,7 @@ function userToDb(user: Partial<User>): any {
 
 export async function getOrCreateUser(email: string, name?: string, role: "student" | "teacher" = "student"): Promise<User> {
   // Try to get existing user
-  const { data: existing } = await supabaseClient
+  const { data: existing } = await supabase
     .from('users')
     .select('*')
     .eq('email', email)
@@ -60,7 +60,7 @@ export async function getOrCreateUser(email: string, name?: string, role: "stude
     avatarColor: '#6366f1',
   };
 
-  const { data, error } = await supabaseClient
+  const { data, error } = await supabase
     .from('users')
     .insert([userToDb(newUser)])
     .select()
@@ -75,7 +75,7 @@ export async function getOrCreateUser(email: string, name?: string, role: "stude
 }
 
 export async function getUser(email: string): Promise<User | null> {
-  const { data, error } = await supabaseClient
+  const { data, error } = await supabase
     .from('users')
     .select('*')
     .eq('email', email)
@@ -86,7 +86,7 @@ export async function getUser(email: string): Promise<User | null> {
 }
 
 export async function updateUser(email: string, updates: Partial<Omit<User, 'email' | 'role'>>): Promise<User | null> {
-  const { data, error } = await supabaseClient
+  const { data, error } = await supabase
     .from('users')
     .update(userToDb(updates))
     .eq('email', email)
@@ -107,7 +107,7 @@ export async function addExperience(email: string, points: number): Promise<User
 
   const newExp = user.experience + points;
 
-  const { data, error } = await supabaseClient
+  const { data, error } = await supabase
     .from('users')
     .update({ experience: newExp })
     .eq('email', email)
@@ -123,7 +123,7 @@ export async function addExperience(email: string, points: number): Promise<User
 }
 
 export async function getAllUsers(): Promise<User[]> {
-  const { data, error } = await supabaseClient
+  const { data, error } = await supabase
     .from('users')
     .select('*')
     .order('experience', { ascending: false });
@@ -137,7 +137,7 @@ export async function getAllUsers(): Promise<User[]> {
 }
 
 export async function getLeaderboard(): Promise<User[]> {
-  const { data, error } = await supabaseClient
+  const { data, error } = await supabase
     .from('users')
     .select('*')
     .eq('role', 'student')

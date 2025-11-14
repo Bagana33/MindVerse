@@ -1,5 +1,5 @@
 // Supabase-based post storage
-import { supabaseClient } from '../components/supabaseClient';
+import { supabase } from './supabase';
 
 export type ReactionType = 'FIRE' | 'WOW' | 'LOVE';
 export type PostReaction = { userEmail: string; type: ReactionType };
@@ -36,7 +36,7 @@ function dbToPost(dbRow: any, reactions: any[]): UserPost {
 export async function createPost(data: Omit<UserPost, "id" | "points" | "createdAt" | "reactions">): Promise<UserPost> {
   const postId = `post-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   
-  const { data: inserted, error } = await supabaseClient
+  const { data: inserted, error } = await supabase
     .from('posts')
     .insert([{
       id: postId,
@@ -56,7 +56,7 @@ export async function createPost(data: Omit<UserPost, "id" | "points" | "created
 }
 
 export async function getUserPosts(email: string): Promise<UserPost[]> {
-  const { data: posts, error: postsError } = await supabaseClient
+  const { data: posts, error: postsError } = await supabase
     .from('posts')
     .select('*')
     .eq('author_email', email)
@@ -66,7 +66,7 @@ export async function getUserPosts(email: string): Promise<UserPost[]> {
 
   // Get reactions for all posts
   const postIds = posts.map(p => p.id);
-  const { data: reactions } = await supabaseClient
+  const { data: reactions } = await supabase
     .from('reactions')
     .select('*')
     .in('post_id', postIds);
@@ -78,7 +78,7 @@ export async function getUserPosts(email: string): Promise<UserPost[]> {
 }
 
 export async function getAllPosts(): Promise<UserPost[]> {
-  const { data: posts, error: postsError } = await supabaseClient
+  const { data: posts, error: postsError } = await supabase
     .from('posts')
     .select('*')
     .order('created_at', { ascending: false });
@@ -87,7 +87,7 @@ export async function getAllPosts(): Promise<UserPost[]> {
 
   // Get all reactions
   const postIds = posts.map(p => p.id);
-  const { data: reactions } = await supabaseClient
+  const { data: reactions } = await supabase
     .from('reactions')
     .select('*')
     .in('post_id', postIds);
@@ -99,7 +99,7 @@ export async function getAllPosts(): Promise<UserPost[]> {
 }
 
 export async function deletePost(postId: string, userEmail: string): Promise<boolean> {
-  const { error } = await supabaseClient
+  const { error } = await supabase
     .from('posts')
     .delete()
     .eq('id', postId)
@@ -114,7 +114,7 @@ export async function toggleReactionWithType(
   type: ReactionType
 ): Promise<{ success: boolean; added: boolean; removed: boolean; updated: boolean; post?: UserPost }> {
   // Check existing reaction
-  const { data: existing } = await supabaseClient
+  const { data: existing } = await supabase
     .from('reactions')
     .select('*')
     .eq('post_id', postId)
@@ -124,7 +124,7 @@ export async function toggleReactionWithType(
   if (existing) {
     if (existing.type.toUpperCase() === type) {
       // Remove reaction
-      const { error } = await supabaseClient
+      const { error } = await supabase
         .from('reactions')
         .delete()
         .eq('id', existing.id);
@@ -135,7 +135,7 @@ export async function toggleReactionWithType(
       return { success: true, added: false, removed: true, updated: false, post: post || undefined };
     } else {
       // Update reaction type
-      const { error } = await supabaseClient
+      const { error } = await supabase
         .from('reactions')
         .update({ type: type.toLowerCase() })
         .eq('id', existing.id);
@@ -147,7 +147,7 @@ export async function toggleReactionWithType(
     }
   } else {
     // Add new reaction
-    const { error } = await supabaseClient
+    const { error } = await supabase
       .from('reactions')
       .insert([{
         post_id: postId,
@@ -175,7 +175,7 @@ export function getUserReactionType(post: UserPost, userEmail: string): Reaction
 }
 
 export async function getPost(postId: string): Promise<UserPost | null> {
-  const { data: post, error } = await supabaseClient
+  const { data: post, error } = await supabase
     .from('posts')
     .select('*')
     .eq('id', postId)
@@ -183,7 +183,7 @@ export async function getPost(postId: string): Promise<UserPost | null> {
 
   if (error || !post) return null;
 
-  const { data: reactions } = await supabaseClient
+  const { data: reactions } = await supabase
     .from('reactions')
     .select('*')
     .eq('post_id', postId);

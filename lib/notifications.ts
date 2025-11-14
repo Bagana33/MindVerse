@@ -1,5 +1,5 @@
 // Supabase-based notifications store
-import { supabaseClient } from '../components/supabaseClient';
+import { supabase } from './supabase';
 
 export type NotificationType = "LIKE" | "GRADE" | "CONTEST_WIN";
 
@@ -28,7 +28,7 @@ function dbToNotification(dbRow: any): Notification {
 export async function addNotification(userEmail: string, actorEmail: string, type: NotificationType, message: string): Promise<Notification> {
   const notifId = `notif-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
   
-  const { data, error } = await supabaseClient
+  const { data, error } = await supabase
     .from('notifications')
     .insert([{
       id: notifId,
@@ -56,7 +56,7 @@ export async function addNotification(userEmail: string, actorEmail: string, typ
 }
 
 export async function getUserNotifications(userEmail: string): Promise<Notification[]> {
-  const { data, error } = await supabaseClient
+  const { data, error } = await supabase
     .from('notifications')
     .select('*')
     .eq('user_email', userEmail)
@@ -68,7 +68,7 @@ export async function getUserNotifications(userEmail: string): Promise<Notificat
 }
 
 export async function markAllNotificationsRead(userEmail: string): Promise<number> {
-  const { data, error } = await supabaseClient
+  const { data, error } = await supabase
     .from('notifications')
     .update({ read: true })
     .eq('user_email', userEmail)
@@ -81,7 +81,7 @@ export async function markAllNotificationsRead(userEmail: string): Promise<numbe
 }
 
 export async function getUnreadCount(userEmail: string): Promise<number> {
-  const { count, error } = await supabaseClient
+  const { count, error } = await supabase
     .from('notifications')
     .select('*', { count: 'exact', head: true })
     .eq('user_email', userEmail)
