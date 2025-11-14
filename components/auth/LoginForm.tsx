@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 type Mode = "signin" | "signup";
@@ -12,9 +12,20 @@ export function LoginForm() {
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<"student" | "teacher">("student");
+  const [rememberMe, setRememberMe] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Load saved email from localStorage
+  useEffect(() => {
+    const savedEmail = localStorage.getItem('mindverse_email');
+    const savedRemember = localStorage.getItem('mindverse_remember') === 'true';
+    if (savedEmail && savedRemember) {
+      setEmail(savedEmail);
+      setRememberMe(true);
+    }
+  }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -23,15 +34,24 @@ export function LoginForm() {
     setLoading(true);
 
     try {
+      // Save email if remember me is checked
+      if (rememberMe) {
+        localStorage.setItem('mindverse_email', email);
+        localStorage.setItem('mindverse_remember', 'true');
+      } else {
+        localStorage.removeItem('mindverse_email');
+        localStorage.removeItem('mindverse_remember');
+      }
+
       // Call the /api/auth/login endpoint
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, name, role }),
+        body: JSON.stringify({ email, password, name, mode, role }),
       });
       if (!res.ok) {
         const json = await res.json();
-        setError(json.error ?? "Login failed");
+        setError(json.error ?? "Нэвтрэх амжилтгүй");
         return;
       }
       setStatus("Амжилттай нэвтэрлээ!");
@@ -118,12 +138,12 @@ export function LoginForm() {
             <form onSubmit={handleSubmit} className="space-y-5">
               <div>
                 <h2 className="text-2xl font-bold bg-gradient-to-r from-violet-400 to-purple-400 bg-clip-text text-transparent">
-                  {mode === "signin" ? "Sign In" : "Create Account"}
+                  {mode === "signin" ? "Нэвтрэх" : "Бүртгүүлэх"}
                 </h2>
                 <p className="text-sm text-slate-400 mt-2">
                   {mode === "signin"
-                    ? "Sign in to access your studio dashboard."
-                    : "Fill in the details below to start your Mind Verse journey."}
+                    ? "Өөрийн бүртгэлтэй имэйлээр нэвтэрнэ үү."
+                    : "Шинээр бүртгүүлж Mind Verse-д нэгдээрэй."}
                 </p>
               </div>
 
@@ -163,13 +183,32 @@ export function LoginForm() {
                 />
               </div>
 
+              {mode === "signin" && (
+                <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer hover:text-slate-200 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="w-4 h-4 rounded border-slate-600 bg-slate-800/50 text-violet-500 focus:ring-violet-500/20 focus:ring-2 cursor-pointer"
+                  />
+                  <span>Имэйл хаягаа санах</span>
+                </label>
+              )}
+
               <div className="space-y-3 text-sm">
-                <label className="block font-semibold text-slate-200">👥 Role / Хэрэглэгчийн төрөл</label>
+                <label className="block font-semibold text-slate-200">
+                  👥 {mode === "signin" ? "Та хэн бэ?" : "Хэрэглэгчийн төрөл"}
+                </label>
+                <p className="text-xs text-slate-400 -mt-1">
+                  {mode === "signin" 
+                    ? "Та сурагч уу багш уу?"
+                    : "Сурагчид XP цуглуулж, багш нар даалгавар үүсгэнэ"}
+                </p>
                 <div className="grid grid-cols-2 gap-3">
-                  <label className={`flex items-center justify-center gap-2 cursor-pointer rounded-xl glass-panel border px-4 py-3 transition-all ${
+                  <label className={`flex flex-col items-center justify-center gap-2 cursor-pointer rounded-xl glass-panel border px-4 py-4 transition-all ${
                     role === "student" 
-                      ? "border-violet-500/50 bg-violet-500/10 text-violet-200" 
-                      : "border-slate-700/50 text-slate-400 hover:border-slate-600"
+                      ? "border-violet-500/50 bg-violet-500/10 text-violet-200 shadow-[0_8px_20px_rgba(139,92,246,0.3)]" 
+                      : "border-slate-700/50 text-slate-400 hover:border-slate-600 hover:bg-slate-800/30"
                   }`}>
                     <input
                       type="radio"
@@ -179,13 +218,14 @@ export function LoginForm() {
                       onChange={() => setRole("student")}
                       className="hidden"
                     />
-                    <span className="text-lg">👨‍🎓</span>
-                    <span className="font-medium">Сурагч</span>
+                    <span className="text-3xl">🎓</span>
+                    <span className="font-semibold">Сурагч</span>
+                    <span className="text-xs text-center opacity-75">XP цуглуулах, хичээл хийх</span>
                   </label>
-                  <label className={`flex items-center justify-center gap-2 cursor-pointer rounded-xl glass-panel border px-4 py-3 transition-all ${
+                  <label className={`flex flex-col items-center justify-center gap-2 cursor-pointer rounded-xl glass-panel border px-4 py-4 transition-all ${
                     role === "teacher" 
-                      ? "border-violet-500/50 bg-violet-500/10 text-violet-200" 
-                      : "border-slate-700/50 text-slate-400 hover:border-slate-600"
+                      ? "border-violet-500/50 bg-violet-500/10 text-violet-200 shadow-[0_8px_20px_rgba(139,92,246,0.3)]" 
+                      : "border-slate-700/50 text-slate-400 hover:border-slate-600 hover:bg-slate-800/30"
                   }`}>
                     <input
                       type="radio"
@@ -195,8 +235,9 @@ export function LoginForm() {
                       onChange={() => setRole("teacher")}
                       className="hidden"
                     />
-                    <span className="text-lg">✨</span>
-                    <span className="font-medium">Багш</span>
+                    <span className="text-3xl">👨‍🏫</span>
+                    <span className="font-semibold">Багш</span>
+                    <span className="text-xs text-center opacity-75">Даалгавар үүсгэх, үнэлэх</span>
                   </label>
                 </div>
               </div>
@@ -215,7 +256,7 @@ export function LoginForm() {
 
               <div className="flex justify-between items-center text-xs text-slate-400 pt-2">
                 <span>
-                  {mode === "signin" ? "New here?" : "Already have an account?"}
+                  {mode === "signin" ? "Шинэ хэрэглэгч үү?" : "Бүртгэлтэй юу?"}
                 </span>
                 <button
                   type="button"
@@ -224,7 +265,7 @@ export function LoginForm() {
                   }
                   className="text-violet-400 font-semibold hover:text-violet-300 transition-colors"
                 >
-                  {mode === "signin" ? "Create an Account →" : "Sign In →"}
+                  {mode === "signin" ? "Бүртгүүлэх →" : "Нэвтрэх →"}
                 </button>
               </div>
 

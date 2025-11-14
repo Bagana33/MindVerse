@@ -7,6 +7,7 @@
 CREATE TABLE users (
   email TEXT PRIMARY KEY,
   name TEXT,
+  password TEXT, -- Hashed password (nullable for migration)
   nickname TEXT,
   bio TEXT,
   avatar_url TEXT,

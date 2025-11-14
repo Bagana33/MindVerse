@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromCookies } from "../../../../lib/session";
-import { getOrCreateUser, updateUser } from "../../../../lib/users";
+import { updateUser } from "../../../../lib/users";
 
 export async function POST(request: NextRequest) {
   const session = await getSessionFromCookies();
@@ -29,9 +29,6 @@ export async function POST(request: NextRequest) {
     if (avatarColor !== undefined && avatarColor && !/^#[0-9A-F]{6}$/i.test(avatarColor)) {
       return NextResponse.json({ error: "Өнгийн формат буруу байна" }, { status: 400 });
     }
-
-    // Ensure user exists
-    await getOrCreateUser(session.email, session.name, session.role);
 
     // Update user with new data (this will also save to file)
     const updates: any = {};

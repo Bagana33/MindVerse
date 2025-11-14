@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { Role, Session, setSessionCookie } from "../../../../lib/session";
-import { getOrCreateUser } from "../../../../lib/users";
+import { createUser, verifyUser } from "../../../../lib/users";
 
 export async function POST(req: Request) {
   try {
@@ -13,7 +13,9 @@ export async function POST(req: Request) {
     }
 
     const email = (body?.email ?? "").toString().trim();
+    const password = (body?.password ?? "").toString().trim();
     const name = (body?.name ?? "").toString().trim() || undefined;
+    const mode = (body?.mode ?? "signin").toString().trim();
     const roleRaw = (body?.role ?? "student").toString().trim().toLowerCase();
     const role: Role = roleRaw === "teacher" ? "teacher" : "student";
 
@@ -21,16 +23,36 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Email шаардлагатай" }, { status: 400 });
     }
 
-    // Email validation
+    if (!password) {
+      return NextResponse.json({ ok: false, error: "Нууц үг шаардлагатай" }, { status: 400 });
+    }
+
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       return NextResponse.json({ ok: false, error: "Email хаяг буруу байна" }, { status: 400 });
     }
 
-    // Create or get user in storage
-    await getOrCreateUser(email, name, role);
+    let sessionUserName = name;
+    let sessionRole: Role = role;
 
-    const session: Session = { email, name, role };
+    if (mode === "signup") {
+      try {
+        const created = await createUser(email, password, name, role);
+        sessionUserName = created.name;
+        sessionRole = created.role as Role;
+      } catch (err: any) {
+        return NextResponse.json({ ok: false, error: err.message || "Бүртгэл амжилтгүй" }, { status: 400 });
+      }
+    } else {
+      const user = await verifyUser(email, password);
+      if (!user) {
+        return NextResponse.json({ ok: false, error: "Email эсвэл нууц үг буруу байна" }, { status: 401 });
+      }
+      sessionUserName = user.name;
+      sessionRole = user.role as Role;
+    }
+
+    const session: Session = { email, name: sessionUserName, role: sessionRole };
     await setSessionCookie(session);
     return NextResponse.json({ ok: true, session });
   } catch (error: any) {

@@ -1,8 +1,10 @@
 // Supabase-based user storage
 import { supabase } from './supabase';
+import bcrypt from 'bcryptjs';
 
 export type User = {
   email: string;
+  password: string; // Hashed password
   name?: string;
   nickname?: string; // Display name
   bio?: string; // User bio
@@ -16,6 +18,7 @@ export type User = {
 function dbToUser(dbRow: any): User {
   return {
     email: dbRow.email,
+    password: dbRow.password,
     name: dbRow.name,
     nickname: dbRow.nickname,
     bio: dbRow.bio,
@@ -29,6 +32,7 @@ function dbToUser(dbRow: any): User {
 function userToDb(user: Partial<User>): any {
   const dbObj: any = {};
   if (user.email !== undefined) dbObj.email = user.email;
+    if (user.password !== undefined) dbObj.password = user.password;
   if (user.name !== undefined) dbObj.name = user.name;
   if (user.nickname !== undefined) dbObj.nickname = user.nickname;
   if (user.bio !== undefined) dbObj.bio = user.bio;
@@ -39,21 +43,34 @@ function userToDb(user: Partial<User>): any {
   return dbObj;
 }
 
-export async function getOrCreateUser(email: string, name?: string, role: "student" | "teacher" = "student"): Promise<User> {
-  // Try to get existing user
-  const { data: existing } = await supabase
-    .from('users')
-    .select('*')
-    .eq('email', email)
-    .single();
+// Create a new user (signup)
+export async function createUser(email: string, password: string, name?: string, role: "student" | "teacher" = "student"): Promise<User> {
+  // Check if user already exists
+  const existing = await getUser(email);
+  const hashedPassword = await bcrypt.hash(password, 10);
 
   if (existing) {
-    return dbToUser(existing);
+    // Migration-friendly: if existing user has no password yet, set it now and update optional fields
+    if (!existing.password || existing.password.length === 0) {
+      const { data, error } = await supabase
+        .from('users')
+        .update(userToDb({ password: hashedPassword, name: name ?? existing.name, role: role ?? existing.role }))
+        .eq('email', email)
+        .select()
+        .single();
+      if (error || !data) {
+        console.error('Error upgrading existing user with password:', error);
+        throw error || new Error('Upgrade failed');
+      }
+      return dbToUser(data);
+    }
+    throw new Error('Email хаяг аль хэдийн бүртгэлтэй байна');
   }
 
   // Create new user
   const newUser: User = {
     email,
+    password: hashedPassword,
     name,
     role,
     experience: 0,
@@ -72,6 +89,21 @@ export async function getOrCreateUser(email: string, name?: string, role: "stude
   }
 
   return dbToUser(data);
+}
+
+// Verify user credentials (signin)
+export async function verifyUser(email: string, password: string): Promise<User | null> {
+  const user = await getUser(email);
+  if (!user) {
+    return null;
+  }
+
+  const isValid = await bcrypt.compare(password, user.password);
+  if (!isValid) {
+    return null;
+  }
+
+  return user;
 }
 
 export async function getUser(email: string): Promise<User | null> {
