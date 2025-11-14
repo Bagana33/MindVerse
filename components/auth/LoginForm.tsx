@@ -34,6 +34,17 @@ export function LoginForm() {
     setLoading(true);
 
     try {
+      // Simple client-side validation
+      if (mode === "signup") {
+        if (!name || name.trim().length < 2) {
+          setLoading(false);
+          return setError("Нэрээ зөв оруулна уу (хамгийн багадаа 2 тэмдэгт)");
+        }
+        if (!password || password.length < 6) {
+          setLoading(false);
+          return setError("Нууц үг хамгийн багадаа 6 тэмдэгт байх ёстой");
+        }
+      }
       // Save email if remember me is checked
       if (rememberMe) {
         localStorage.setItem('mindverse_email', email);
@@ -250,8 +261,8 @@ export function LoginForm() {
                 {loading
                   ? "⏳ Түр хүлээнэ үү..."
                   : mode === "signin"
-                  ? "🚀 Sign In"
-                  : "✨ Register"}
+                  ? "🚀 Нэвтрэх"
+                  : "✨ Бүртгүүлэх"}
               </button>
 
               <div className="flex justify-between items-center text-xs text-slate-400 pt-2">

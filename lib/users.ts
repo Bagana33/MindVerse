@@ -4,7 +4,7 @@ import bcrypt from 'bcryptjs';
 
 export type User = {
   email: string;
-  password: string; // Hashed password
+  password?: string; // Hashed password
   name?: string;
   nickname?: string; // Display name
   bio?: string; // User bio

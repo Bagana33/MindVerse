@@ -14,5 +14,17 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: "Хэрэглэгч олдсонгүй" }, { status: 404 });
   }
 
-  return NextResponse.json({ ok: true, user });
+  // Return safe subset (omit password)
+  const safe = {
+    email: user.email,
+    name: user.name,
+    nickname: user.nickname,
+    bio: user.bio,
+    avatarUrl: user.avatarUrl,
+    avatarColor: user.avatarColor,
+    role: user.role,
+    experience: user.experience,
+  };
+
+  return NextResponse.json({ ok: true, user: safe });
 }
