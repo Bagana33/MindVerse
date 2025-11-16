@@ -11,6 +11,7 @@ type LeaderboardUser = {
   avatarUrl?: string;
   avatarColor?: string;
   role: "student" | "teacher";
+  grade?: string; // Student grade
   experience: number;
 };
 
@@ -144,6 +145,7 @@ export function LeaderboardFull() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [rankFilter, setRankFilter] = useState<string>("all");
+  const [gradeFilter, setGradeFilter] = useState<string>("all"); // New grade filter
   const { session } = useSession();
 
   useEffect(() => {
@@ -186,8 +188,13 @@ export function LeaderboardFull() {
       });
     }
 
+    // Filter by grade
+    if (gradeFilter !== "all") {
+      filtered = filtered.filter(u => u.grade === gradeFilter);
+    }
+
     setFilteredUsers(filtered);
-  }, [searchQuery, rankFilter, users]);
+  }, [searchQuery, rankFilter, gradeFilter, users]);
 
   if (loading) {
     return (
@@ -266,6 +273,31 @@ export function LeaderboardFull() {
               {rank.label}
             </button>
           ))}
+        </div>
+
+        {/* Grade Filter */}
+        <div>
+          <label className="block text-xs text-slate-400 mb-2 font-medium">🎒 Анги</label>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { id: "all", label: "Бүгд" },
+              { id: "10", label: "10 анги" },
+              { id: "11", label: "11 анги" },
+              { id: "12", label: "12 анги" }
+            ].map(grade => (
+              <button
+                key={grade.id}
+                onClick={() => setGradeFilter(grade.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  gradeFilter === grade.id
+                    ? "bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-[0_4px_12px_rgba(34,197,94,0.4)]"
+                    : "bg-slate-900/60 border border-slate-700 text-slate-300 hover:border-green-500/40 hover:text-slate-100"
+                }`}
+              >
+                {grade.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
