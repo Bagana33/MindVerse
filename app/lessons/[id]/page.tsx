@@ -517,13 +517,13 @@ export default function LessonDetailPage() {
                 <span className="text-slate-400">Илгээсэн:</span>
                 <span className="text-slate-200">{new Date(mySubmission.submittedAt).toLocaleString("mn-MN")}</span>
               </div>
-              {mySubmission.score !== undefined ? (
+              {mySubmission.score !== null && mySubmission.score !== undefined ? (
                 <>
                   <div className="flex items-center gap-2">
                     <span className="text-slate-400">Оноо:</span>
                     <span className="text-xl font-bold text-violet-400">{mySubmission.score}/100</span>
                   </div>
-                  {mySubmission.rewardXP !== undefined && (
+                  {(mySubmission.rewardXP !== null && mySubmission.rewardXP !== undefined) && (
                     <div className="flex items-center gap-2">
                       <span className="text-slate-400">XP:</span>
                       <span className="text-xl font-bold text-yellow-400">+{mySubmission.rewardXP} XP 🎉</span>
@@ -550,8 +550,27 @@ export default function LessonDetailPage() {
               Сурагчдын submission ({lesson.submissions.length})
               {!isAuthor && <span className="text-xs text-slate-500 ml-2">(Бусад багшийн хичээл)</span>}
             </h2>
+            {/* Debug info */}
+            <div className="mb-4 p-3 bg-slate-950/60 border border-yellow-500/30 rounded-lg text-xs space-y-1">
+              <p className="text-yellow-400">🔍 Debug мэдээлэл:</p>
+              <p className="text-slate-300">Таны email: <span className="text-violet-400">{session?.email}</span></p>
+              <p className="text-slate-300">Хичээлийн эзэн: <span className="text-violet-400">{lesson.authorEmail}</span></p>
+              <p className="text-slate-300">Багш эсэх: <span className={isTeacher ? "text-green-400" : "text-red-400"}>{isTeacher ? "Тийм ✓" : "Үгүй ✗"}</span></p>
+              <p className="text-slate-300">Эзэн эсэх: <span className={isAuthor ? "text-green-400" : "text-red-400"}>{isAuthor ? "Тийм ✓" : "Үгүй ✗"}</span></p>
+            </div>
             <div className="space-y-4">
-              {lesson.submissions.map((sub) => (
+              {lesson.submissions.map((sub) => {
+                // Debug log
+                console.log('Submission data:', {
+                  id: sub.id,
+                  studentName: sub.studentName,
+                  score: sub.score,
+                  scoreType: typeof sub.score,
+                  rewardXP: sub.rewardXP,
+                  rewardXPType: typeof sub.rewardXP
+                });
+                
+                return (
                 <div key={sub.id} className="bg-slate-950/60 border border-slate-700 rounded-xl px-4 py-4 hover:border-slate-600 transition-colors">
                   <div className="flex items-start justify-between gap-4 mb-3">
                     <div className="flex items-center gap-3">
@@ -565,13 +584,26 @@ export default function LessonDetailPage() {
                         </p>
                       </div>
                     </div>
-                    {sub.score !== undefined ? (
+                    {sub.score !== null && sub.score !== undefined ? (
                       <div className="text-right">
                         <div className="text-lg font-bold text-violet-400">{sub.score}/100</div>
-                        <div className="text-sm text-yellow-400">+{sub.rewardXP} XP</div>
+                        <div className="text-sm text-yellow-400">+{sub.rewardXP || 0} XP</div>
                         <div className="text-[10px] text-green-400 mt-1">✓ Оноолсон</div>
+                        {isTeacher && (
+                          <button
+                            onClick={() => {
+                              setGradingSubmissionId(sub.id);
+                              setGradeScore(sub.score);
+                              setGradeXP(sub.rewardXP || 50);
+                              setGradeFeedback(sub.feedback || "");
+                            }}
+                            className="mt-2 px-3 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 text-[10px] transition-colors"
+                          >
+                            ✏️ Засах
+                          </button>
+                        )}
                       </div>
-                    ) : isAuthor ? (
+                    ) : isTeacher ? (
                       <div className="flex flex-col gap-2">
                         <button
                           onClick={() => setGradingSubmissionId(sub.id)}
@@ -627,7 +659,7 @@ export default function LessonDetailPage() {
                   )}
 
                   {/* Grading Form */}
-                  {isAuthor && gradingSubmissionId === sub.id && (
+                  {isTeacher && gradingSubmissionId === sub.id && (
                     <div className="mt-4 p-4 bg-slate-900/80 border border-violet-500/30 rounded-lg space-y-3">
                       <div className="flex items-start gap-2 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg mb-2">
                         <span className="text-lg">ℹ️</span>
@@ -732,7 +764,8 @@ export default function LessonDetailPage() {
                     </div>
                   )}
                 </div>
-              ))}
+              );
+              })}
             </div>
           </div>
         )}

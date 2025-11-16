@@ -31,16 +31,14 @@ export async function POST(
       return NextResponse.json({ error: "Reward XP 0-500 хооронд байх ёстой" }, { status: 400 });
     }
 
-    // Verify lesson belongs to this teacher
+    // Verify lesson exists
     const lesson = await getLesson(lessonId);
     if (!lesson) {
       return NextResponse.json({ error: "Хичээл олдсонгүй" }, { status: 404 });
     }
 
-    if (lesson.authorEmail !== session.email) {
-      return NextResponse.json({ error: "Зөвхөн өөрийн хичээлийн submission-г оноолох боломжтой" }, { status: 403 });
-    }
-
+    // Any teacher can grade submissions (removed author check)
+    
     const submission = await gradeSubmission(lessonId, submissionId, score, rewardXP, feedback);
 
     if (!submission) {
