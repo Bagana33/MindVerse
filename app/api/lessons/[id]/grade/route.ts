@@ -32,7 +32,7 @@ export async function POST(
     }
 
     // Verify lesson belongs to this teacher
-    const lesson = getLesson(lessonId);
+    const lesson = await getLesson(lessonId);
     if (!lesson) {
       return NextResponse.json({ error: "Хичээл олдсонгүй" }, { status: 404 });
     }
@@ -41,7 +41,7 @@ export async function POST(
       return NextResponse.json({ error: "Зөвхөн өөрийн хичээлийн submission-г оноолох боломжтой" }, { status: 403 });
     }
 
-    const submission = gradeSubmission(lessonId, submissionId, score, rewardXP, feedback);
+    const submission = await gradeSubmission(lessonId, submissionId, score, rewardXP, feedback);
 
     if (!submission) {
       return NextResponse.json({ error: "Submission олдсонгүй" }, { status: 404 });
@@ -51,11 +51,11 @@ export async function POST(
     if (rewardXP > 0) {
       await addExperience(submission.studentEmail, rewardXP);
     }
-    addNotification(
+    await addNotification(
       submission.studentEmail,
       session.email,
       "GRADE",
-      `${submission.studentName} таны даалгаварт ${score} оноо, +${rewardXP} XP авлаа`
+      `📝 "${lesson.title}" хичээлийн даалгаварт ${score} оноо авлаа! +${rewardXP} XP`
     );
 
     return NextResponse.json({ 

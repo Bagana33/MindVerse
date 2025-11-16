@@ -94,12 +94,18 @@ export async function createUser(email: string, password: string, name?: string,
 // Verify user credentials (signin)
 export async function verifyUser(email: string, password: string): Promise<User | null> {
   const user = await getUser(email);
-  if (!user) {
+  if (!user) return null;
+
+  // Defensive: handle legacy users with no password or wrong type
+  if (typeof user.password !== 'string' || user.password.length === 0) {
     return null;
   }
 
-  const isValid = await bcrypt.compare(password, user.password);
-  if (!isValid) {
+  try {
+    const isValid = await bcrypt.compare(password, user.password);
+    if (!isValid) return null;
+  } catch (e) {
+    // bcrypt throws on invalid args (e.g., object/undefined). Treat as invalid credentials.
     return null;
   }
 
@@ -148,6 +154,23 @@ export async function addExperience(email: string, points: number): Promise<User
 
   if (error || !data) {
     console.error('Error adding experience:', error);
+    return null;
+  }
+
+  return dbToUser(data);
+}
+
+// Set exact XP amount (for teacher management)
+export async function setExperience(email: string, points: number): Promise<User | null> {
+  const { data, error } = await supabase
+    .from('users')
+    .update({ experience: Math.max(0, points) })
+    .eq('email', email)
+    .select()
+    .single();
+
+  if (error || !data) {
+    console.error('Error setting experience:', error);
     return null;
   }
 

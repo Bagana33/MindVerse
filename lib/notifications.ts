@@ -80,6 +80,18 @@ export async function markAllNotificationsRead(userEmail: string): Promise<numbe
   return data.length;
 }
 
+export async function clearAllNotifications(userEmail: string): Promise<number> {
+  const { data, error } = await supabase
+    .from('notifications')
+    .delete()
+    .eq('user_email', userEmail)
+    .select();
+
+  if (error || !data) return 0;
+  
+  return data.length;
+}
+
 export async function getUnreadCount(userEmail: string): Promise<number> {
   const { count, error } = await supabase
     .from('notifications')

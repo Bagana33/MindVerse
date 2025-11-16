@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { Role, Session, setSessionCookie } from "../../../../lib/session";
-import { createUser, verifyUser } from "../../../../lib/users";
+import { createUser, verifyUser, getUser } from "../../../../lib/users";
 
 export async function POST(req: Request) {
   try {
@@ -44,6 +44,15 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: false, error: err.message || "Бүртгэл амжилтгүй" }, { status: 400 });
       }
     } else {
+      // Sign-in flow
+      const existing = await getUser(email);
+      if (existing && (typeof existing.password !== 'string' || existing.password.length === 0)) {
+        return NextResponse.json(
+          { ok: false, error: "Энэ имэйл дээр нууц үг тохируулаагүй байна. Бүртгүүлэх (Signup) сонголтоор нууц үг үүсгэнэ үү." },
+          { status: 400 }
+        );
+      }
+
       const user = await verifyUser(email, password);
       if (!user) {
         return NextResponse.json({ ok: false, error: "Email эсвэл нууц үг буруу байна" }, { status: 401 });

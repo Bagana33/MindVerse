@@ -1,11 +1,11 @@
-// Simple in-memory lesson storage for demo
+import { supabase } from './supabase';
 
 export type LessonFile = {
   id: string;
   fileName: string;
-  fileType: string; // MIME type or extension
-  fileUrl: string; // base64 for demo
-  fileSize: number; // in bytes
+  fileType: string;
+  fileUrl: string;
+  fileSize: number;
 };
 
 export type Question = {
@@ -21,11 +21,12 @@ export type LessonSubmission = {
   lessonId: string;
   studentEmail: string;
   studentName: string;
-  fileUrl?: string; // Student's uploaded file
+  fileUrl?: string;
   submittedAt: string;
-  score?: number; // Teacher's score (0-100)
-  feedback?: string; // Teacher's feedback
-  rewardXP?: number; // XP reward given by teacher
+  score?: number;
+  feedback?: string;
+  rewardXP?: number;
+  gradedAt?: string;
 };
 
 export type Lesson = {
@@ -34,201 +35,250 @@ export type Lesson = {
   description: string;
   authorEmail: string;
   authorName: string;
+  published: boolean;
   questions: Question[];
-  files: LessonFile[]; // Attached files
-  submissions: LessonSubmission[]; // Student submissions
+  files: LessonFile[];
+  submissions: LessonSubmission[];
   createdAt: string;
+  updatedAt: string;
 };
 
-const lessons: Lesson[] = [];
-
-// Initialize demo lessons
-function initializeDemoLessons() {
-  // First, ensure existing lessons have files array
-  lessons.forEach(lesson => {
-    if (!lesson.files) {
-      lesson.files = [];
-    }
-  });
-
-  const demoLessons: Omit<Lesson, "id" | "createdAt">[] = [
-    {
-      title: "React Basics",
-      description: "Learn the fundamentals of React - components, props, and state",
-      authorEmail: "enkhjin@demo.com",
-      authorName: "Enkhjin T.",
-      files: [],
-      submissions: [
-        {
-          id: "sub-demo-1",
-          lessonId: "lesson-demo-1",
-          studentEmail: "nomin@demo.com",
-          studentName: "Nomin-Erdene",
-          fileUrl: "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iIzFhMWEyZSIvPgogIDx0ZXh0IHg9IjUwJSIgeT0iNDAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMjQiIGZpbGw9IiM4YjVjZjYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPgogICAgUmVhY3QgQ29tcG9uZW50IEV4YW1wbGUKICA8L3RleHQ+CiAgPHRleHQgeD0iNTAlIiB5PSI1NSUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk0YTNiOCIgdGV4dC1hbmNob3I9Im1pZGRsZSI+CiAgICBNaW5pIGRhYWxnYXZyYSAtIE5vbWluCiAgPC90ZXh0Pgo8L3N2Zz4=",
-          submittedAt: new Date(Date.now() - 3600000).toISOString(),
-        },
-        {
-          id: "sub-demo-2",
-          lessonId: "lesson-demo-1",
-          studentEmail: "bat-erdene@demo.com",
-          studentName: "Bat-Erdene U.",
-          fileUrl: "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNTAwIiBoZWlnaHQ9IjQwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cmVjdCB3aWR0aD0iNTAwIiBoZWlnaHQ9IjQwMCIgZmlsbD0iIzBmMTcyYSIvPgogIDxyZWN0IHg9IjUwIiB5PSI1MCIgd2lkdGg9IjQwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiM4YjVjZjYiIHJ4PSIxMCIvPgogIDx0ZXh0IHg9IjI1MCIgeT0iMTEwIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMjAiIGZpbGw9IndoaXRlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj4KICAgIE15IFJlYWN0IEFwcAogIDwvdGV4dD4KICA8dGV4dCB4PSIyNTAiIHk9IjIwMCIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjE2IiBmaWxsPSIjNjRmZmRhIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj4KICAgIEJ5IEJhdC1FcmRlbmUKICA8L3RleHQ+Cjwvc3ZnPg==",
-          submittedAt: new Date(Date.now() - 7200000).toISOString(),
-          score: 95,
-          rewardXP: 100,
-          feedback: "Маш сайн ажил! React компонентын бүтцийг сайн ойлгосон байна. Үргэлжлүүлээрэй! 🎉",
-        },
-      ],
-      questions: [
-        {
-          id: "q1",
-          question: "What is JSX?",
-          options: [
-            "A JavaScript function",
-            "A syntax extension for JavaScript",
-            "A CSS framework",
-            "A database query language"
-          ],
-          correctAnswer: 1,
-          explanation: "JSX is a syntax extension for JavaScript that allows you to write HTML-like code in your JavaScript files."
-        },
-        {
-          id: "q2",
-          question: "Which hook is used for side effects?",
-          options: [
-            "useState",
-            "useContext",
-            "useEffect",
-            "useReducer"
-          ],
-          correctAnswer: 2,
-          explanation: "useEffect is the React hook used to perform side effects like data fetching, subscriptions, or DOM manipulation."
-        }
-      ]
-    },
-    {
-      title: "CSS Flexbox Guide",
-      description: "Master CSS Flexbox layout with practical examples",
-      authorEmail: "bat-erdene@demo.com",
-      authorName: "Bat-Erdene U.",
-      files: [],
-      submissions: [
-        {
-          id: "sub-demo-3",
-          lessonId: "lesson-demo-2",
-          studentEmail: "enkhjin@demo.com",
-          studentName: "Enkhjin T.",
-          fileUrl: "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAwIiBoZWlnaHQ9IjQwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KICA8cmVjdCB3aWR0aD0iNjAwIiBoZWlnaHQ9IjQwMCIgZmlsbD0iIzEzMTgyNyIvPgogIDwhLS0gRmxleGJveCBDb250YWluZXIgLS0+CiAgPHJlY3QgeD0iNTAiIHk9IjUwIiB3aWR0aD0iNTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMDZiNmQ0IiBzdHJva2Utd2lkdGg9IjIiIHJ4PSI1Ii8+CiAgPCEtLSBGbGV4IEl0ZW1zIC0tPgogIDxyZWN0IHg9IjcwIiB5PSI2NSIgd2lkdGg9IjgwIiBoZWlnaHQ9IjcwIiBmaWxsPSIjOGI1Y2Y2IiByeD0iNSIvPgogIDxyZWN0IHg9IjE3MCIgeT0iNjUiIHdpZHRoPSI4MCIgaGVpZ2h0PSI3MCIgZmlsbD0iIzhiNWNmNiIgcng9IjUiLz4KICA8cmVjdCB4PSIyNzAiIHk9IjY1IiB3aWR0aD0iODAiIGhlaWdodD0iNzAiIGZpbGw9IiM4YjVjZjYiIHJ4PSI1Ii8+CiAgPHRleHQgeD0iMzAwIiB5PSIyMDAiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyMCIgZmlsbD0iIzA2YjZkNCIgdGV4dC1hbmNob3I9Im1pZGRsZSI+CiAgICBGbGV4Ym94IExheW91dCBFeGFtcGxlCiAgPC90ZXh0PgogIDx0ZXh0IHg9IjMwMCIgeT0iMjMwIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiM2NGZmZGEiIHRleHQtYW5jaG9yPSJtaWRkbGUiPgogICAgQnkgRW5raGppbgogIDwvdGV4dD4KPC9zdmc+",
-          submittedAt: new Date(Date.now() - 1800000).toISOString(),
-          score: 88,
-          rewardXP: 80,
-          feedback: "Flexbox-ын үндсэн ойлголтыг сайн ойлгосон байна. Илүү төвөгтэй жишээнүүд дээр дадлага хийвэл илүү сайн болно.",
-        },
-      ],
-      questions: [
-        {
-          id: "q1",
-          question: "What does 'justify-content: center' do?",
-          options: [
-            "Centers items vertically",
-            "Centers items horizontally",
-            "Adds padding to items",
-            "Changes item order"
-          ],
-          correctAnswer: 1,
-          explanation: "justify-content: center aligns flex items along the main axis (horizontally by default)."
-        }
-      ]
-    }
-  ];
-
-  demoLessons.forEach((lesson, index) => {
-    const newLesson: Lesson = {
-      ...lesson,
-      id: `lesson-demo-${index + 1}`,
-      createdAt: new Date(Date.now() - (2 - index) * 86400000).toISOString(),
-    };
-    lessons.push(newLesson);
-  });
-}
-
-// Initialize on first load
-initializeDemoLessons();
-
-export function createLesson(data: Omit<Lesson, "id" | "createdAt">): Lesson {
-  const newLesson: Lesson = {
-    ...data,
-    id: `lesson-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-    createdAt: new Date().toISOString(),
+function dbToLesson(dbRow: any, questions: Question[] = [], files: LessonFile[] = [], submissions: LessonSubmission[] = []): Lesson {
+  return {
+    id: dbRow.id,
+    title: dbRow.title,
+    description: dbRow.description,
+    authorEmail: dbRow.author_email,
+    authorName: dbRow.author_name,
+    published: dbRow.published ?? true,
+    questions,
+    files,
+    submissions,
+    createdAt: dbRow.created_at,
+    updatedAt: dbRow.updated_at,
   };
-  lessons.unshift(newLesson);
-  return newLesson;
 }
 
-export function getAllLessons(): Lesson[] {
-  return [...lessons];
+function dbToQuestion(dbRow: any): Question {
+  return {
+    id: dbRow.id,
+    question: dbRow.question,
+    options: dbRow.options || [],
+    correctAnswer: dbRow.correct_answer,
+    explanation: dbRow.explanation,
+  };
 }
 
-export function getLesson(id: string): Lesson | undefined {
-  return lessons.find(l => l.id === id);
+function dbToFile(dbRow: any): LessonFile {
+  return {
+    id: dbRow.id,
+    fileName: dbRow.file_name,
+    fileType: dbRow.file_type,
+    fileUrl: dbRow.file_url,
+    fileSize: dbRow.file_size || 0,
+  };
 }
 
-export function deleteLesson(id: string, userEmail: string): boolean {
-  const index = lessons.findIndex(l => l.id === id && l.authorEmail === userEmail);
-  if (index === -1) return false;
-  lessons.splice(index, 1);
-  return true;
+function dbToSubmission(dbRow: any): LessonSubmission {
+  return {
+    id: dbRow.id,
+    lessonId: dbRow.lesson_id,
+    studentEmail: dbRow.student_email,
+    studentName: dbRow.student_name,
+    fileUrl: dbRow.file_url,
+    submittedAt: dbRow.submitted_at,
+    score: dbRow.score,
+    feedback: dbRow.feedback,
+    rewardXP: dbRow.reward_xp,
+    gradedAt: dbRow.graded_at,
+  };
 }
 
-export function submitToLesson(
+export async function createLesson(data: Omit<Lesson, "id" | "createdAt" | "updatedAt" | "submissions">): Promise<Lesson> {
+  const lessonId = `lesson-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  
+  const { data: lessonData, error: lessonError } = await supabase
+    .from('lessons')
+    .insert([{
+      id: lessonId,
+      title: data.title,
+      description: data.description,
+      author_email: data.authorEmail,
+      author_name: data.authorName,
+      published: data.published ?? true,
+    }])
+    .select()
+    .single();
+
+  if (lessonError || !lessonData) {
+    throw lessonError || new Error('Failed to create lesson');
+  }
+
+  if (data.questions && data.questions.length > 0) {
+    await supabase.from('lesson_questions').insert(
+      data.questions.map((q, idx) => ({
+        id: `${lessonId}-q${idx + 1}`,
+        lesson_id: lessonId,
+        question: q.question,
+        options: q.options,
+        correct_answer: q.correctAnswer,
+        explanation: q.explanation,
+        order_index: idx,
+      }))
+    );
+  }
+
+  if (data.files && data.files.length > 0) {
+    await supabase.from('lesson_files').insert(
+      data.files.map(f => ({
+        id: f.id || `${lessonId}-file-${Date.now()}`,
+        lesson_id: lessonId,
+        file_name: f.fileName,
+        file_type: f.fileType,
+        file_url: f.fileUrl,
+        file_size: f.fileSize || 0,
+      }))
+    );
+  }
+
+  return dbToLesson(lessonData, data.questions, data.files, []);
+}
+
+export async function getAllLessons(includeUnpublished: boolean = false): Promise<Lesson[]> {
+  let query = supabase
+    .from('lessons')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (!includeUnpublished) {
+    query = query.eq('published', true);
+  }
+
+  const { data: lessonsData, error } = await query;
+  if (error || !lessonsData) return [];
+
+  const lessons = await Promise.all(
+    lessonsData.map(async (lessonRow) => {
+      const [q, f, s] = await Promise.all([
+        supabase.from('lesson_questions').select('*').eq('lesson_id', lessonRow.id).order('order_index'),
+        supabase.from('lesson_files').select('*').eq('lesson_id', lessonRow.id),
+        supabase.from('lesson_submissions').select('*').eq('lesson_id', lessonRow.id).order('submitted_at', { ascending: false }),
+      ]);
+
+      return dbToLesson(
+        lessonRow,
+        (q.data || []).map(dbToQuestion),
+        (f.data || []).map(dbToFile),
+        (s.data || []).map(dbToSubmission)
+      );
+    })
+  );
+
+  return lessons;
+}
+
+export async function getLesson(id: string): Promise<Lesson | null> {
+  const { data: lessonData, error } = await supabase
+    .from('lessons')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (error || !lessonData) return null;
+
+  const [q, f, s] = await Promise.all([
+    supabase.from('lesson_questions').select('*').eq('lesson_id', id).order('order_index'),
+    supabase.from('lesson_files').select('*').eq('lesson_id', id),
+    supabase.from('lesson_submissions').select('*').eq('lesson_id', id).order('submitted_at', { ascending: false }),
+  ]);
+
+  return dbToLesson(
+    lessonData,
+    (q.data || []).map(dbToQuestion),
+    (f.data || []).map(dbToFile),
+    (s.data || []).map(dbToSubmission)
+  );
+}
+
+export async function deleteLesson(id: string, userEmail: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('lessons')
+    .delete()
+    .eq('id', id)
+    .eq('author_email', userEmail)
+    .select();
+
+  return !error && data && data.length > 0;
+}
+
+export async function submitToLesson(
   lessonId: string,
   studentEmail: string,
   studentName: string,
   fileUrl?: string
-): LessonSubmission | null {
-  const lesson = lessons.find(l => l.id === lessonId);
-  if (!lesson) return null;
+): Promise<LessonSubmission | null> {
+  const { data: existing } = await supabase
+    .from('lesson_submissions')
+    .select('*')
+    .eq('lesson_id', lessonId)
+    .eq('student_email', studentEmail)
+    .single();
 
-  // Check if student already submitted
-  const existingSubmission = lesson.submissions.find(s => s.studentEmail === studentEmail);
-  if (existingSubmission) return null; // Already submitted
+  if (existing) return null;
 
-  const newSubmission: LessonSubmission = {
-    id: `submission-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-    lessonId,
-    studentEmail,
-    studentName,
-    fileUrl,
-    submittedAt: new Date().toISOString(),
-  };
+  const submissionId = `sub-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-  lesson.submissions.push(newSubmission);
-  return newSubmission;
+  const { data, error } = await supabase
+    .from('lesson_submissions')
+    .insert([{
+      id: submissionId,
+      lesson_id: lessonId,
+      student_email: studentEmail,
+      student_name: studentName,
+      file_url: fileUrl,
+    }])
+    .select()
+    .single();
+
+  if (error || !data) return null;
+
+  return dbToSubmission(data);
 }
 
-export function gradeSubmission(
+export async function gradeSubmission(
   lessonId: string,
   submissionId: string,
   score: number,
   rewardXP: number,
   feedback?: string
-): LessonSubmission | null {
-  const lesson = lessons.find(l => l.id === lessonId);
-  if (!lesson) return null;
+): Promise<LessonSubmission | null> {
+  const { data, error } = await supabase
+    .from('lesson_submissions')
+    .update({
+      score,
+      reward_xp: rewardXP,
+      feedback,
+      graded_at: new Date().toISOString(),
+    })
+    .eq('id', submissionId)
+    .eq('lesson_id', lessonId)
+    .select()
+    .single();
 
-  const submission = lesson.submissions.find(s => s.id === submissionId);
-  if (!submission) return null;
+  if (error || !data) return null;
 
-  submission.score = score;
-  submission.rewardXP = rewardXP;
-  submission.feedback = feedback;
-
-  return submission;
+  return dbToSubmission(data);
 }
 
-export function getSubmission(lessonId: string, studentEmail: string): LessonSubmission | null {
-  const lesson = lessons.find(l => l.id === lessonId);
-  if (!lesson) return null;
+export async function getSubmission(lessonId: string, studentEmail: string): Promise<LessonSubmission | null> {
+  const { data, error } = await supabase
+    .from('lesson_submissions')
+    .select('*')
+    .eq('lesson_id', lessonId)
+    .eq('student_email', studentEmail)
+    .single();
 
-  return lesson.submissions.find(s => s.studentEmail === studentEmail) || null;
+  if (error || !data) return null;
+
+  return dbToSubmission(data);
 }

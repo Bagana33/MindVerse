@@ -66,12 +66,25 @@ export function Topbar() {
     } catch {}
   };
 
+  const clearAll = async () => {
+    if (!confirm('Бүх мэдэгдлийг устгах уу?')) return;
+    try {
+      const res = await fetch('/api/notifications/clear', { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        setNotifications([]);
+        setUnreadCount(0);
+      }
+    } catch {}
+  };
+
   const tabs = [
     { href: "/", label: "Home" },
     { href: "/contests", label: "Contests" },
     { href: "/lessons", label: "Lessons" },
     { href: "/profile", label: "Profile" },
     { href: "/leaderboard", label: "Leaderboard" },
+    ...(session?.role === "teacher" ? [{ href: "/admin", label: "Admin" }] : []),
   ];
 
   return (
@@ -140,7 +153,8 @@ export function Topbar() {
                         <span className="text-xs font-semibold text-slate-300">Мэдэгдэл</span>
                         <div className="flex items-center gap-2">
                           <button onClick={fetchNotifications} className="text-[10px] px-2 py-1 rounded-full bg-slate-800/50 hover:bg-slate-700/60 text-slate-300">↻</button>
-                          <button onClick={markAllRead} className="text-[10px] px-2 py-1 rounded-full bg-violet-600/40 hover:bg-violet-600 text-violet-100">Бүгдийг уншсан</button>
+                          <button onClick={markAllRead} className="text-[10px] px-2 py-1 rounded-full bg-violet-600/40 hover:bg-violet-600 text-violet-100">Уншсан</button>
+                          <button onClick={clearAll} className="text-[10px] px-2 py-1 rounded-full bg-red-600/40 hover:bg-red-600 text-red-100">Устгах</button>
                         </div>
                       </div>
                       {loadingNotifs && notifications.length === 0 && (
@@ -186,6 +200,14 @@ export function Topbar() {
                     </span>
                   )}
                 </div>
+                {session.role === 'teacher' && !tabs.some(t => t.href === '/admin') && (
+                  <Link
+                    href="/admin"
+                    className="rounded-full px-4 py-2 text-xs glass-panel bg-violet-600/20 text-violet-200 hover:bg-violet-600/30 hover:text-white transition-all"
+                  >
+                    Admin →
+                  </Link>
+                )}
                 <button 
                   onClick={logout} 
                   className="rounded-full px-4 py-2 text-xs glass-panel text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-all duration-300"

@@ -29,7 +29,7 @@ export async function POST(
 
     const { fileUrl } = body;
 
-    const submission = submitToLesson(lessonId, session.email, session.name || session.email, fileUrl);
+    const submission = await submitToLesson(lessonId, session.email, session.name || session.email, fileUrl);
 
     if (!submission) {
       return NextResponse.json({ error: "Та аль хэдийн submission илгээсэн байна" }, { status: 400 });

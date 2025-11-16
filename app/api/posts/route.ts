@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSessionFromCookies } from "../../../lib/session";
 import { createPost, getAllPosts, deletePost } from "../../../lib/posts";
+import { addNotification } from "../../../lib/notifications";
+import { getAllUsers } from "../../../lib/users";
 
 // GET: Fetch all posts
 export async function GET() {
@@ -74,6 +76,26 @@ export async function POST(req: Request) {
     ...(imageUrl && { imageUrl }),
     visibility: visibility === 'PRIVATE' ? 'PRIVATE' : 'PUBLIC',
   });
+
+  // Send notification to all users about new post (if public)
+  if (visibility === 'PUBLIC') {
+    try {
+      const allUsers = await getAllUsers();
+      const notifications = allUsers
+        .filter(u => u.email !== session.email) // Don't notify the author
+        .map(u => 
+          addNotification(
+            u.email,
+            session.email,
+            'LIKE',
+            `🎨 ${session.name || session.email} шинэ пост нийтэллээ: ${title}`
+          )
+        );
+      await Promise.allSettled(notifications);
+    } catch (e) {
+      console.error('Failed to send notifications:', e);
+    }
+  }
 
   return NextResponse.json({ ok: true, post: newPost });
 }

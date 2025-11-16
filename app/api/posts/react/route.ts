@@ -37,12 +37,17 @@ export async function POST(req: Request) {
 
   // If reaction newly added (not removed/updated), send notification to post author
   if (result.added && post.authorEmail !== session.email) {
-    addNotification(
-      post.authorEmail,
-      session.email,
-      "LIKE",
-      `Таны постод ${type.toLowerCase()} реакц авлаа`
-    );
+    try {
+      const emoji = type === 'FIRE' ? '🔥' : type === 'WOW' ? '😮' : '💖';
+      await addNotification(
+        post.authorEmail,
+        session.email,
+        "LIKE",
+        `${emoji} ${session.name || session.email} таны "${post.title}" пост дээр ${type.toLowerCase()} реакц өглөө`
+      );
+    } catch (e) {
+      console.error('Failed to send reaction notification:', e);
+    }
   }
 
   // Aggregate counts per type

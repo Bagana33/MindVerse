@@ -6,7 +6,7 @@ export async function GET(
   context: { params: Promise<{ id: string }> }
 ) {
   const params = await context.params;
-  const lesson = getLesson(params.id);
+  const lesson = await getLesson(params.id);
   
   if (!lesson) {
     return NextResponse.json({ ok: false, error: "Хичээл олдсонгүй" }, { status: 404 });

@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
 import { getSessionFromCookies } from "../../../lib/session";
 import { createLesson, getAllLessons } from "../../../lib/lessons";
+import { addNotification } from "../../../lib/notifications";
+import { getAllUsers } from "../../../lib/users";
 
 // GET: Fetch all lessons
 export async function GET() {
-  const lessons = getAllLessons();
+  const session = await getSessionFromCookies();
+  
+  // Бүх хэрэглэгчид бүх хичээлүүдийг харна
+  const lessons = await getAllLessons(true);
+  
   return NextResponse.json({ ok: true, lessons });
 }
 
@@ -95,11 +101,12 @@ export async function POST(req: Request) {
     }
   }
 
-  const newLesson = createLesson({
+  const newLesson = await createLesson({
     title,
     description,
     authorEmail: session.email,
     authorName: session.name || session.email,
+    published: true, // Багш үүсгэсэн хичээл автоматаар нийтлэгдсэн
     questions: questions.map((q: any, idx: number) => ({
       id: `q${idx + 1}`,
       question: q.question.trim(),
@@ -114,8 +121,24 @@ export async function POST(req: Request) {
       fileUrl: f.fileUrl,
       fileSize: f.fileSize || 0,
     })),
-    submissions: [],
   });
+
+  // Send notification to all students about new lesson
+  try {
+    const allUsers = await getAllUsers();
+    const students = allUsers.filter(u => u.role === 'student');
+    const notifications = students.map(student => 
+      addNotification(
+        student.email,
+        session.email,
+        'GRADE',
+        `📚 Шинэ хичээл: ${title} - ${session.name || session.email} багш`
+      )
+    );
+    await Promise.allSettled(notifications);
+  } catch (e) {
+    console.error('Failed to send lesson notifications:', e);
+  }
 
   return NextResponse.json({ ok: true, lesson: newLesson });
 }
