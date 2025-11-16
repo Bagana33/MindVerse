@@ -7,6 +7,14 @@ import { useSession } from "../auth/useSession";
 
 type ReactionType = 'FIRE' | 'WOW' | 'LOVE';
 type PostReaction = { userEmail: string; type: ReactionType };
+type Comment = {
+  id: string;
+  postId: string;
+  authorEmail: string;
+  content: string;
+  isAI: boolean;
+  createdAt: string;
+};
 type UserPost = {
   id: string;
   title: string;
@@ -17,6 +25,7 @@ type UserPost = {
   createdAt: string;
   imageUrl?: string;
   reactions: PostReaction[];
+  comments?: Comment[];
 };
 
 type FeedTab = "feed" | "trending" | "mine";
@@ -92,7 +101,25 @@ export function HomeFeed() {
         const res = await fetch("/api/posts");
         if (res.ok) {
           const json = await res.json();
-          setUserPosts(json.posts || []);
+          const posts = json.posts || [];
+          
+          // Fetch comments for each post
+          const postsWithComments = await Promise.all(
+            posts.map(async (post: UserPost) => {
+              try {
+                const commentsRes = await fetch(`/api/posts/comments?postId=${post.id}`);
+                if (commentsRes.ok) {
+                  const commentsJson = await commentsRes.json();
+                  return { ...post, comments: commentsJson.comments || [] };
+                }
+              } catch (e) {
+                console.error('Failed to fetch comments for post:', post.id);
+              }
+              return { ...post, comments: [] };
+            })
+          );
+          
+          setUserPosts(postsWithComments);
         }
       } catch (err) {
         console.error("Failed to fetch posts:", err);
@@ -700,6 +727,38 @@ export function HomeFeed() {
                 );
               })()}
             </div>
+
+            {/* AI Comments Section */}
+            {post.comments && post.comments.length > 0 && (
+              <div className="mt-4 space-y-3">
+                {post.comments.filter(c => c.isAI).map(comment => (
+                  <div
+                    key={comment.id}
+                    className="rounded-2xl border border-cyan-500/30 bg-gradient-to-br from-cyan-500/5 to-blue-500/5 px-4 py-3"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-cyan-500 to-blue-500 text-sm">
+                        🤖
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-xs font-semibold text-cyan-300">AI Шүүмжлэгч</span>
+                          <span className="inline-flex items-center gap-1 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] text-cyan-300 font-medium">
+                            ✨ Автомат
+                          </span>
+                        </div>
+                        <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-line">
+                          {comment.content}
+                        </p>
+                        <p className="mt-2 text-[10px] text-slate-500">
+                          {formatRelativeTime(comment.createdAt)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </article>
         ))}
       </div>

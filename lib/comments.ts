@@ -1,0 +1,73 @@
+// Comments management for posts
+import { supabase } from './supabase';
+
+export type Comment = {
+  id: string;
+  postId: string;
+  authorEmail: string;
+  authorName?: string;
+  content: string;
+  isAI: boolean;
+  createdAt: string;
+};
+
+function dbToComment(dbRow: any): Comment {
+  return {
+    id: dbRow.id,
+    postId: dbRow.post_id,
+    authorEmail: dbRow.author_email,
+    content: dbRow.content,
+    isAI: dbRow.is_ai || false,
+    createdAt: dbRow.created_at,
+  };
+}
+
+export async function createComment(data: {
+  postId: string;
+  authorEmail: string;
+  content: string;
+  isAI?: boolean;
+}): Promise<Comment> {
+  const commentId = `comment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  
+  const { data: inserted, error } = await supabase
+    .from('comments')
+    .insert([{
+      id: commentId,
+      post_id: data.postId,
+      author_email: data.authorEmail,
+      content: data.content,
+      is_ai: data.isAI || false,
+    }])
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error creating comment:', error);
+    throw error;
+  }
+
+  return dbToComment(inserted);
+}
+
+export async function getPostComments(postId: string): Promise<Comment[]> {
+  const { data, error } = await supabase
+    .from('comments')
+    .select('*')
+    .eq('post_id', postId)
+    .order('created_at', { ascending: true });
+
+  if (error || !data) return [];
+
+  return data.map(dbToComment);
+}
+
+export async function deleteComment(commentId: string, userEmail: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('comments')
+    .delete()
+    .eq('id', commentId)
+    .eq('author_email', userEmail);
+
+  return !error;
+}

@@ -3,6 +3,12 @@ import { getSessionFromCookies } from "../../../lib/session";
 import { createPost, getAllPosts, deletePost } from "../../../lib/posts";
 import { addNotification } from "../../../lib/notifications";
 import { getAllUsers } from "../../../lib/users";
+import { createComment } from "../../../lib/comments";
+import OpenAI from "openai";
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 // GET: Fetch all posts
 export async function GET() {
@@ -76,6 +82,62 @@ export async function POST(req: Request) {
     ...(imageUrl && { imageUrl }),
     visibility: visibility === 'PRIVATE' ? 'PRIVATE' : 'PUBLIC',
   });
+
+  // AI automatic critique for student posts (only for students)
+  if (session.role === 'student' && visibility === 'PUBLIC') {
+    try {
+      const aiPrompt = `Та graphic design багшийн AI туслах юм. Сурагчийн дизайн бүтээлийг шүүмжилж байна.
+
+Гарчиг: ${title}
+Тайлбар: ${description}
+${imageUrl ? 'Зурагтай бүтээл' : 'Зураггүй бүтээл'}
+
+Дараах байдлаар шүүмжлэл өг:
+1. ✅ Сайн талууд (1-2 өгүүлбэр)
+2. 💡 Сайжруулах санал (2-3 практик зөвлөмж)
+3. 🎯 Дараагийн алхам (юу дээр анхаарах)
+
+Монгол хэлээр, найрсаг, урам өгөх маягаар бич. Богино, тодорхой байлгаарай (5-6 өгүүлбэр).`;
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4",
+        messages: [
+          {
+            role: "system",
+            content: "Та graphic design багшийн AI туслах юм. Сурагчдад найрсаг, урам өгөх маягаар практик зөвлөмж өгдөг.",
+          },
+          {
+            role: "user",
+            content: aiPrompt,
+          },
+        ],
+        max_tokens: 300,
+      });
+
+      const aiCritique = completion.choices[0].message.content;
+
+      if (aiCritique) {
+        // Create AI comment
+        await createComment({
+          postId: newPost.id,
+          authorEmail: 'ai-assistant',
+          content: aiCritique,
+          isAI: true,
+        });
+
+        // Notify user about AI feedback
+        await addNotification(
+          session.email,
+          'ai-assistant',
+          'LIKE',
+          '🤖 AI шүүмжлэл таны бүтээлд бэлэн боллоо!'
+        );
+      }
+    } catch (aiError) {
+      console.error('AI critique error:', aiError);
+      // Don't fail the post creation if AI critique fails
+    }
+  }
 
   // Send notification to all users about new post (if public)
   if (visibility === 'PUBLIC') {
