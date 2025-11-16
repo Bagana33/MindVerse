@@ -601,13 +601,24 @@ export function HomeFeed() {
           >
             <div className="absolute inset-0 rounded-3xl border border-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" aria-hidden="true" />
             <header className="relative flex items-start gap-3">
-              <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900 text-sm font-bold text-white shadow-lg group-hover:shadow-xl transition-shadow">
-                {getInitials(post.author || post.authorEmail)}
+              <div className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full text-sm font-bold text-white shadow-lg group-hover:shadow-xl transition-shadow ${
+                post.authorEmail === 'news-bot' 
+                  ? 'bg-gradient-to-br from-cyan-500 via-blue-500 to-purple-500' 
+                  : 'bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900'
+              }`}>
+                {post.authorEmail === 'news-bot' ? '📰' : getInitials(post.author || post.authorEmail)}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="truncate text-sm font-bold text-slate-100">{post.author}</div>
+                    <div className="flex items-center gap-2">
+                      <div className="truncate text-sm font-bold text-slate-100">{post.author}</div>
+                      {post.authorEmail === 'news-bot' && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] text-cyan-300 font-medium">
+                          🤖 Мэдээ
+                        </span>
+                      )}
+                    </div>
                     <div className="text-[11px] text-slate-500">{formatRelativeTime(post.createdAt)}</div>
                     {session && post.authorEmail === session.email && (
                       <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-300 font-medium">
@@ -619,7 +630,7 @@ export function HomeFeed() {
                     <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-emerald-300 font-semibold">
                       XP {xpMap[post.authorEmail] ?? 0}
                     </span>
-                    {session && post.authorEmail === session.email && (
+                    {session && post.authorEmail === session.email && post.authorEmail !== 'news-bot' && (
                       <button
                         onClick={() => handleDeletePost(post.id)}
                         disabled={deletingPostId === post.id}
