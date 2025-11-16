@@ -262,8 +262,8 @@ export function LoginForm() {
                   <p className="text-xs text-slate-400 -mt-1">
                     Та хэдэн дүгээр ангид сурч байна вэ?
                   </p>
-                  <div className="grid grid-cols-4 gap-2">
-                    {["10", "11", "12", "Р"].map((gradeOption) => (
+                  <div className="grid grid-cols-3 gap-2">
+                    {["10", "11", "12"].map((gradeOption) => (
                       <label
                         key={gradeOption}
                         className={`flex items-center justify-center cursor-pointer rounded-lg glass-panel border px-4 py-3 transition-all ${
@@ -280,7 +280,7 @@ export function LoginForm() {
                           onChange={() => setGrade(gradeOption)}
                           className="hidden"
                         />
-                        <span className="font-semibold">{gradeOption}</span>
+                        <span className="font-semibold">{gradeOption} анги</span>
                       </label>
                     ))}
                   </div>
@@ -290,29 +290,33 @@ export function LoginForm() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-xl bg-gradient-to-r from-violet-500 to-purple-500 text-white text-sm font-bold py-3.5 mt-4 shadow-[0_20px_40px_rgba(139,92,246,0.5)] hover:shadow-[0_24px_48px_rgba(139,92,246,0.7)] hover:scale-[1.02] disabled:opacity-60 disabled:shadow-none transition-all duration-300"
+                className="w-full rounded-xl bg-gradient-to-r from-violet-500 to-purple-500 text-white font-bold py-4 mt-6 shadow-[0_20px_40px_rgba(139,92,246,0.5)] hover:shadow-[0_24px_48px_rgba(139,92,246,0.7)] hover:scale-[1.02] disabled:opacity-60 disabled:shadow-none transition-all duration-300 text-base"
               >
                 {loading
                   ? "⏳ Түр хүлээнэ үү..."
                   : mode === "signin"
                   ? "🚀 Нэвтрэх"
-                  : "✨ Бүртгүүлэх"}
+                  : "✨ Шинээр бүртгүүлэх"}
               </button>
 
-              <div className="flex justify-between items-center text-xs text-slate-400 pt-2">
-                <span>
-                  {mode === "signin" ? "Шинэ хэрэглэгч үү?" : "Бүртгэлтэй юу?"}
-                </span>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setMode((m) => (m === "signin" ? "signup" : "signin"))
-                  }
-                  className="text-violet-400 font-semibold hover:text-violet-300 transition-colors"
-                >
-                  {mode === "signin" ? "Бүртгүүлэх →" : "Нэвтрэх →"}
-                </button>
+              <div className="relative my-6">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-slate-700/50"></div>
+                </div>
+                <div className="relative flex justify-center text-xs">
+                  <span className="px-3 bg-slate-950 text-slate-500">эсвэл</span>
+                </div>
               </div>
+
+              <button
+                type="button"
+                onClick={() => setMode((m) => (m === "signin" ? "signup" : "signin"))}
+                className="w-full rounded-xl border-2 border-slate-700 hover:border-violet-500/50 bg-slate-900/50 hover:bg-slate-800/50 text-slate-200 font-semibold py-3.5 transition-all duration-300"
+              >
+                {mode === "signin" 
+                  ? "📝 Шинээр бүртгүүлэх" 
+                  : "🔑 Нэвтрэх хэсэг рүү шилжих"}
+              </button>
 
               {status && (
                 <div className="px-4 py-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">

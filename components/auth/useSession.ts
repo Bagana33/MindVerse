@@ -36,6 +36,8 @@ export function useSession() {
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
     await refresh();
+    // Redirect to login page after logout
+    window.location.href = "/login";
   }
 
   return { session, loading, refresh, logout } as const;
