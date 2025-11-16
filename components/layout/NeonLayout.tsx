@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Topbar } from "./Topbar";
+import StudentAssistant from "../assistant/StudentAssistant";
 
 export function NeonLayout({ children }: { children: ReactNode }) {
   return (
@@ -21,7 +22,8 @@ export function NeonLayout({ children }: { children: ReactNode }) {
         {children}
       </main>
 
-      <footer className="w-full max-w-6xl mx-auto px-4 pb-8 pt-2 text-center text-xs text-slate-500 border-t border-slate-800/50">
+  <StudentAssistant />
+  <footer className="w-full max-w-6xl mx-auto px-4 pb-8 pt-2 text-center text-xs text-slate-500 border-t border-slate-800/50">
         <div className="flex items-center justify-center gap-2">
           <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
           <span>Mind Verse · Graphic Design & Learning · {new Date().getFullYear()}</span>
