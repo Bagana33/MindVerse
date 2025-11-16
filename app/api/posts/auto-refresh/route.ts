@@ -11,19 +11,41 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Системийн хэрэглэгчийн ID (мэдээллийн постууд)
-const SYSTEM_USER_ID = "news-bot";
+// Системийн хэрэглэгчийн email
+const SYSTEM_USER_EMAIL = "news-bot";
 
 export async function POST(req: Request) {
   try {
+    // Ensure news-bot user exists
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', SYSTEM_USER_EMAIL)
+      .single();
+
+    if (!existingUser) {
+      const { error: userError } = await supabase
+        .from('users')
+        .insert([{
+          email: SYSTEM_USER_EMAIL,
+          name: '📰 Мэдээ',
+          role: 'teacher',
+          experience: 0,
+        }]);
+
+      if (userError) {
+        console.error("User creation error:", userError);
+      }
+    }
+
     // 24 цагаас хуучин постуудыг устгах
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     
     const { error: deleteError } = await supabase
       .from("posts")
       .delete()
-      .eq("authorId", SYSTEM_USER_ID)
-      .lt("createdAt", twentyFourHoursAgo);
+      .eq("author_email", SYSTEM_USER_EMAIL)
+      .lt("created_at", twentyFourHoursAgo);
 
     if (deleteError) {
       console.error("Delete error:", deleteError);
@@ -46,13 +68,15 @@ export async function POST(req: Request) {
     });
 
     const newsContent = completion.choices[0].message.content;
+    const postId = `post-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
     // Шинэ пост үүсгэх
     const newPost = {
-      authorId: SYSTEM_USER_ID,
-      content: newsContent || "Өнөөдрийн технологийн мэдээ",
-      imageUrl: null,
-      createdAt: new Date().toISOString(),
+      id: postId,
+      author_email: SYSTEM_USER_EMAIL,
+      text: newsContent || "Өнөөдрийн технологийн мэдээ",
+      image_data: null,
+      created_at: new Date().toISOString(),
     };
 
     const { data, error: insertError } = await supabase
