@@ -51,31 +51,51 @@ export async function POST(req: Request) {
       console.error("Delete error:", deleteError);
     }
 
-    // ChatGPT-аас шинэ мэдээ үүсгэх
+    // ChatGPT-аас graphic design мэдээ үүсгэх
     const completion = await openai.chat.completions.create({
       model: "gpt-4",
       messages: [
         {
           role: "system",
-          content: "Та сурагчдад зориулсан технологи, программчлал, эсвэл шинжлэх ухааны сонирхолтой мэдээллийг монгол хэл дээр өгдөг мэдээллийн бот юм. Богино (2-3 өгүүлбэр), тодорхой, сонирхолтой мэдээлэл өг.",
+          content: "Та graphic design сурагчдад зориулсан дизайн, зураг зурах, өнгө, typography, UI/UX, брэнд дизайн гэх мэт сонирхолтой мэдээ, зөвлөмж өгдөг мэдээллийн бот юм. Монгол хэл дээр богино (2-3 өгүүлбэр), практик, хэрэгтэй мэдээлэл өг. Жишээ нь: дизайны зарчим, өнгөний хослол, шинэ trend, tool-ийн зөвлөмж гэх мэт.",
         },
         {
           role: "user",
-          content: "Өнөөдрийн технологи эсвэл програмчлалын сонирхолтой мэдээ өгнө үү?",
+          content: "Өнөөдөр graphic design-тай холбоотой ямар нэг сонирхолтой мэдээ эсвэл зөвлөмж өгнө үү?",
         },
       ],
-      max_tokens: 150,
+      max_tokens: 200,
     });
 
     const newsContent = completion.choices[0].message.content;
+
+    // DALL-E ашиглаж зураг үүсгэх
+    let imageUrl = null;
+    try {
+      const imagePrompt = "A modern, minimalist graphic design illustration featuring vibrant gradients, geometric shapes, and creative typography. Abstract, professional, inspiring for designers. Neon colors, clean aesthetic.";
+      
+      const imageResponse = await openai.images.generate({
+        model: "dall-e-3",
+        prompt: imagePrompt,
+        n: 1,
+        size: "1024x1024",
+        quality: "standard",
+      });
+
+      imageUrl = imageResponse.data[0].url;
+    } catch (imageError) {
+      console.error("Image generation error:", imageError);
+      // Зураг үүсгэхэд алдаа гарсан ч мэдээ үүснэ
+    }
+
     const postId = `post-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
     // Шинэ пост үүсгэх
     const newPost = {
       id: postId,
       author_email: SYSTEM_USER_EMAIL,
-      text: newsContent || "Өнөөдрийн технологийн мэдээ",
-      image_data: null,
+      text: newsContent || "Өнөөдрийн дизайны мэдээ",
+      image_data: imageUrl,
       created_at: new Date().toISOString(),
     };
 

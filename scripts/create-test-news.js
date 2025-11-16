@@ -38,8 +38,8 @@ async function createTestNews() {
   const newPost = {
     id: postId,
     author_email: 'news-bot',
-    text: 'Өнөөдөр танд технологийн сонирхолтой мэдээлэл: JavaScript-ийн шинэ async/await функцууд таны кодыг илүү уншигдахуйц, ойлгомжтой болгодог. Програмчлалын ертөнцөд энэ бол маш чухал ахиц юм!',
-    image_data: null,
+    text: '🎨 Дизайны зөвлөмж: Өнгөний 60-30-10 дүрмийг ашигла! Үндсэн өнгө 60%, туслах өнгө 30%, онцлох өнгө 10% харьцаатай байвал дизайн тань илүү тэнцвэртэй, мэргэжлийн харагдана. Adobe Color Wheel-ээр өнгө сонгоод дадлага хий!',
+    image_data: 'https://images.unsplash.com/photo-1561070791-2526d30994b5?w=800&q=80', // Graphic design image
     created_at: new Date().toISOString(),
   };
 
