@@ -8,8 +8,28 @@ import { getAllUsers } from "../../../lib/users";
 export async function GET() {
   const session = await getSessionFromCookies();
   
-  // Бүх хэрэглэгчид бүх хичээлүүдийг харна
-  const lessons = await getAllLessons(true);
+  // Fetch all lessons
+  const allLessons = await getAllLessons(true);
+  
+  // Filter lessons based on student grade
+  let lessons = allLessons;
+  if (session && session.role === "student") {
+    // Get user's grade
+    const { getUser } = await import("../../../lib/users");
+    const user = await getUser(session.email);
+    const userGrade = user?.grade;
+    
+    // Filter: show lessons with matching grade or no target grades (all grades)
+    lessons = allLessons.filter(lesson => {
+      if (!lesson.targetGrades || lesson.targetGrades.length === 0) {
+        return true; // Show to all grades
+      }
+      if (!userGrade) {
+        return false; // Student has no grade set
+      }
+      return lesson.targetGrades.includes(userGrade);
+    });
+  }
   
   return NextResponse.json({ ok: true, lessons });
 }
@@ -28,6 +48,7 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const title = (body?.title ?? "").toString().trim();
   const description = (body?.description ?? "").toString().trim();
+  const targetGrades = Array.isArray(body?.targetGrades) ? body.targetGrades : [];
   const questions = body?.questions || [];
   const files = body?.files || [];
 
@@ -107,6 +128,7 @@ export async function POST(req: Request) {
     authorEmail: session.email,
     authorName: session.name || session.email,
     published: true, // Багш үүсгэсэн хичээл автоматаар нийтлэгдсэн
+    targetGrades,
     questions: questions.map((q: any, idx: number) => ({
       id: `q${idx + 1}`,
       question: q.question.trim(),

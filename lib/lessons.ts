@@ -36,6 +36,7 @@ export type Lesson = {
   authorEmail: string;
   authorName: string;
   published: boolean;
+  targetGrades: string[]; // ["10", "11", "12"] or [] for all grades
   questions: Question[];
   files: LessonFile[];
   submissions: LessonSubmission[];
@@ -51,6 +52,7 @@ function dbToLesson(dbRow: any, questions: Question[] = [], files: LessonFile[] 
     authorEmail: dbRow.author_email,
     authorName: dbRow.author_name,
     published: dbRow.published ?? true,
+    targetGrades: dbRow.target_grades || [],
     questions,
     files,
     submissions,
@@ -106,6 +108,7 @@ export async function createLesson(data: Omit<Lesson, "id" | "createdAt" | "upda
       author_email: data.authorEmail,
       author_name: data.authorName,
       published: data.published ?? true,
+      target_grades: data.targetGrades || [],
     }])
     .select()
     .single();

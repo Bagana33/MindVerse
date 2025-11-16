@@ -40,6 +40,7 @@ export default function LessonsPage() {
   // Form state
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [targetGrades, setTargetGrades] = useState<string[]>([]); // [] means all grades
   const [questions, setQuestions] = useState<QuestionInput[]>([
     { question: "", options: ["", "", "", ""], correctAnswer: 0, explanation: "" }
   ]);
@@ -132,7 +133,7 @@ export default function LessonsPage() {
       const res = await fetch("/api/lessons", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, description, questions, files }),
+        body: JSON.stringify({ title, description, targetGrades, questions, files }),
       });
 
       if (!res.ok) {
@@ -145,6 +146,7 @@ export default function LessonsPage() {
       setLessons([json.lesson, ...lessons]);
       setTitle("");
       setDescription("");
+      setTargetGrades([]);
       setQuestions([{ question: "", options: ["", "", "", ""], correctAnswer: 0, explanation: "" }]);
       setFiles([]);
       setShowCreateForm(false);
@@ -196,6 +198,44 @@ export default function LessonsPage() {
                   className="w-full rounded-lg bg-slate-950/60 border border-slate-700 px-4 py-2 text-sm focus:outline-none focus:border-violet-500 resize-none"
                   placeholder="Хичээлийн товч тайлбар"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-2">🎒 Зорилтот анги</label>
+                <p className="text-xs text-slate-400 mb-3">Хэддүгээр ангийн сурагчдад зориулсан вэ? (Сонголтгүй бол бүх ангид харагдана)</p>
+                <div className="flex flex-wrap gap-2">
+                  {["10", "11", "12"].map((grade) => (
+                    <button
+                      key={grade}
+                      type="button"
+                      onClick={() => {
+                        if (targetGrades.includes(grade)) {
+                          setTargetGrades(targetGrades.filter(g => g !== grade));
+                        } else {
+                          setTargetGrades([...targetGrades, grade]);
+                        }
+                      }}
+                      className={`px-4 py-2 rounded-lg border-2 text-sm font-semibold transition-all ${
+                        targetGrades.includes(grade)
+                          ? "border-violet-500 bg-violet-500/20 text-violet-200"
+                          : "border-slate-700 text-slate-400 hover:border-slate-600"
+                      }`}
+                    >
+                      {grade} анги
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setTargetGrades([])}
+                    className={`px-4 py-2 rounded-lg border-2 text-sm font-semibold transition-all ${
+                      targetGrades.length === 0
+                        ? "border-green-500 bg-green-500/20 text-green-200"
+                        : "border-slate-700 text-slate-400 hover:border-slate-600"
+                    }`}
+                  >
+                    ✨ Бүх анги
+                  </button>
+                </div>
               </div>
 
               <div>

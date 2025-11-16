@@ -22,6 +22,7 @@ export type Contest = {
   startDate: string;
   endDate: string;
   prize: number; // XP prize for winner
+  targetGrades: string[]; // ["10", "11", "12"] or [] for all grades
   participants: string[]; // emails of participants
   submissions: ContestSubmission[];
   status: "upcoming" | "active" | "ended";
@@ -49,6 +50,7 @@ function initializeDemoContests() {
       startDate: yesterday.toISOString(),
       endDate: nextWeek.toISOString(),
       prize: 100,
+      targetGrades: [], // All grades
       participants: ["enkhjin@demo.com", "bat-erdene@demo.com"],
       submissions: [
         {
@@ -74,6 +76,7 @@ function initializeDemoContests() {
       startDate: tomorrow.toISOString(),
       endDate: new Date(tomorrow.getTime() + 7 * 86400000).toISOString(),
       prize: 150,
+      targetGrades: [], // All grades
       participants: [],
       submissions: [],
       status: "upcoming",
