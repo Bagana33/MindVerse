@@ -42,10 +42,8 @@ export default function StudentAssistant() {
       if (!res.ok || !json.ok) throw new Error(json.error || "Алдаа гарлаа");
       setMessages((m) => [...m, { role: "assistant", content: json.answer }]);
     } catch (e: any) {
-      setMessages((m) => [
-        ...m,
-        { role: "assistant", content: e?.message || "Одоогоор хариулах боломжгүй байна." },
-      ]);
+      const msg = typeof e?.message === 'string' ? e.message : "Одоогоор хариулах боломжгүй байна.";
+      setMessages((m) => [...m, { role: "assistant", content: msg }]);
     } finally {
       setBusy(false);
     }

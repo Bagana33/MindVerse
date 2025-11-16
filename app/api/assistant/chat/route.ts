@@ -14,6 +14,14 @@ export async function POST(req: Request) {
   }
 
   let body: any = {};
+  // Basic runtime checks for clearer errors
+  if (!process.env.OPENAI_API_KEY) {
+    return NextResponse.json(
+      { ok: false, error: "Assistant not configured (missing OPENAI_API_KEY)." },
+      { status: 503 }
+    );
+  }
+
   try {
     body = await req.json();
   } catch {
@@ -56,8 +64,14 @@ export async function POST(req: Request) {
       "Сайн асуулт байна. Илүү тодорхой тайлбар өгвөл би илүү нарийн зөвлөмж өгч чадна.";
 
     return NextResponse.json({ ok: true, answer });
-  } catch (e) {
-    console.error("Assistant error:", e);
-    return NextResponse.json({ ok: true, answer: "Одоо түр завгүй байна. Дахин асуугаарай." });
+  } catch (e: any) {
+    const code = e?.status ?? e?.code ?? e?.response?.status;
+    const msg = e?.message || "Assistant error";
+    console.error("Assistant error:", code, msg);
+    // Return explicit error so client can show a useful message
+    let friendly = "Одоогоор туслах ажиллахгүй байна. Түр хугацааны дараа дахин оролдоно уу.";
+    if (code === 401) friendly = "Assistant тохиргоо буруу байна (API key шалгана уу).";
+    if (code === 429) friendly = "Assistant түр хязгаарласан байна (rate limit). Дараа дахин оролдоно уу.";
+    return NextResponse.json({ ok: false, error: friendly }, { status: 503 });
   }
 }
