@@ -217,10 +217,10 @@ export function LoginForm() {
                     : "Сурагчид XP цуглуулж, багш нар даалгавар үүсгэнэ"}
                 </p>
                 <div className="grid grid-cols-2 gap-3">
-                  <label className={`flex flex-col items-center justify-center gap-2 cursor-pointer rounded-xl glass-panel border px-4 py-4 transition-all ${
+                  <label className={`flex flex-col items-center justify-center gap-2 cursor-pointer rounded-xl border-2 px-4 py-5 transition-all duration-300 ${
                     role === "student" 
-                      ? "border-violet-500/50 bg-violet-500/10 text-violet-200 shadow-[0_8px_20px_rgba(139,92,246,0.3)]" 
-                      : "border-slate-700/50 text-slate-400 hover:border-slate-600 hover:bg-slate-800/30"
+                      ? "border-violet-500 bg-gradient-to-br from-violet-500/20 to-purple-500/20 text-white shadow-[0_8px_24px_rgba(139,92,246,0.5)] scale-105" 
+                      : "border-slate-700/50 text-slate-400 hover:border-violet-500/30 hover:bg-slate-800/30 hover:text-slate-300"
                   }`}>
                     <input
                       type="radio"
@@ -230,14 +230,14 @@ export function LoginForm() {
                       onChange={() => setRole("student")}
                       className="hidden"
                     />
-                    <span className="text-3xl">🎓</span>
-                    <span className="font-semibold">Сурагч</span>
-                    <span className="text-xs text-center opacity-75">XP цуглуулах, хичээл хийх</span>
+                    <span className="text-4xl">🎓</span>
+                    <span className="font-bold text-base">Сурагч</span>
+                    <span className="text-xs text-center opacity-80">XP цуглуулах, хичээл хийх</span>
                   </label>
-                  <label className={`flex flex-col items-center justify-center gap-2 cursor-pointer rounded-xl glass-panel border px-4 py-4 transition-all ${
+                  <label className={`flex flex-col items-center justify-center gap-2 cursor-pointer rounded-xl border-2 px-4 py-5 transition-all duration-300 ${
                     role === "teacher" 
-                      ? "border-violet-500/50 bg-violet-500/10 text-violet-200 shadow-[0_8px_20px_rgba(139,92,246,0.3)]" 
-                      : "border-slate-700/50 text-slate-400 hover:border-slate-600 hover:bg-slate-800/30"
+                      ? "border-violet-500 bg-gradient-to-br from-violet-500/20 to-purple-500/20 text-white shadow-[0_8px_24px_rgba(139,92,246,0.5)] scale-105" 
+                      : "border-slate-700/50 text-slate-400 hover:border-violet-500/30 hover:bg-slate-800/30 hover:text-slate-300"
                   }`}>
                     <input
                       type="radio"
@@ -247,9 +247,9 @@ export function LoginForm() {
                       onChange={() => setRole("teacher")}
                       className="hidden"
                     />
-                    <span className="text-3xl">👨‍🏫</span>
-                    <span className="font-semibold">Багш</span>
-                    <span className="text-xs text-center opacity-75">Даалгавар үүсгэх, үнэлэх</span>
+                    <span className="text-4xl">👨‍🏫</span>
+                    <span className="font-bold text-base">Багш</span>
+                    <span className="text-xs text-center opacity-80">Даалгавар үүсгэх, үнэлэх</span>
                   </label>
                 </div>
               </div>
@@ -260,16 +260,16 @@ export function LoginForm() {
                     🎒 Анги
                   </label>
                   <p className="text-xs text-slate-400 -mt-1">
-                    Та хэдэн дүгээр ангид сурч байна вэ?
+                    Та хэддүгээр анги вэ?
                   </p>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-3 gap-3">
                     {["10", "11", "12"].map((gradeOption) => (
                       <label
                         key={gradeOption}
-                        className={`flex items-center justify-center cursor-pointer rounded-lg glass-panel border px-4 py-3 transition-all ${
+                        className={`flex items-center justify-center cursor-pointer rounded-xl border-2 px-4 py-4 transition-all duration-300 ${
                           grade === gradeOption
-                            ? "border-violet-500/50 bg-violet-500/10 text-violet-200 shadow-[0_4px_12px_rgba(139,92,246,0.3)]"
-                            : "border-slate-700/50 text-slate-400 hover:border-slate-600 hover:bg-slate-800/30"
+                            ? "border-violet-500 bg-gradient-to-br from-violet-500/20 to-purple-500/20 text-white shadow-[0_8px_24px_rgba(139,92,246,0.4)] scale-105"
+                            : "border-slate-700/50 text-slate-400 hover:border-violet-500/30 hover:bg-slate-800/30 hover:text-slate-300"
                         }`}
                       >
                         <input
@@ -280,7 +280,7 @@ export function LoginForm() {
                           onChange={() => setGrade(gradeOption)}
                           className="hidden"
                         />
-                        <span className="font-semibold">{gradeOption} анги</span>
+                        <span className="text-lg font-bold">{gradeOption} анги</span>
                       </label>
                     ))}
                   </div>
