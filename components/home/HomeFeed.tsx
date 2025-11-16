@@ -188,9 +188,43 @@ export function HomeFeed() {
         setError(json.error || "Алдаа гарлаа");
         return;
       }
-
       const json = await res.json();
-      setUserPosts([json.post, ...userPosts]);
+
+      // Immediately fetch comments for the newly created post (to include AI critique if available)
+      async function fetchCommentsOnce(postId: string) {
+        try {
+          const cr = await fetch(`/api/posts/comments?postId=${postId}`, { cache: "no-store" });
+          if (cr.ok) {
+            const cjson = await cr.json();
+            return Array.isArray(cjson.comments) ? cjson.comments : [];
+          }
+        } catch (e) {
+          // ignore
+        }
+        return [] as Comment[];
+      }
+
+      // Attach initial comments
+      const initialComments = await fetchCommentsOnce(json.post.id);
+      const postWithComments: UserPost = { ...json.post, comments: initialComments };
+      setUserPosts([postWithComments, ...userPosts]);
+
+      // Light polling for AI critique (in case it's added a moment later)
+      // Try up to 5 times every 2s; update the post in place when AI comment appears
+      let attempts = 0;
+      const maxAttempts = 5;
+      const interval = setInterval(async () => {
+        attempts += 1;
+        const latest = await fetchCommentsOnce(json.post.id);
+        const hasAI = latest.some((c: any) => c.isAI);
+        if (hasAI || attempts >= maxAttempts) {
+          clearInterval(interval);
+        }
+        if (hasAI) {
+          setUserPosts(curr => curr.map(p => p.id === json.post.id ? { ...p, comments: latest } : p));
+        }
+      }, 2000);
+
       setTitle("");
       setDescription("");
       setImageUrl("");

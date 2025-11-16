@@ -86,9 +86,15 @@ export function CommentsSection({
 
   const aiComments = comments?.filter((c) => c.isAI) || [];
   const userComments = comments?.filter((c) => !c.isAI) || [];
+  const showAIPending = aiComments.length === 0 && userComments.length === 0;
 
   return (
     <div className="mt-4 space-y-3">
+      {showAIPending && (
+        <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-3 py-2 text-xs text-cyan-200">
+          🤖 AI шүүмжлэл 10–20 сек дотор автоматаар харагдана.
+        </div>
+      )}
       {/* AI Comments */}
       {aiComments.map((comment) => (
         <div

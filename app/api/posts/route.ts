@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionFromCookies } from "../../../lib/session";
 import { createPost, getAllPosts, deletePost } from "../../../lib/posts";
 import { addNotification } from "../../../lib/notifications";
-import { getAllUsers } from "../../../lib/users";
+import { getAllUsers, ensureAIUserExists } from "../../../lib/users";
 import { createComment } from "../../../lib/comments";
 import OpenAI from "openai";
 
@@ -100,7 +100,8 @@ ${imageUrl ? 'Зурагтай бүтээл' : 'Зураггүй бүтээл'}
 Монгол хэлээр, найрсаг, урам өгөх маягаар бич. Богино, тодорхой байлгаарай (5-6 өгүүлбэр).`;
 
       const completion = await openai.chat.completions.create({
-        model: "gpt-4",
+        // Prefer a lighter, widely available model
+        model: process.env.OPENAI_CHAT_MODEL || "gpt-4o-mini",
         messages: [
           {
             role: "system",
@@ -114,9 +115,11 @@ ${imageUrl ? 'Зурагтай бүтээл' : 'Зураггүй бүтээл'}
         max_tokens: 300,
       });
 
-      const aiCritique = completion.choices[0].message.content;
+  const aiCritique = completion.choices?.[0]?.message?.content;
 
       if (aiCritique) {
+        // Ensure AI user exists to satisfy FK constraint
+        await ensureAIUserExists();
         // Create AI comment
         await createComment({
           postId: newPost.id,
@@ -135,7 +138,18 @@ ${imageUrl ? 'Зурагтай бүтээл' : 'Зураггүй бүтээл'}
       }
     } catch (aiError) {
       console.error('AI critique error:', aiError);
-      // Don't fail the post creation if AI critique fails
+      // Fallback: post a short friendly default comment so students still get feedback
+      try {
+        await ensureAIUserExists();
+        await createComment({
+          postId: newPost.id,
+          authorEmail: 'ai-assistant',
+          content: `✅ Сайн тал: Сэдэв тодорхой, санаа сонирхолтой байна.\n\n💡 Зөвлөмж: Контраст (өнгө/хэмжээ) дээр илүү тоглоорой, зай талбайг амьсгаа авах боломжтой болго.\n\n🎯 Дараагийн алхам: Гарчиг, тайлбарын typography-г нэмж туршаарай.`,
+          isAI: true,
+        });
+      } catch (fallbackError) {
+        // ignore
+      }
     }
   }
 

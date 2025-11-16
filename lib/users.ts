@@ -209,3 +209,32 @@ export async function getLeaderboard(): Promise<User[]> {
 
   return data.map(dbToUser);
 }
+
+// Ensure the AI assistant user exists for FK integrity on comments
+export async function ensureAIUserExists(): Promise<void> {
+  const email = 'ai-assistant';
+  const { data, error } = await supabase
+    .from('users')
+    .select('email')
+    .eq('email', email)
+    .single();
+
+  if (data && !error) return; // exists
+
+  // Create lightweight AI user without password
+  const { error: insertError } = await supabase
+    .from('users')
+    .insert([
+      {
+        email,
+        name: '🤖 AI Шүүмжлэгч',
+        role: 'teacher',
+        experience: 0,
+      },
+    ]);
+
+  if (insertError) {
+    // Log but don't throw to avoid blocking post creation
+    console.error('Failed to create AI user:', insertError);
+  }
+}
