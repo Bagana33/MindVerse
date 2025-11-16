@@ -12,6 +12,7 @@ export function LoginForm() {
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<"student" | "teacher">("student");
+  const [grade, setGrade] = useState<string>("10"); // Default to grade 10
   const [rememberMe, setRememberMe] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +59,7 @@ export function LoginForm() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, name, mode, role }),
+        body: JSON.stringify({ email, password, name, mode, role, grade: role === "student" ? grade : undefined }),
       });
       if (!res.ok) {
         const json = await res.json();
@@ -252,6 +253,39 @@ export function LoginForm() {
                   </label>
                 </div>
               </div>
+
+              {mode === "signup" && role === "student" && (
+                <div className="space-y-3 text-sm">
+                  <label className="block font-semibold text-slate-200">
+                    🎒 Анги
+                  </label>
+                  <p className="text-xs text-slate-400 -mt-1">
+                    Та хэдэн дүгээр ангид сурч байна вэ?
+                  </p>
+                  <div className="grid grid-cols-4 gap-2">
+                    {["10", "11", "12", "Р"].map((gradeOption) => (
+                      <label
+                        key={gradeOption}
+                        className={`flex items-center justify-center cursor-pointer rounded-lg glass-panel border px-4 py-3 transition-all ${
+                          grade === gradeOption
+                            ? "border-violet-500/50 bg-violet-500/10 text-violet-200 shadow-[0_4px_12px_rgba(139,92,246,0.3)]"
+                            : "border-slate-700/50 text-slate-400 hover:border-slate-600 hover:bg-slate-800/30"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="grade"
+                          value={gradeOption}
+                          checked={grade === gradeOption}
+                          onChange={() => setGrade(gradeOption)}
+                          className="hidden"
+                        />
+                        <span className="font-semibold">{gradeOption}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <button
                 type="submit"

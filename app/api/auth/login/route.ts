@@ -18,6 +18,7 @@ export async function POST(req: Request) {
     const mode = (body?.mode ?? "signin").toString().trim();
     const roleRaw = (body?.role ?? "student").toString().trim().toLowerCase();
     const role: Role = roleRaw === "teacher" ? "teacher" : "student";
+    const grade = body?.grade ? body.grade.toString().trim() : undefined;
 
     if (!email) {
       return NextResponse.json({ ok: false, error: "Email шаардлагатай" }, { status: 400 });
@@ -37,7 +38,7 @@ export async function POST(req: Request) {
 
     if (mode === "signup") {
       try {
-        const created = await createUser(email, password, name, role);
+        const created = await createUser(email, password, name, role, grade);
         sessionUserName = created.name;
         sessionRole = created.role as Role;
       } catch (err: any) {

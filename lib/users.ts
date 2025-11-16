@@ -11,6 +11,7 @@ export type User = {
   avatarUrl?: string; // Profile picture (Base64 or URL)
   avatarColor?: string; // Avatar background color
   role: "student" | "teacher";
+  grade?: string; // Student grade: "10", "11", "12", or "Р"
   experience: number; // XP points
 };
 
@@ -25,6 +26,7 @@ function dbToUser(dbRow: any): User {
     avatarUrl: dbRow.avatar_url,
     avatarColor: dbRow.avatar_color,
     role: dbRow.role,
+    grade: dbRow.grade,
     experience: dbRow.experience || 0,
   };
 }
@@ -39,12 +41,13 @@ function userToDb(user: Partial<User>): any {
   if (user.avatarUrl !== undefined) dbObj.avatar_url = user.avatarUrl;
   if (user.avatarColor !== undefined) dbObj.avatar_color = user.avatarColor;
   if (user.role !== undefined) dbObj.role = user.role;
+  if (user.grade !== undefined) dbObj.grade = user.grade;
   if (user.experience !== undefined) dbObj.experience = user.experience;
   return dbObj;
 }
 
 // Create a new user (signup)
-export async function createUser(email: string, password: string, name?: string, role: "student" | "teacher" = "student"): Promise<User> {
+export async function createUser(email: string, password: string, name?: string, role: "student" | "teacher" = "student", grade?: string): Promise<User> {
   // Check if user already exists
   const existing = await getUser(email);
   const hashedPassword = await bcrypt.hash(password, 10);
@@ -54,7 +57,7 @@ export async function createUser(email: string, password: string, name?: string,
     if (!existing.password || existing.password.length === 0) {
       const { data, error } = await supabase
         .from('users')
-        .update(userToDb({ password: hashedPassword, name: name ?? existing.name, role: role ?? existing.role }))
+        .update(userToDb({ password: hashedPassword, name: name ?? existing.name, role: role ?? existing.role, grade: grade ?? existing.grade }))
         .eq('email', email)
         .select()
         .single();
@@ -73,6 +76,7 @@ export async function createUser(email: string, password: string, name?: string,
     password: hashedPassword,
     name,
     role,
+    grade: role === "student" ? grade : undefined,
     experience: 0,
     avatarColor: '#6366f1',
   };
