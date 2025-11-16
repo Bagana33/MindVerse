@@ -40,7 +40,10 @@ export default function StudentAssistant() {
       });
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "Алдаа гарлаа");
-      setMessages((m) => [...m, { role: "assistant", content: json.answer }]);
+      const answerText = json.offline
+        ? `ℹ️ OpenAI одоогоор ашиглах боломжгүй (rate limit эсвэл config). Доорх зөвлөгөөг ашиглана уу:\n\n${json.answer}`
+        : json.answer;
+      setMessages((m) => [...m, { role: "assistant", content: answerText }]);
     } catch (e: any) {
       const msg = typeof e?.message === 'string' ? e.message : "Одоогоор хариулах боломжгүй байна.";
       setMessages((m) => [...m, { role: "assistant", content: msg }]);
