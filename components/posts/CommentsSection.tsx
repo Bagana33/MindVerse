@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useSession } from "../auth/useSession";
 
 type Comment = {
@@ -39,6 +40,7 @@ export function CommentsSection({
   onCommentAdded?: (comment: Comment) => void;
 }) {
   const { session } = useSession();
+  const router = useRouter();
   const [commentText, setCommentText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [showInput, setShowInput] = useState(false);
@@ -162,7 +164,7 @@ export function CommentsSection({
           <div className="flex items-start gap-3">
             <button
               onClick={() => {
-                window.location.href = `/profile?user=${encodeURIComponent(comment.authorEmail)}`;
+                router.push(`/profile?user=${encodeURIComponent(comment.authorEmail)}`);
               }}
               className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-purple-500 text-xs font-bold text-white cursor-pointer hover:scale-110 hover:ring-2 hover:ring-violet-400/50 transition-all"
               title={`${comment.authorEmail.split("@")[0]}-н profile харах`}
@@ -173,7 +175,7 @@ export function CommentsSection({
               <div className="flex items-center gap-2 mb-1">
                 <button
                   onClick={() => {
-                    window.location.href = `/profile?user=${encodeURIComponent(comment.authorEmail)}`;
+                    router.push(`/profile?user=${encodeURIComponent(comment.authorEmail)}`);
                   }}
                   className="text-xs font-semibold text-slate-200 hover:text-violet-300 transition-colors cursor-pointer"
                 >

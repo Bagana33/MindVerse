@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useSession } from "../auth/useSession";
 
 type UserPost = {
@@ -27,6 +28,7 @@ type UserData = {
 
 export function ProfileView() {
   const { session, loading: sessionLoading } = useSession();
+  const router = useRouter();
   const [userData, setUserData] = useState<UserData | null>(null);
   const [userPosts, setUserPosts] = useState<UserPost[]>([]);
   const [loading, setLoading] = useState(true);
@@ -253,7 +255,7 @@ export function ProfileView() {
             </span>
             {session && (
               <button
-                onClick={() => window.location.href = '/profile'}
+                onClick={() => router.push('/profile')}
                 className="ml-auto text-xs text-violet-300 hover:text-violet-200 underline"
               >
                 Өөрийн profile руу буцах

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import PostImage from "../posts/PostImage";
 import ImageLightbox from "../posts/ImageLightbox";
 import { useSession } from "../auth/useSession";
@@ -62,6 +63,7 @@ function getInitials(name?: string) {
 
 export function HomeFeed() {
   const { session } = useSession();
+  const router = useRouter();
   const [userPosts, setUserPosts] = useState<UserPost[]>([]);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [title, setTitle] = useState("");
@@ -761,7 +763,7 @@ export function HomeFeed() {
               <button
                 onClick={() => {
                   if (post.authorEmail !== 'news-bot' && post.authorEmail !== 'ai-assistant') {
-                    window.location.href = `/profile?user=${encodeURIComponent(post.authorEmail)}`;
+                    router.push(`/profile?user=${encodeURIComponent(post.authorEmail)}`);
                   }
                 }}
                 disabled={post.authorEmail === 'news-bot' || post.authorEmail === 'ai-assistant'}
