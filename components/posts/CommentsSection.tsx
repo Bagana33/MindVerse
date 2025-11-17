@@ -163,21 +163,29 @@ export function CommentsSection({
         >
           <div className="flex items-start gap-3">
             <button
-              onClick={() => {
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
                 router.push(`/profile?user=${encodeURIComponent(comment.authorEmail)}`);
               }}
               className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-purple-500 text-xs font-bold text-white cursor-pointer hover:scale-110 hover:ring-2 hover:ring-violet-400/50 transition-all"
               title={`${comment.authorEmail.split("@")[0]}-н profile харах`}
+              style={{ pointerEvents: 'auto' }}
             >
               {comment.authorEmail[0].toUpperCase()}
             </button>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1">
                 <button
-                  onClick={() => {
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
                     router.push(`/profile?user=${encodeURIComponent(comment.authorEmail)}`);
                   }}
                   className="text-xs font-semibold text-slate-200 hover:text-violet-300 transition-colors cursor-pointer"
+                  style={{ pointerEvents: 'auto' }}
                 >
                   {comment.authorEmail.split("@")[0]}
                 </button>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useSession } from "../auth/useSession";
 import Medal3D from "./Medal3D";
 
@@ -19,6 +20,7 @@ export function LeaderboardSidebar({ compact = false }: { compact?: boolean }) {
   const [users, setUsers] = useState<LeaderboardUser[]>([]);
   const [loading, setLoading] = useState(true);
   const { session } = useSession();
+  const router = useRouter();
 
   useEffect(() => {
     async function fetchLeaderboard() {
@@ -103,8 +105,11 @@ export function LeaderboardSidebar({ compact = false }: { compact?: boolean }) {
                   {isTop3 ? (idx === 0 ? <Medal3D /> : medals[idx]) : idx + 1}
                 </div>
                 {(u.avatarUrl || u.avatarColor) ? (
-                  <div 
-                    className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shadow-lg overflow-hidden"
+                  <button
+                    type="button"
+                    title={`${(u.nickname || u.name || u.email)}-н profile харах`}
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`/profile?user=${encodeURIComponent(u.email)}`); }}
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shadow-lg overflow-hidden cursor-pointer hover:ring-2 hover:ring-violet-400/50"
                     style={{ backgroundColor: u.avatarColor || '#1e293b' }}
                   >
                     {u.avatarUrl ? (
@@ -112,12 +117,17 @@ export function LeaderboardSidebar({ compact = false }: { compact?: boolean }) {
                     ) : (
                       <span className="text-white">{(u.nickname || u.name || u.email)[0]?.toUpperCase()}</span>
                     )}
-                  </div>
+                  </button>
                 ) : null}
                 <div className="flex-1 min-w-0">
-                  <div className="font-semibold truncate text-slate-200">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`/profile?user=${encodeURIComponent(u.email)}`); }}
+                    className="font-semibold truncate text-slate-200 text-left hover:text-violet-300 transition-colors"
+                    title={`${(u.nickname || u.name || u.email)}-н profile харах`}
+                  >
                     {u.nickname || u.name || u.email.split('@')[0]} {isMe && <span className="ml-1 text-[10px] text-violet-300">(You)</span>}
-                  </div>
+                  </button>
                   <div className={`text-[10px] ${isTop3 ? 'text-violet-300' : 'text-slate-500'}`}>
                     {u.experience >= 1000 ? "⭐ Expert" : u.experience >= 500 ? "💎 Advanced" : u.experience >= 100 ? "🎯 Intermediate" : "🌱 Beginner"}
                   </div>
@@ -147,6 +157,7 @@ export function LeaderboardFull() {
   const [rankFilter, setRankFilter] = useState<string>("all");
   const [gradeFilter, setGradeFilter] = useState<string>("all"); // New grade filter
   const { session } = useSession();
+  const router = useRouter();
 
   useEffect(() => {
     async function fetchLeaderboard(grade?: string) {
@@ -342,28 +353,43 @@ export function LeaderboardFull() {
               </div>
               <div className="flex items-center gap-2">
                 {u.avatarUrl ? (
-                  <img 
-                    src={u.avatarUrl} 
-                    alt={u.nickname || u.name || u.email}
-                    className="w-9 h-9 rounded-full object-cover border shadow-sm"
+                  <button
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`/profile?user=${encodeURIComponent(u.email)}`); }}
+                    title={`${(u.nickname || u.name || u.email)}-н profile харах`}
+                    className="w-9 h-9 rounded-full border shadow-sm overflow-hidden cursor-pointer hover:ring-2 hover:ring-violet-400/50"
                     style={{ borderColor: u.avatarColor || '#6366f1' }}
-                  />
+                  >
+                    <img 
+                      src={u.avatarUrl} 
+                      alt={u.nickname || u.name || u.email}
+                      className="w-full h-full rounded-full object-cover"
+                    />
+                  </button>
                 ) : (
-                  <div 
-                    className="w-9 h-9 rounded-full border flex items-center justify-center text-[11px] font-semibold shadow-sm"
+                  <button
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`/profile?user=${encodeURIComponent(u.email)}`); }}
+                    title={`${(u.nickname || u.name || u.email)}-н profile харах`}
+                    className="w-9 h-9 rounded-full border flex items-center justify-center text-[11px] font-semibold shadow-sm cursor-pointer hover:ring-2 hover:ring-violet-400/50"
                     style={{ 
                       background: `linear-gradient(to top right, ${u.avatarColor || '#6366f1'}, ${u.avatarColor || '#6366f1'}dd)`,
                       borderColor: u.avatarColor || '#6366f1'
                     }}
                   >
                     {(u.nickname || u.name || u.email)[0]?.toUpperCase()}
-                  </div>
+                  </button>
                 )}
                 <div className="min-w-0">
-                  <div className="font-medium truncate">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`/profile?user=${encodeURIComponent(u.email)}`); }}
+                    className="font-medium truncate text-left hover:text-violet-300 transition-colors"
+                    title={`${(u.nickname || u.name || u.email)}-н profile харах`}
+                  >
                     {u.nickname || u.name || u.email}
                     {isMe && <span className="ml-1 text-[10px] text-violet-300 font-semibold">(You)</span>}
-                  </div>
+                  </button>
                   <div className="text-[10px] text-nc-muted">XP collector</div>
                 </div>
               </div>
