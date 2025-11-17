@@ -62,6 +62,28 @@ export async function getPostComments(postId: string): Promise<Comment[]> {
   return data.map(dbToComment);
 }
 
+// Batch counts for comments to avoid N+1 queries in feed
+export async function getCommentCounts(postIds: string[]): Promise<Record<string, number>> {
+  if (!postIds.length) return {};
+  // Supabase: use group by via RPC-like approach with select and group
+  const { data, error } = await supabase
+    .from('comments')
+    .select('post_id')
+    .in('post_id', postIds);
+
+  if (error || !data) return {};
+  const map: Record<string, number> = {};
+  for (const row of data as any[]) {
+    const id = row.post_id as string;
+    map[id] = (map[id] || 0) + 1;
+  }
+  // Ensure all ids are present
+  for (const id of postIds) {
+    if (!(id in map)) map[id] = 0;
+  }
+  return map;
+}
+
 export async function deleteComment(commentId: string, userEmail: string): Promise<boolean> {
   const { error } = await supabase
     .from('comments')

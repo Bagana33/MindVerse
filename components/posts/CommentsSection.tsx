@@ -42,6 +42,25 @@ export function CommentsSection({
   const [commentText, setCommentText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [showInput, setShowInput] = useState(false);
+  const [loaded, setLoaded] = useState(!!comments && comments.length > 0);
+  const [localComments, setLocalComments] = useState<Comment[]>(comments || []);
+  const [loading, setLoading] = useState(false);
+
+  async function loadComments() {
+    if (loaded || loading) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/posts/comments?postId=${postId}`);
+      if (res.ok) {
+        const json = await res.json();
+        const list = (json.comments || []) as Comment[];
+        setLocalComments(list);
+        setLoaded(true);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -84,12 +103,25 @@ export function CommentsSection({
     }
   }
 
-  const aiComments = comments?.filter((c) => c.isAI) || [];
-  const userComments = comments?.filter((c) => !c.isAI) || [];
-  const showAIPending = aiComments.length === 0 && userComments.length === 0;
+  const aiComments = localComments.filter((c) => c.isAI) || [];
+  const userComments = localComments.filter((c) => !c.isAI) || [];
+  const showAIPending = loaded && aiComments.length === 0 && userComments.length === 0;
 
   return (
     <div className="mt-4 space-y-3">
+      {/* Lazy load trigger */}
+      {!loaded && (
+        <button onClick={loadComments} className="text-xs text-slate-400 hover:text-slate-200">
+          💬 Сэтгэгдэл харах
+        </button>
+      )}
+
+      {loading && (
+        <div className="rounded-xl border border-slate-700/50 bg-slate-800/30 px-3 py-2 text-xs text-slate-300">
+          Loading comments...
+        </div>
+      )}
+
       {showAIPending && (
         <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 px-3 py-2 text-xs text-cyan-200">
           🤖 AI шүүмжлэл 10–20 сек дотор автоматаар харагдана.

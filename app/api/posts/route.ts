@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionFromCookies } from "../../../lib/session";
-import { createPost, getAllPosts, deletePost } from "../../../lib/posts";
+import { createPost, getAllPosts, deletePost, getPostsPage } from "../../../lib/posts";
 import { addNotification } from "../../../lib/notifications";
 import { getAllUsers, ensureAIUserExists } from "../../../lib/users";
 import { createComment } from "../../../lib/comments";
@@ -11,16 +11,25 @@ const openai = new OpenAI({
 });
 
 // GET: Fetch all posts
-export async function GET() {
+export async function GET(req: Request) {
   const session = await getSessionFromCookies();
-  const posts = await getAllPosts();
+  const { searchParams } = new URL(req.url);
+  const limit = Math.max(1, Math.min(50, Number(searchParams.get('limit') || 20)));
+  const before = searchParams.get('before') || undefined;
+  const posts = await getPostsPage(limit, before);
 
   // If user is signed in, include their private posts; otherwise only public posts
   const visible = session
     ? posts.filter((p) => p.visibility === 'PUBLIC' || p.authorEmail === session.email)
     : posts.filter((p) => p.visibility === 'PUBLIC');
 
-  return NextResponse.json({ ok: true, posts: visible });
+  // Short edge cache to smooth bursts
+  return new NextResponse(JSON.stringify({ ok: true, posts: visible }), {
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'public, s-maxage=5, stale-while-revalidate=30'
+    }
+  });
 }
 
 // POST: Create a new post (requires authentication)

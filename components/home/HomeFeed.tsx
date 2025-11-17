@@ -102,28 +102,23 @@ export function HomeFeed() {
   useEffect(() => {
     async function fetchPosts() {
       try {
-        const res = await fetch("/api/posts");
+        const res = await fetch("/api/posts?limit=20");
         if (res.ok) {
           const json = await res.json();
-          const posts = json.posts || [];
-          
-          // Fetch comments for each post
-          const postsWithComments = await Promise.all(
-            posts.map(async (post: UserPost) => {
-              try {
-                const commentsRes = await fetch(`/api/posts/comments?postId=${post.id}`);
-                if (commentsRes.ok) {
-                  const commentsJson = await commentsRes.json();
-                  return { ...post, comments: commentsJson.comments || [] };
-                }
-              } catch (e) {
-                console.error('Failed to fetch comments for post:', post.id);
+          const posts: UserPost[] = json.posts || [];
+          setUserPosts(posts);
+
+          // Fetch comment counts in batch for labels (optional)
+          const ids = posts.map(p => p.id).join(',');
+          if (ids) {
+            try {
+              const cr = await fetch(`/api/posts/comments/counts?ids=${ids}`);
+              if (cr.ok) {
+                const cjson = await cr.json();
+                // we'll store counts in a weak map via comments length when loaded; for now ignored in UI
               }
-              return { ...post, comments: [] };
-            })
-          );
-          
-          setUserPosts(postsWithComments);
+            } catch {}
+          }
         }
       } catch (err) {
         console.error("Failed to fetch posts:", err);

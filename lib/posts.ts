@@ -78,14 +78,25 @@ export async function getUserPosts(email: string): Promise<UserPost[]> {
 }
 
 export async function getAllPosts(): Promise<UserPost[]> {
-  const { data: posts, error: postsError } = await supabase
+  // Keep for backward-compat; delegate to paginated fetch with default limit
+  return getPostsPage(30);
+}
+
+// Paginated posts with optional cursor (created_at before)
+export async function getPostsPage(limit = 20, beforeISO?: string): Promise<UserPost[]> {
+  let query = supabase
     .from('posts')
     .select('*')
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(limit);
 
+  if (beforeISO) {
+    query = query.lt('created_at', beforeISO);
+  }
+
+  const { data: posts, error: postsError } = await query;
   if (postsError || !posts) return [];
 
-  // Get all reactions
   const postIds = posts.map(p => p.id);
   const { data: reactions } = await supabase
     .from('reactions')
