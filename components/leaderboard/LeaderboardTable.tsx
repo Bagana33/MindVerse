@@ -190,7 +190,10 @@ export function LeaderboardFull() {
 
     // Filter by grade
     if (gradeFilter !== "all") {
-      filtered = filtered.filter(u => u.grade === gradeFilter);
+      filtered = filtered.filter(u => {
+        // Only show users who have explicitly set their grade to the selected value
+        return u.grade !== null && u.grade !== undefined && u.grade === gradeFilter;
+      });
     }
 
     setFilteredUsers(filtered);
