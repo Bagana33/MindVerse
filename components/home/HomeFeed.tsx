@@ -759,20 +759,28 @@ export function HomeFeed() {
             className="relative overflow-hidden rounded-3xl border border-slate-700/50 glass-panel glass-panel-hover px-4 py-5 shadow-[0_12px_40px_rgba(0,0,0,0.45)] sm:px-6 group"
           >
             <div className="absolute inset-0 rounded-3xl border border-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" aria-hidden="true" />
-            <header className="relative flex items-start gap-3">
+            <header className="relative flex items-start gap-3 z-10">
               <button
-                onClick={() => {
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  console.log('Avatar clicked:', post.authorEmail);
                   if (post.authorEmail !== 'news-bot' && post.authorEmail !== 'ai-assistant') {
+                    console.log('Navigating to profile:', `/profile?user=${encodeURIComponent(post.authorEmail)}`);
                     router.push(`/profile?user=${encodeURIComponent(post.authorEmail)}`);
+                  } else {
+                    console.log('Skipping navigation for bot:', post.authorEmail);
                   }
                 }}
                 disabled={post.authorEmail === 'news-bot' || post.authorEmail === 'ai-assistant'}
-                className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full text-sm font-bold text-white shadow-lg group-hover:shadow-xl transition-all ${
+                className={`relative z-20 flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full text-sm font-bold text-white shadow-lg group-hover:shadow-xl transition-all ${
                   post.authorEmail === 'news-bot' 
                     ? 'bg-gradient-to-br from-cyan-500 via-blue-500 to-purple-500' 
                     : 'bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900'
-                } ${post.authorEmail !== 'news-bot' && post.authorEmail !== 'ai-assistant' ? 'cursor-pointer hover:scale-110 hover:ring-2 hover:ring-violet-400/50' : 'cursor-default'}`}
+                } ${post.authorEmail !== 'news-bot' && post.authorEmail !== 'ai-assistant' ? 'cursor-pointer hover:scale-110 hover:ring-2 hover:ring-violet-400/50 active:scale-95' : 'cursor-default'}`}
                 title={post.authorEmail !== 'news-bot' && post.authorEmail !== 'ai-assistant' ? `${post.author}-н profile харах` : ''}
+                style={{ pointerEvents: 'auto' }}
               >
                 {post.authorEmail === 'news-bot' ? '📰' : getInitials(post.author || post.authorEmail)}
               </button>
