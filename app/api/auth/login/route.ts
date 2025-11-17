@@ -1,9 +1,19 @@
 import { NextResponse } from "next/server";
 import { Role, Session, setSessionCookie } from "../../../../lib/session";
 import { createUser, verifyUser, getUser } from "../../../../lib/users";
+import { getClientKey, rateLimit } from "../../../../lib/rate-limit";
 
 export async function POST(req: Request) {
   try {
+    // Basic rate limit to protect CPU (bcrypt) under bursts
+    const key = getClientKey(req, 'auth-login');
+    const rl = rateLimit(key, { windowMs: 30_000, max: 8 }); // 8 req / 30s per IP
+    if (!rl.ok) {
+      return new NextResponse(
+        JSON.stringify({ ok: false, error: "Хэт олон оролдлого. Дахин оролдох хугацаа: " + rl.retryAfterSec + " сек" }),
+        { status: 429, headers: { 'Content-Type': 'application/json', 'Retry-After': String(rl.retryAfterSec || 30) } }
+      );
+    }
     let body;
     try {
       body = await req.json();

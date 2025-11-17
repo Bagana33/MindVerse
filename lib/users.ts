@@ -227,6 +227,22 @@ export async function getLeaderboard(): Promise<User[]> {
   return data.map(dbToUser);
 }
 
+// Lightweight leaderboard query selecting only necessary columns
+export async function getLeaderboardLight(): Promise<User[]> {
+  const { data, error } = await supabase
+    .from('users')
+    .select('email,name,nickname,avatar_url,avatar_color,role,grade,experience')
+    .eq('role', 'student')
+    .order('experience', { ascending: false });
+
+  if (error || !data) {
+    console.error('Error fetching leaderboard (light):', error);
+    return [];
+  }
+
+  return data.map(dbToUser);
+}
+
 // Ensure the AI assistant user exists for FK integrity on comments
 export async function ensureAIUserExists(): Promise<void> {
   const email = 'ai-assistant';
