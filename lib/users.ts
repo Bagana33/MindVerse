@@ -31,7 +31,22 @@ function dbToUser(dbRow: any): User {
   };
 }
 
-function userToDb(user: Partial<User>): any {
+// Cache whether 'grade' column exists (Supabase prod may lag migrations)
+let cachedSupportsGrade: boolean | null = null;
+async function supportsGradeColumn(): Promise<boolean> {
+  if (cachedSupportsGrade !== null) return cachedSupportsGrade;
+  // Try selecting the column; if it errors, column is missing
+  const { error } = await supabase.from('users').select('grade').limit(1);
+  if (error && typeof error.message === 'string' && /column .*grade.* does not exist/i.test(error.message)) {
+    cachedSupportsGrade = false;
+  } else {
+    cachedSupportsGrade = true;
+  }
+  return cachedSupportsGrade;
+}
+
+function userToDb(user: Partial<User>, opts: { includeGrade?: boolean } = {}): any {
+  const includeGrade = opts.includeGrade !== undefined ? opts.includeGrade : true;
   const dbObj: any = {};
   if (user.email !== undefined) dbObj.email = user.email;
     if (user.password !== undefined) dbObj.password = user.password;
@@ -41,7 +56,7 @@ function userToDb(user: Partial<User>): any {
   if (user.avatarUrl !== undefined) dbObj.avatar_url = user.avatarUrl;
   if (user.avatarColor !== undefined) dbObj.avatar_color = user.avatarColor;
   if (user.role !== undefined) dbObj.role = user.role;
-  if (user.grade !== undefined) dbObj.grade = user.grade;
+  if (includeGrade && user.grade !== undefined) dbObj.grade = user.grade;
   if (user.experience !== undefined) dbObj.experience = user.experience;
   return dbObj;
 }
@@ -51,13 +66,14 @@ export async function createUser(email: string, password: string, name?: string,
   // Check if user already exists
   const existing = await getUser(email);
   const hashedPassword = await bcrypt.hash(password, 10);
+  const includeGrade = await supportsGradeColumn();
 
   if (existing) {
     // Migration-friendly: if existing user has no password yet, set it now and update optional fields
     if (!existing.password || existing.password.length === 0) {
       const { data, error } = await supabase
         .from('users')
-        .update(userToDb({ password: hashedPassword, name: name ?? existing.name, role: role ?? existing.role, grade: grade ?? existing.grade }))
+        .update(userToDb({ password: hashedPassword, name: name ?? existing.name, role: role ?? existing.role, grade: grade ?? existing.grade }, { includeGrade }))
         .eq('email', email)
         .select()
         .single();
@@ -83,7 +99,7 @@ export async function createUser(email: string, password: string, name?: string,
 
   const { data, error } = await supabase
     .from('users')
-    .insert([userToDb(newUser)])
+    .insert([userToDb(newUser, { includeGrade })])
     .select()
     .single();
 
@@ -128,9 +144,10 @@ export async function getUser(email: string): Promise<User | null> {
 }
 
 export async function updateUser(email: string, updates: Partial<Omit<User, 'email' | 'role'>>): Promise<User | null> {
+  const includeGrade = await supportsGradeColumn();
   const { data, error } = await supabase
     .from('users')
-    .update(userToDb(updates))
+    .update(userToDb(updates as any, { includeGrade }))
     .eq('email', email)
     .select()
     .single();
