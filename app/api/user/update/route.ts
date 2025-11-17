@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { nickname, bio, avatarUrl, avatarColor } = body;
+  const { nickname, bio, avatarUrl, avatarColor, grade } = body;
 
     // Validate inputs
     if (nickname !== undefined) {
@@ -30,12 +30,21 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Өнгийн формат буруу байна" }, { status: 400 });
     }
 
-    // Update user with new data (this will also save to file)
+    // Validate grade (optional)
+    if (grade !== undefined) {
+      const g = String(grade).trim();
+      if (!['10','11','12'].includes(g)) {
+        return NextResponse.json({ error: "Анги 10/11/12 байх ёстой" }, { status: 400 });
+      }
+    }
+
+    // Update user with new data
     const updates: any = {};
     if (nickname !== undefined) updates.nickname = nickname.trim() || undefined;
     if (bio !== undefined) updates.bio = bio.trim() || undefined;
     if (avatarUrl !== undefined) updates.avatarUrl = avatarUrl || undefined;
     if (avatarColor !== undefined) updates.avatarColor = avatarColor || undefined;
+    if (grade !== undefined) updates.grade = String(grade).trim();
 
     const user = await updateUser(session.email, updates);
 
@@ -53,6 +62,7 @@ export async function POST(request: NextRequest) {
         avatarUrl: user.avatarUrl,
         avatarColor: user.avatarColor,
         role: user.role,
+        grade: (user as any).grade,
         experience: user.experience,
       }
     });

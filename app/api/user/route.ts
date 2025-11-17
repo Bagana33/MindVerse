@@ -23,6 +23,7 @@ export async function GET(req: Request) {
     avatarUrl: user.avatarUrl,
     avatarColor: user.avatarColor,
     role: user.role,
+    grade: (user as any).grade,
     experience: user.experience,
   };
 

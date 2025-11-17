@@ -21,6 +21,7 @@ type UserData = {
   avatarUrl?: string;
   avatarColor?: string;
   role: "student" | "teacher";
+  grade?: string; // "10" | "11" | "12"
   experience: number;
 };
 
@@ -36,6 +37,7 @@ export function ProfileView() {
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editGrade, setEditGrade] = useState<string>("");
 
   useEffect(() => {
     async function fetchUserData() {
@@ -54,6 +56,7 @@ export function ProfileView() {
           setEditBio(json.user.bio || "");
           setEditAvatarColor(json.user.avatarColor || "#6366f1");
           setAvatarPreview(json.user.avatarUrl || null);
+          setEditGrade(json.user.grade || "");
         } else {
           // User not found in storage, create default user data from session
           console.log("User not found, creating default from session");
@@ -64,6 +67,7 @@ export function ProfileView() {
             experience: 0,
           };
           setUserData(defaultUserData);
+          setEditGrade("");
         }
 
         // Fetch user's posts
@@ -128,6 +132,7 @@ export function ProfileView() {
           bio: editBio,
           avatarUrl: avatarPreview,
           avatarColor: editAvatarColor,
+          grade: userData?.role === "student" ? (editGrade || undefined) : undefined,
         }),
       });
 
@@ -153,6 +158,7 @@ export function ProfileView() {
     setEditBio(userData?.bio || "");
     setEditAvatarColor(userData?.avatarColor || "#6366f1");
     setAvatarPreview(userData?.avatarUrl || null);
+    setEditGrade(userData?.grade || "");
     setError(null);
   }
 
@@ -233,6 +239,12 @@ export function ProfileView() {
                           ⚡ {userData.experience} XP
                         </span>
                       )}
+                      {/* Grade Badge */}
+                      {userData && userData.role === "student" && userData.grade && (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-green-500/40 bg-green-500/10 px-2.5 py-1 text-xs font-semibold">
+                          🎒 {userData.grade} анги
+                        </span>
+                      )}
                     </div>
                     {userData?.nickname && (
                       <p className="text-xs text-nc-muted">{session.email}</p>
@@ -282,6 +294,41 @@ export function ProfileView() {
                   />
                   <p className="text-[10px] text-slate-500 mt-1">{editBio.length}/500</p>
                 </div>
+                {/* Grade Selector for Students */}
+                {userData?.role === "student" && (
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Анги</label>
+                    <div className="flex flex-wrap gap-2">
+                      {[{ id: "10", label: "10 анги" }, { id: "11", label: "11 анги" }, { id: "12", label: "12 анги" }].map(g => (
+                        <button
+                          key={g.id}
+                          type="button"
+                          onClick={() => setEditGrade(g.id)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                            editGrade === g.id
+                              ? "bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-[0_4px_12px_rgba(34,197,94,0.4)]"
+                              : "bg-slate-900/60 border border-slate-700 text-slate-300 hover:border-green-500/40 hover:text-slate-100"
+                          }`}
+                        >
+                          {g.label}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setEditGrade("")}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                          editGrade === ""
+                            ? "bg-slate-800 text-white border border-slate-600"
+                            : "bg-slate-900/60 border border-slate-700 text-slate-300 hover:border-slate-500/40 hover:text-slate-100"
+                        }`}
+                        title="Цэвэрлэх"
+                      >
+                        Цэвэрлэх
+                      </button>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1">10/11/12 ангийг сонгоно уу</p>
+                  </div>
+                )}
                 <div>
                   <label className="block text-xs text-slate-400 mb-1">Avatar өнгө</label>
                   <div className="flex items-center gap-2">
