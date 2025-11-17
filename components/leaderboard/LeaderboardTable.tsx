@@ -149,9 +149,11 @@ export function LeaderboardFull() {
   const { session } = useSession();
 
   useEffect(() => {
-    async function fetchLeaderboard() {
+    async function fetchLeaderboard(grade?: string) {
       try {
-        const res = await fetch("/api/leaderboard");
+        setLoading(true);
+        const url = grade && grade !== 'all' ? `/api/leaderboard?grade=${grade}` : "/api/leaderboard";
+        const res = await fetch(url);
         if (res.ok) {
           const json = await res.json();
           setUsers(json.leaderboard || []);
@@ -163,8 +165,8 @@ export function LeaderboardFull() {
         setLoading(false);
       }
     }
-    fetchLeaderboard();
-  }, []);
+    fetchLeaderboard(gradeFilter);
+  }, [gradeFilter]);
 
   useEffect(() => {
     let filtered = [...users];

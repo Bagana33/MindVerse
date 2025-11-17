@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { getLeaderboardLight } from "../../../lib/users";
 
-export async function GET() {
-  const leaderboard = await getLeaderboardLight();
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const gradeParam = searchParams.get('grade') || undefined;
+  const leaderboard = await getLeaderboardLight(gradeParam as any);
   const safe = leaderboard.map(u => ({
     email: u.email,
     name: u.name,

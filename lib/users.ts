@@ -228,12 +228,18 @@ export async function getLeaderboard(): Promise<User[]> {
 }
 
 // Lightweight leaderboard query selecting only necessary columns
-export async function getLeaderboardLight(): Promise<User[]> {
-  const { data, error } = await supabase
+export async function getLeaderboardLight(grade?: string): Promise<User[]> {
+  let query = supabase
     .from('users')
     .select('email,name,nickname,avatar_url,avatar_color,role,grade,experience')
     .eq('role', 'student')
     .order('experience', { ascending: false });
+
+  if (grade && ['10','11','12'].includes(grade)) {
+    query = query.eq('grade', grade);
+  }
+
+  const { data, error } = await query;
 
   if (error || !data) {
     console.error('Error fetching leaderboard (light):', error);

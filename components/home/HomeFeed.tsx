@@ -80,6 +80,10 @@ export function HomeFeed() {
   const [commentText, setCommentText] = useState<Record<string, string>>({});
   const [commentingPostId, setCommentingPostId] = useState<string | null>(null);
   const [showCommentBox, setShowCommentBox] = useState<Record<string, boolean>>({});
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState<boolean>(true);
+  const [loadingMore, setLoadingMore] = useState<boolean>(false);
+  const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
 
   // Fetch leaderboard to map user experience
   useEffect(() => {
@@ -107,15 +111,17 @@ export function HomeFeed() {
           const json = await res.json();
           const posts: UserPost[] = json.posts || [];
           setUserPosts(posts);
+          setCursor(posts.length ? posts[posts.length - 1].createdAt : null);
+          setHasMore(posts.length === 20);
 
-          // Fetch comment counts in batch for labels (optional)
+          // Fetch comment counts in batch for labels
           const ids = posts.map(p => p.id).join(',');
           if (ids) {
             try {
               const cr = await fetch(`/api/posts/comments/counts?ids=${ids}`);
               if (cr.ok) {
                 const cjson = await cr.json();
-                // we'll store counts in a weak map via comments length when loaded; for now ignored in UI
+                setCommentCounts(cjson.counts || {});
               }
             } catch {}
           }
@@ -290,6 +296,37 @@ export function HomeFeed() {
       alert(err.message || "Сүлжээний алдаа гарлаа");
     } finally {
       setReactingPostId(null);
+    }
+  }
+
+  async function loadMore() {
+    if (!hasMore || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const url = cursor ? `/api/posts?limit=20&before=${encodeURIComponent(cursor)}` : `/api/posts?limit=20`;
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const json = await res.json();
+      const more: UserPost[] = json.posts || [];
+      if (more.length === 0) {
+        setHasMore(false);
+        return;
+      }
+      setUserPosts(prev => [...prev, ...more]);
+      setCursor(more[more.length - 1].createdAt || null);
+      setHasMore(more.length === 20);
+      const ids = more.map(p => p.id).join(',');
+      if (ids) {
+        try {
+          const cr = await fetch(`/api/posts/comments/counts?ids=${ids}`);
+          if (cr.ok) {
+            const cjson = await cr.json();
+            setCommentCounts(prev => ({ ...prev, ...(cjson.counts || {}) }));
+          }
+        } catch {}
+      }
+    } finally {
+      setLoadingMore(false);
     }
   }
 
@@ -722,7 +759,7 @@ export function HomeFeed() {
             <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-slate-400">
               <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-700/50 bg-slate-800/30 px-3 py-1.5">
                 <span className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-pulse" />
-                Open for feedback
+                {typeof commentCounts[post.id] === 'number' ? `${commentCounts[post.id]} comments` : 'Open for feedback'}
               </span>
               {/* Reaction bar */}
               {(() => {
@@ -775,6 +812,20 @@ export function HomeFeed() {
           </article>
         ))}
       </div>
+
+      {/* Load more */}
+      {hasMore && (
+        <div className="flex justify-center mt-6">
+          <button
+            onClick={loadMore}
+            disabled={loadingMore}
+            className="px-4 py-2 rounded-lg text-xs font-medium bg-slate-900/60 border border-slate-700 text-slate-300 hover:border-violet-500/40 hover:text-slate-100 disabled:opacity-60"
+          >
+            {loadingMore ? 'Уншиж байна…' : 'Илүү ачаалах'}
+          </button>
+        </div>
+      )}
+
     {lightbox && (
       <ImageLightbox
         src={lightbox.src}
