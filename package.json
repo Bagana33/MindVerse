@@ -12,6 +12,7 @@
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.81.1",
     "bcryptjs": "^3.0.3",
+    "cloudinary": "^2.5.1",
     "dotenv": "^17.2.3",
     "next": "^15.0.0",
     "openai": "^6.9.0",

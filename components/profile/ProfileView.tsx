@@ -92,7 +92,7 @@ export function ProfileView() {
     }
   }, [session, sessionLoading]);
 
-  function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -108,15 +108,57 @@ export function ProfileView() {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const result = event.target?.result as string;
-      setAvatarPreview(result);
-    };
-    reader.onerror = () => {
-      setError("Зураг уншихад алдаа гарлаа");
-    };
-    reader.readAsDataURL(file);
+    // Instant local preview
+    try {
+      const localUrl = URL.createObjectURL(file);
+      setAvatarPreview(localUrl);
+    } catch {}
+
+    // Try Cloudinary first
+    try {
+      const signRes = await fetch('/api/uploads/sign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folder: 'neoncanvas/avatars' })
+      });
+      if (!signRes.ok) throw new Error('sign failed');
+      const signJson = await signRes.json();
+      if (!signJson?.ok) throw new Error('sign error');
+
+      const { cloudName, apiKey, folder, timestamp, signature } = signJson;
+      const form = new FormData();
+      form.append('file', file);
+      form.append('api_key', apiKey);
+      form.append('timestamp', String(timestamp));
+      form.append('signature', signature);
+      form.append('folder', folder);
+
+      const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+        method: 'POST',
+        body: form
+      });
+      if (!uploadRes.ok) throw new Error('upload failed');
+      const uploadJson = await uploadRes.json();
+      if (!uploadJson?.secure_url) throw new Error('no secure_url');
+
+      setAvatarPreview(uploadJson.secure_url as string);
+      return;
+    } catch (err) {
+      // Fallback to base64 if Cloudinary not configured
+      try {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const result = event.target?.result as string;
+          setAvatarPreview(result);
+        };
+        reader.onerror = () => {
+          setError("Зураг уншихад алдаа гарлаа");
+        };
+        reader.readAsDataURL(file);
+      } catch (e) {
+        setError("Зураг байршуулж чадсангүй");
+      }
+    }
   }
 
   async function handleSaveProfile() {
@@ -426,7 +468,7 @@ const PostGrid: React.FC<GridProps> = ({ posts, onPostsChange }) => {
     setError(null);
   }
 
-  function handleEditImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleEditImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -442,16 +484,56 @@ const PostGrid: React.FC<GridProps> = ({ posts, onPostsChange }) => {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const result = event.target?.result as string;
-      setEditImagePreview(result);
-      setEditImageUrl(result);
-    };
-    reader.onerror = () => {
-      setError("Зураг уншихад алдаа гарлаа");
-    };
-    reader.readAsDataURL(file);
+    // Local preview ASAP
+    try {
+      const localUrl = URL.createObjectURL(file);
+      setEditImagePreview(localUrl);
+    } catch {}
+
+    // Try Cloudinary upload first
+    try {
+      const signRes = await fetch('/api/uploads/sign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folder: 'neoncanvas/posts' })
+      });
+      if (!signRes.ok) throw new Error('sign failed');
+      const signJson = await signRes.json();
+      if (!signJson?.ok) throw new Error('sign error');
+
+      const { cloudName, apiKey, folder, timestamp, signature } = signJson;
+      const form = new FormData();
+      form.append('file', file);
+      form.append('api_key', apiKey);
+      form.append('timestamp', String(timestamp));
+      form.append('signature', signature);
+      form.append('folder', folder);
+
+      const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, { method: 'POST', body: form });
+      if (!uploadRes.ok) throw new Error('upload failed');
+      const uploadJson = await uploadRes.json();
+      if (!uploadJson?.secure_url) throw new Error('no secure_url');
+
+      setEditImagePreview(uploadJson.secure_url as string);
+      setEditImageUrl(uploadJson.secure_url as string);
+      return;
+    } catch (err) {
+      // Fallback to base64
+      try {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const result = event.target?.result as string;
+          setEditImagePreview(result);
+          setEditImageUrl(result);
+        };
+        reader.onerror = () => {
+          setError("Зураг уншихад алдаа гарлаа");
+        };
+        reader.readAsDataURL(file);
+      } catch (e) {
+        setError("Зураг байршуулж чадсангүй");
+      }
+    }
   }
 
   async function handleSaveEdit(e: React.FormEvent) {

@@ -133,7 +133,7 @@ export function HomeFeed() {
     fetchPosts();
   }, []);
 
-  function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -149,16 +149,59 @@ export function HomeFeed() {
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const result = event.target?.result as string;
-      setImagePreview(result);
-      setImageUrl(result);
-    };
-    reader.onerror = () => {
-      setError("Зураг уншихад алдаа гарлаа");
-    };
-    reader.readAsDataURL(file);
+    // Show instant local preview
+    try {
+      const localUrl = URL.createObjectURL(file);
+      setImagePreview(localUrl);
+    } catch {}
+
+    // Try Cloudinary direct upload with server-side signature
+    try {
+      const signRes = await fetch('/api/uploads/sign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folder: 'neoncanvas/posts' })
+      });
+      if (!signRes.ok) throw new Error('sign failed');
+      const signJson = await signRes.json();
+      if (!signJson?.ok) throw new Error('sign error');
+
+      const { cloudName, apiKey, folder, timestamp, signature } = signJson;
+      const form = new FormData();
+      form.append('file', file);
+      form.append('api_key', apiKey);
+      form.append('timestamp', String(timestamp));
+      form.append('signature', signature);
+      form.append('folder', folder);
+
+      const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+        method: 'POST',
+        body: form
+      });
+      if (!uploadRes.ok) throw new Error('upload failed');
+      const uploadJson = await uploadRes.json();
+      if (!uploadJson?.secure_url) throw new Error('no secure_url');
+
+      setImageUrl(uploadJson.secure_url as string);
+      setImagePreview(uploadJson.secure_url as string);
+      return;
+    } catch (err) {
+      // Fallback to base64 if Cloudinary not configured or upload failed
+      try {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const result = event.target?.result as string;
+          setImagePreview(result);
+          setImageUrl(result);
+        };
+        reader.onerror = () => {
+          setError("Зураг уншихад алдаа гарлаа");
+        };
+        reader.readAsDataURL(file);
+      } catch (e) {
+        setError("Зураг байршуулж чадсангүй");
+      }
+    }
   }
 
   async function handleCreatePost(e: React.FormEvent) {

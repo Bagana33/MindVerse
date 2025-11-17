@@ -21,6 +21,7 @@ export default function AdminPage() {
   const [amount, setAmount] = useState<string>("");
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [processing, setProcessing] = useState(false);
+  const [deletingStudent, setDeletingStudent] = useState<string | null>(null);
 
   useEffect(() => {
     if (!sessionLoading && (!session || session.role !== "teacher")) {
@@ -95,6 +96,45 @@ export default function AdminPage() {
       setMessage({ type: "error", text: err.message || "Сүлжээний алдаа гарлаа" });
     } finally {
       setProcessing(false);
+    }
+  }
+
+  async function handleDeleteStudent(studentEmail: string, studentName?: string) {
+    const displayName = studentName || studentEmail;
+    if (!confirm(`"${displayName}" сурагчийг бүрмөсөн устгах уу?\n\nЭнэ үйлдлийг буцаах боломжгүй. Сурагчийн:\n- Бүх постууд\n- Сэтгэгдлүүд\n- Reactions\n- Notifications\n\nБүгд устах болно.`)) {
+      return;
+    }
+
+    setDeletingStudent(studentEmail);
+    setMessage(null);
+
+    try {
+      const res = await fetch("/api/admin/delete-student", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentEmail }),
+      });
+
+      const json = await res.json();
+
+      if (!res.ok) {
+        setMessage({ type: "error", text: json.error || "Устгахад алдаа гарлаа" });
+        return;
+      }
+
+      setMessage({ type: "success", text: json.message || "Сурагч амжилттай устлаа" });
+      
+      // Remove from local state
+      setStudents(students.filter(s => s.email !== studentEmail));
+      
+      // Clear selection if deleted student was selected
+      if (selectedStudent === studentEmail) {
+        setSelectedStudent("");
+      }
+    } catch (err: any) {
+      setMessage({ type: "error", text: err.message || "Сүлжээний алдаа гарлаа" });
+    } finally {
+      setDeletingStudent(null);
     }
   }
 
@@ -252,14 +292,16 @@ export default function AdminPage() {
                   <th className="px-4 py-3 text-right text-xs font-semibold text-slate-400 uppercase tracking-wider">
                     XP
                   </th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    Үйлдэл
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
                 {students.map((student, index) => (
                   <tr
                     key={student.email}
-                    className="hover:bg-slate-800/30 transition-colors cursor-pointer"
-                    onClick={() => setSelectedStudent(student.email)}
+                    className="hover:bg-slate-800/30 transition-colors"
                   >
                     <td className="px-4 py-3 text-sm text-slate-500">
                       {index + 1}
@@ -274,6 +316,25 @@ export default function AdminPage() {
                       <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-500/10 border border-violet-500/30 px-3 py-1 text-xs font-semibold text-violet-300">
                         {student.experience} XP
                       </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => setSelectedStudent(student.email)}
+                          className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-300 hover:border-violet-500/40 hover:text-violet-300 transition-colors"
+                          title="XP засах"
+                        >
+                          ✏️ Засах
+                        </button>
+                        <button
+                          onClick={() => handleDeleteStudent(student.email, student.name)}
+                          disabled={deletingStudent === student.email}
+                          className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs text-red-300 hover:bg-red-500/20 hover:border-red-500/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Сурагч устгах"
+                        >
+                          {deletingStudent === student.email ? "⏳" : "🗑️"} Устгах
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
