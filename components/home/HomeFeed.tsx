@@ -387,10 +387,18 @@ export function HomeFeed() {
     }
 
     posts.sort((a, b) => {
+      // News-bot постууд хамгийн дээр
+      const aIsNewsBot = a.authorEmail === 'news-bot';
+      const bIsNewsBot = b.authorEmail === 'news-bot';
+      if (aIsNewsBot && !bIsNewsBot) return -1;
+      if (!aIsNewsBot && bIsNewsBot) return 1;
+
+      // Trending эрэмбэлэлт
       if (activeTab === "trending") {
         const likeDiff = b.reactions.length - a.reactions.length;
         if (likeDiff !== 0) return likeDiff;
       }
+      // Үлдсэнийг огнооор
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
 
