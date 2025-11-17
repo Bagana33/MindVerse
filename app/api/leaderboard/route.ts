@@ -10,6 +10,7 @@ export async function GET() {
     avatarUrl: u.avatarUrl,
     avatarColor: u.avatarColor,
     role: u.role,
+    grade: u.grade,
     experience: u.experience,
   }));
   return NextResponse.json({ ok: true, leaderboard: safe });
