@@ -312,9 +312,18 @@ export function HomeFeed() {
         setHasMore(false);
         return;
       }
-      setUserPosts(prev => [...prev, ...more]);
+      
+      // Avoid duplicates by checking IDs
+      setUserPosts(prev => {
+        const existingIds = new Set(prev.map(p => p.id));
+        const newPosts = more.filter(p => !existingIds.has(p.id));
+        return [...prev, ...newPosts];
+      });
+      
+      // Cursor is based on the last fetched post (not sorted), to maintain DB order
       setCursor(more[more.length - 1].createdAt || null);
       setHasMore(more.length === 20);
+      
       const ids = more.map(p => p.id).join(',');
       if (ids) {
         try {
