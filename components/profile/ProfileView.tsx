@@ -38,26 +38,41 @@ export function ProfileView() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editGrade, setEditGrade] = useState<string>("");
+  const [viewingUserEmail, setViewingUserEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Check if viewing another user's profile via query param
+    const params = new URLSearchParams(window.location.search);
+    const userParam = params.get('user');
+    if (userParam) {
+      setViewingUserEmail(userParam);
+    }
+  }, []);
+
+  const isOwnProfile = !viewingUserEmail || (session && viewingUserEmail === session.email);
 
   useEffect(() => {
     async function fetchUserData() {
-      if (!session) {
+      const targetEmail = viewingUserEmail || session?.email;
+      if (!targetEmail) {
         setLoading(false);
         return;
       }
 
       try {
         // Fetch user data (with XP)
-        const userRes = await fetch(`/api/user?email=${encodeURIComponent(session.email)}`);
+        const userRes = await fetch(`/api/user?email=${encodeURIComponent(targetEmail)}`);
         if (userRes.ok) {
           const json = await userRes.json();
           setUserData(json.user);
-          setEditNickname(json.user.nickname || "");
-          setEditBio(json.user.bio || "");
-          setEditAvatarColor(json.user.avatarColor || "#6366f1");
-          setAvatarPreview(json.user.avatarUrl || null);
-          setEditGrade(json.user.grade || "");
-        } else {
+          if (isOwnProfile) {
+            setEditNickname(json.user.nickname || "");
+            setEditBio(json.user.bio || "");
+            setEditAvatarColor(json.user.avatarColor || "#6366f1");
+            setAvatarPreview(json.user.avatarUrl || null);
+            setEditGrade(json.user.grade || "");
+          }
+        } else if (isOwnProfile && session) {
           // User not found in storage, create default user data from session
           console.log("User not found, creating default from session");
           const defaultUserData: UserData = {
@@ -74,11 +89,8 @@ export function ProfileView() {
         const postsRes = await fetch("/api/posts");
         if (postsRes.ok) {
           const json = await postsRes.json();
-          console.log("Fetched posts:", json.posts);
-          console.log("Session email:", session.email);
-          const myPosts = (json.posts || []).filter((p: UserPost) => p.authorEmail === session.email);
-          console.log("My posts:", myPosts);
-          setUserPosts(myPosts);
+          const targetPosts = (json.posts || []).filter((p: UserPost) => p.authorEmail === targetEmail);
+          setUserPosts(targetPosts);
         }
       } catch (err) {
         console.error("Failed to fetch profile data:", err);
@@ -90,7 +102,7 @@ export function ProfileView() {
     if (!sessionLoading) {
       fetchUserData();
     }
-  }, [session, sessionLoading]);
+  }, [session, sessionLoading, viewingUserEmail, isOwnProfile]);
 
   async function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -214,11 +226,11 @@ export function ProfileView() {
     );
   }
 
-  if (!session) {
+  if (!session && !viewingUserEmail) {
     return (
       <div className="space-y-4">
         <section className="bg-nc-panel/90 border border-nc-border rounded-2xl px-4 py-4 shadow-nc-soft">
-          <p className="text-xs text-nc-muted">Please log in to view your profile.</p>
+          <p className="text-xs text-nc-muted">Please log in to view profiles.</p>
         </section>
       </div>
     );
@@ -232,6 +244,24 @@ export function ProfileView() {
 
   return (
     <div className="space-y-4">
+      {!isOwnProfile && (
+        <div className="bg-slate-900/60 border border-violet-500/30 rounded-2xl px-4 py-3 shadow-lg">
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-violet-300">👤</span>
+            <span className="text-slate-300">
+              Та <span className="font-semibold text-white">{userData?.nickname || userData?.name || viewingUserEmail}</span>-н profile-г харж байна
+            </span>
+            {session && (
+              <button
+                onClick={() => window.location.href = '/profile'}
+                className="ml-auto text-xs text-violet-300 hover:text-violet-200 underline"
+              >
+                Өөрийн profile руу буцах
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       <section className="bg-nc-panel/90 border border-nc-border rounded-2xl px-4 py-4 shadow-nc-soft">
         <div className="flex flex-wrap items-start gap-4">
           <div className="relative">
@@ -240,20 +270,20 @@ export function ProfileView() {
                 src={avatarPreview || userData?.avatarUrl} 
                 alt="Avatar"
                 className="w-20 h-20 rounded-full object-cover border-2 shadow-[0_8px_24px_rgba(0,0,0,0.6)]"
-                style={{ borderColor: editAvatarColor }}
+                style={{ borderColor: isOwnProfile ? editAvatarColor : (userData?.avatarColor || '#6366f1') }}
               />
             ) : (
               <div 
                 className="w-20 h-20 rounded-full border-2 shadow-[0_8px_24px_rgba(0,0,0,0.6)] flex items-center justify-center text-xl font-bold"
                 style={{ 
-                  background: `linear-gradient(to top right, ${editAvatarColor}, ${editAvatarColor}dd)`,
-                  borderColor: editAvatarColor 
+                  background: `linear-gradient(to top right, ${isOwnProfile ? editAvatarColor : (userData?.avatarColor || '#6366f1')}, ${isOwnProfile ? editAvatarColor : (userData?.avatarColor || '#6366f1')}dd)`,
+                  borderColor: isOwnProfile ? editAvatarColor : (userData?.avatarColor || '#6366f1')
                 }}
               >
-                {(userData?.nickname || session.name || session.email)[0]?.toUpperCase()}
+                {(userData?.nickname || userData?.name || userData?.email || 'U')[0]?.toUpperCase()}
               </div>
             )}
-            {isEditing && (
+            {isEditing && isOwnProfile && (
               <label className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-violet-500 hover:bg-violet-600 flex items-center justify-center cursor-pointer shadow-lg transition-colors">
                 <span className="text-white text-xs">✎</span>
                 <input
@@ -273,7 +303,7 @@ export function ProfileView() {
                   <div className="flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <h2 className="text-lg font-semibold">
-                        {userData?.nickname || session.name || session.email}
+                        {userData?.nickname || userData?.name || userData?.email}
                       </h2>
                       {/* XP Badge - Next to name (Students only) */}
                       {userData && userData.role === "student" && (
@@ -289,16 +319,18 @@ export function ProfileView() {
                       )}
                     </div>
                     {userData?.nickname && (
-                      <p className="text-xs text-nc-muted">{session.email}</p>
+                      <p className="text-xs text-nc-muted">{userData.email}</p>
                     )}
-                    <p className="text-xs text-nc-muted mt-1 capitalize">{session.role}</p>
+                    <p className="text-xs text-nc-muted mt-1 capitalize">{userData?.role}</p>
                   </div>
-                  <button
-                    onClick={() => setIsEditing(true)}
-                    className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors flex-shrink-0"
-                  >
-                    Засах
-                  </button>
+                  {isOwnProfile && (
+                    <button
+                      onClick={() => setIsEditing(true)}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors flex-shrink-0"
+                    >
+                      Засах
+                    </button>
+                  )}
                 </div>
                 {userData?.bio && (
                   <p className="text-xs text-slate-400 mt-2 leading-relaxed">{userData.bio}</p>
@@ -415,15 +447,21 @@ export function ProfileView() {
 
       <section className="bg-nc-panel/90 border border-nc-border rounded-2xl px-4 py-5 shadow-nc-soft">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold">Your posts ({userPosts.length})</h3>
+          <h3 className="text-sm font-semibold">
+            {isOwnProfile ? `Your posts (${userPosts.length})` : `${userData?.nickname || userData?.name || 'User'}'s posts (${userPosts.length})`}
+          </h3>
           {userPosts.length > 0 && (
             <span className="text-[10px] text-nc-muted">Tap image to view fullscreen</span>
           )}
         </div>
         {userPosts.length === 0 ? (
-          <p className="text-xs text-nc-muted">No posts yet. Create your first post on the home page!</p>
+          <p className="text-xs text-nc-muted">
+            {isOwnProfile 
+              ? "No posts yet. Create your first post on the home page!" 
+              : "This user hasn't posted anything yet."}
+          </p>
         ) : (
-          <PostGrid posts={userPosts} onPostsChange={setUserPosts} />
+          <PostGrid posts={userPosts} onPostsChange={setUserPosts} isOwnProfile={isOwnProfile} />
         )}
       </section>
     </div>
@@ -437,9 +475,10 @@ import PostImage from "../posts/PostImage";
 interface GridProps { 
   posts: UserPost[];
   onPostsChange: (posts: UserPost[]) => void;
+  isOwnProfile: boolean;
 }
 
-const PostGrid: React.FC<GridProps> = ({ posts, onPostsChange }) => {
+const PostGrid: React.FC<GridProps> = ({ posts, onPostsChange, isOwnProfile }) => {
   const [active, setActive] = useState<UserPost | null>(null);
   const [editingPost, setEditingPost] = useState<UserPost | null>(null);
   const [editTitle, setEditTitle] = useState("");
@@ -659,39 +698,41 @@ const PostGrid: React.FC<GridProps> = ({ posts, onPostsChange }) => {
                   <span className="inline-flex items-center gap-1 drop-shadow"><span>❤️</span>{p.reactions.length}</span>
                 </div>
               </button>
-              {/* Edit/Delete icons overlay */}
-              <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    openEditModal(p);
-                  }}
-                  disabled={deleting === p.id}
-                  className="bg-black/60 hover:bg-violet-600 text-white rounded-full p-1 shadow focus:outline-none disabled:opacity-50 transition-colors"
-                  title="Edit"
-                >
-                  <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M4 13.5V16h2.5l7.06-7.06-2.5-2.5L4 13.5z" stroke="currentColor" strokeWidth="1.5"/><path d="M14.06 6.44a1.5 1.5 0 0 0 0-2.12l-1.38-1.38a1.5 1.5 0 0 0-2.12 0l-1.06 1.06 3.5 3.5 1.06-1.06z" stroke="currentColor" strokeWidth="1.5"/></svg>
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDelete(p);
-                  }}
-                  disabled={deleting === p.id}
-                  className="bg-black/60 hover:bg-red-600 text-white rounded-full p-1 shadow focus:outline-none disabled:opacity-50 transition-colors"
-                  title="Delete"
-                >
-                  {deleting === p.id ? (
-                    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" className="animate-spin">
-                      <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="2" strokeDasharray="40" strokeDashoffset="10" opacity="0.3"/>
-                    </svg>
-                  ) : (
-                    <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M6 7v7a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V7" stroke="currentColor" strokeWidth="1.5"/><path d="M9 9v5M11 9v5" stroke="currentColor" strokeWidth="1.5"/><rect x="4" y="4" width="12" height="2" rx="1" stroke="currentColor" strokeWidth="1.5"/></svg>
-                  )}
-                </button>
-              </div>
+              {/* Edit/Delete icons overlay - Only show for own posts */}
+              {isOwnProfile && (
+                <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openEditModal(p);
+                    }}
+                    disabled={deleting === p.id}
+                    className="bg-black/60 hover:bg-violet-600 text-white rounded-full p-1 shadow focus:outline-none disabled:opacity-50 transition-colors"
+                    title="Edit"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M4 13.5V16h2.5l7.06-7.06-2.5-2.5L4 13.5z" stroke="currentColor" strokeWidth="1.5"/><path d="M14.06 6.44a1.5 1.5 0 0 0 0-2.12l-1.38-1.38a1.5 1.5 0 0 0-2.12 0l-1.06 1.06 3.5 3.5 1.06-1.06z" stroke="currentColor" strokeWidth="1.5"/></svg>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(p);
+                    }}
+                    disabled={deleting === p.id}
+                    className="bg-black/60 hover:bg-red-600 text-white rounded-full p-1 shadow focus:outline-none disabled:opacity-50 transition-colors"
+                    title="Delete"
+                  >
+                    {deleting === p.id ? (
+                      <svg width="18" height="18" viewBox="0 0 20 20" fill="none" className="animate-spin">
+                        <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="2" strokeDasharray="40" strokeDashoffset="10" opacity="0.3"/>
+                      </svg>
+                    ) : (
+                      <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><path d="M6 7v7a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V7" stroke="currentColor" strokeWidth="1.5"/><path d="M9 9v5M11 9v5" stroke="currentColor" strokeWidth="1.5"/><rect x="4" y="4" width="12" height="2" rx="1" stroke="currentColor" strokeWidth="1.5"/></svg>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
           );
         })}

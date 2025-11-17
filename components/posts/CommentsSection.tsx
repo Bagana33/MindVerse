@@ -160,12 +160,25 @@ export function CommentsSection({
           className="rounded-2xl border border-slate-700/50 bg-slate-800/30 px-4 py-3"
         >
           <div className="flex items-start gap-3">
-            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-purple-500 text-xs font-bold text-white">
+            <button
+              onClick={() => {
+                window.location.href = `/profile?user=${encodeURIComponent(comment.authorEmail)}`;
+              }}
+              className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-purple-500 text-xs font-bold text-white cursor-pointer hover:scale-110 hover:ring-2 hover:ring-violet-400/50 transition-all"
+              title={`${comment.authorEmail.split("@")[0]}-н profile харах`}
+            >
               {comment.authorEmail[0].toUpperCase()}
-            </div>
+            </button>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1">
-                <span className="text-xs font-semibold text-slate-200">{comment.authorEmail.split("@")[0]}</span>
+                <button
+                  onClick={() => {
+                    window.location.href = `/profile?user=${encodeURIComponent(comment.authorEmail)}`;
+                  }}
+                  className="text-xs font-semibold text-slate-200 hover:text-violet-300 transition-colors cursor-pointer"
+                >
+                  {comment.authorEmail.split("@")[0]}
+                </button>
                 <span className="text-[10px] text-slate-500">{formatRelativeTime(comment.createdAt)}</span>
               </div>
               <p className="text-sm text-slate-300 leading-relaxed">{comment.content}</p>

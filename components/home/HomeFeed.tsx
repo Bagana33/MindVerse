@@ -758,13 +758,22 @@ export function HomeFeed() {
           >
             <div className="absolute inset-0 rounded-3xl border border-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" aria-hidden="true" />
             <header className="relative flex items-start gap-3">
-              <div className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full text-sm font-bold text-white shadow-lg group-hover:shadow-xl transition-shadow ${
-                post.authorEmail === 'news-bot' 
-                  ? 'bg-gradient-to-br from-cyan-500 via-blue-500 to-purple-500' 
-                  : 'bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900'
-              }`}>
+              <button
+                onClick={() => {
+                  if (post.authorEmail !== 'news-bot' && post.authorEmail !== 'ai-assistant') {
+                    window.location.href = `/profile?user=${encodeURIComponent(post.authorEmail)}`;
+                  }
+                }}
+                disabled={post.authorEmail === 'news-bot' || post.authorEmail === 'ai-assistant'}
+                className={`flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full text-sm font-bold text-white shadow-lg group-hover:shadow-xl transition-all ${
+                  post.authorEmail === 'news-bot' 
+                    ? 'bg-gradient-to-br from-cyan-500 via-blue-500 to-purple-500' 
+                    : 'bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900'
+                } ${post.authorEmail !== 'news-bot' && post.authorEmail !== 'ai-assistant' ? 'cursor-pointer hover:scale-110 hover:ring-2 hover:ring-violet-400/50' : 'cursor-default'}`}
+                title={post.authorEmail !== 'news-bot' && post.authorEmail !== 'ai-assistant' ? `${post.author}-н profile харах` : ''}
+              >
                 {post.authorEmail === 'news-bot' ? '📰' : getInitials(post.author || post.authorEmail)}
-              </div>
+              </button>
               <div className="flex-1 min-w-0">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="min-w-0">
