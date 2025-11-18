@@ -9,6 +9,7 @@ type Student = {
   name?: string;
   experience: number;
   role: string;
+  grade?: string;
 };
 
 export default function AdminPage() {
@@ -22,6 +23,7 @@ export default function AdminPage() {
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [processing, setProcessing] = useState(false);
   const [deletingStudent, setDeletingStudent] = useState<string | null>(null);
+  const [gradeFilter, setGradeFilter] = useState<string>("all");
 
   useEffect(() => {
     if (!sessionLoading && (!session || session.role !== "teacher")) {
@@ -32,7 +34,8 @@ export default function AdminPage() {
   useEffect(() => {
     async function fetchStudents() {
       try {
-        const res = await fetch("/api/leaderboard");
+        const url = gradeFilter && gradeFilter !== 'all' ? `/api/leaderboard?grade=${gradeFilter}` : "/api/leaderboard";
+        const res = await fetch(url);
         if (res.ok) {
           const json = await res.json();
           setStudents(json.leaderboard || []);
@@ -44,9 +47,10 @@ export default function AdminPage() {
       }
     }
     if (session?.role === "teacher") {
+      setLoading(true);
       fetchStudents();
     }
-  }, [session]);
+  }, [session, gradeFilter]);
 
   async function handleManageXP(e: React.FormEvent) {
     e.preventDefault();
@@ -87,7 +91,8 @@ export default function AdminPage() {
       setAmount("");
       
       // Refresh students list
-      const refreshRes = await fetch("/api/leaderboard");
+      const refreshUrl = gradeFilter && gradeFilter !== 'all' ? `/api/leaderboard?grade=${gradeFilter}` : "/api/leaderboard";
+      const refreshRes = await fetch(refreshUrl);
       if (refreshRes.ok) {
         const refreshJson = await refreshRes.json();
         setStudents(refreshJson.leaderboard || []);
@@ -181,6 +186,35 @@ export default function AdminPage() {
           <h2 className="text-xl font-bold text-white">XP удирдлага</h2>
           <p className="mt-1 text-sm text-slate-400">Сурагчдад XP нэмэх эсвэл тогтоох</p>
 
+          {/* Grade Filter */}
+          <div className="mt-4">
+            <label className="block text-xs text-slate-400 mb-2 font-medium">🎒 Ангиар шүүх</label>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { id: "all", label: "Бүгд" },
+                { id: "10", label: "10 анги" },
+                { id: "11", label: "11 анги" },
+                { id: "12", label: "12 анги" },
+              ].map((g) => (
+                <button
+                  key={g.id}
+                  type="button"
+                  onClick={() => setGradeFilter(g.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                    gradeFilter === g.id
+                      ? "bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-[0_4px_12px_rgba(34,197,94,0.4)]"
+                      : "bg-slate-900/60 border border-slate-700 text-slate-300 hover:border-green-500/40 hover:text-slate-100"
+                  }`}
+                >
+                  {g.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-slate-500 mt-1">
+              {gradeFilter === 'all' ? 'Бүх ангийн сурагчид' : `${gradeFilter} ангийн сурагчид`} харагдаж байна
+            </p>
+          </div>
+
           <form onSubmit={handleManageXP} className="mt-6 space-y-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">
@@ -273,7 +307,7 @@ export default function AdminPage() {
         <div className="rounded-3xl border border-slate-700/50 bg-slate-900/50 px-6 py-6 shadow-xl">
           <h2 className="text-xl font-bold text-white">Сурагчдын жагсаалт</h2>
           <p className="mt-1 text-sm text-slate-400 mb-4">
-            Нийт {students.length} сурагч
+            Нийт {students.length} сурагч {gradeFilter !== 'all' && <span className="text-green-400">(анги: {gradeFilter})</span>}
           </p>
 
           <div className="overflow-x-auto">
@@ -288,6 +322,9 @@ export default function AdminPage() {
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">
                     Email
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                    АнгИ
                   </th>
                   <th className="px-4 py-3 text-right text-xs font-semibold text-slate-400 uppercase tracking-wider">
                     XP
@@ -311,6 +348,15 @@ export default function AdminPage() {
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-400">
                       {student.email}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-300">
+                      {student.grade ? (
+                        <span className="inline-flex items-center gap-1 rounded-full border border-green-500/40 bg-green-500/10 px-2 py-0.5 text-[10px] text-green-300 font-medium">
+                          🎒 {student.grade}
+                        </span>
+                      ) : (
+                        <span className="text-slate-500 text-xs">—</span>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-500/10 border border-violet-500/30 px-3 py-1 text-xs font-semibold text-violet-300">
