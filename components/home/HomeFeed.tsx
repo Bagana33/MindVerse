@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback, memo } from "react";
 import { useRouter } from "next/navigation";
 import PostImage from "../posts/PostImage";
 import ImageLightbox from "../posts/ImageLightbox";
@@ -61,6 +61,158 @@ function getInitials(name?: string) {
   const [first = "", second = ""] = name.split(" ");
   return `${first[0] ?? ""}${second[0] ?? ""}`.toUpperCase() || "NC";
 }
+
+// Memoized post card for performance
+const PostCard = memo(({ 
+  post, 
+  session, 
+  xpMap, 
+  commentCounts,
+  onDelete,
+  onReaction,
+  onLightbox,
+  onCommentAdded,
+  deletingPostId,
+  reactingPostId
+}: {
+  post: UserPost;
+  session: any;
+  xpMap: Record<string, number>;
+  commentCounts: Record<string, number>;
+  onDelete: (id: string) => void;
+  onReaction: (id: string, type: ReactionType) => void;
+  onLightbox: (src: string, alt: string) => void;
+  onCommentAdded: (comment: Comment) => void;
+  deletingPostId: string | null;
+  reactingPostId: string | null;
+}) => {
+  const router = useRouter();
+  
+  const userReaction = useMemo(() => 
+    session ? post.reactions.find(r => r.userEmail === session.email)?.type : null,
+    [session, post.reactions]
+  );
+
+  const reactionCounts = useMemo(() => ({
+    FIRE: post.reactions.filter(r => r.type === 'FIRE').length,
+    WOW: post.reactions.filter(r => r.type === 'WOW').length,
+    LOVE: post.reactions.filter(r => r.type === 'LOVE').length,
+  }), [post.reactions]);
+
+  return (
+    <article
+      className="relative overflow-hidden rounded-3xl border border-slate-700/50 glass-panel glass-panel-hover px-4 py-5 shadow-[0_12px_40px_rgba(0,0,0,0.45)] sm:px-6 group"
+    >
+      <div className="absolute inset-0 rounded-3xl border border-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" aria-hidden="true" />
+      <header className="relative flex items-start gap-3 z-10">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (post.authorEmail !== 'news-bot' && post.authorEmail !== 'ai-assistant') {
+              router.push(`/profile?user=${encodeURIComponent(post.authorEmail)}`);
+            }
+          }}
+          disabled={post.authorEmail === 'news-bot' || post.authorEmail === 'ai-assistant'}
+          className={`relative z-20 flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full text-sm font-bold text-white shadow-lg group-hover:shadow-xl transition-all ${
+            post.authorEmail === 'news-bot' 
+              ? 'bg-gradient-to-br from-cyan-500 via-blue-500 to-purple-500' 
+              : 'bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900'
+          } ${post.authorEmail !== 'news-bot' && post.authorEmail !== 'ai-assistant' ? 'cursor-pointer hover:scale-110 hover:ring-2 hover:ring-violet-400/50 active:scale-95' : 'cursor-default'}`}
+          title={post.authorEmail !== 'news-bot' && post.authorEmail !== 'ai-assistant' ? `${post.author}-н profile харах` : ''}
+          style={{ pointerEvents: 'auto' }}
+        >
+          {post.authorEmail === 'news-bot' ? '📰' : getInitials(post.author || post.authorEmail)}
+        </button>
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <div className="truncate text-sm font-bold text-slate-100">{post.author}</div>
+                {post.authorEmail === 'news-bot' && (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] text-cyan-300 font-medium">
+                    🤖 Мэдээ
+                  </span>
+                )}
+              </div>
+              <div className="text-[11px] text-slate-500">{formatRelativeTime(post.createdAt)}</div>
+              {session && post.authorEmail === session.email && (
+                <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-300 font-medium">
+                  ✓ Таны пост
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 text-[11px] text-slate-400">
+              <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-emerald-300 font-semibold">
+                XP {xpMap[post.authorEmail] ?? 0}
+              </span>
+              {session && post.authorEmail === session.email && post.authorEmail !== 'news-bot' && (
+                <button
+                  onClick={() => onDelete(post.id)}
+                  disabled={deletingPostId === post.id}
+                  className="rounded-full border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-[10px] text-red-300 hover:bg-red-500/20 disabled:opacity-60 transition-all"
+                >
+                  {deletingPostId === post.id ? "⏳" : "🗑️ Устгах"}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <h3 className="mt-4 text-lg font-bold text-white leading-snug">{post.title}</h3>
+      <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-300">{post.description}</p>
+
+      {post.imageUrl && (
+        <div className="mt-4 flex justify-center">
+          <button
+            type="button"
+            onClick={() => onLightbox(post.imageUrl!, post.title)}
+            className="inline-block focus:outline-none focus:ring-2 focus:ring-violet-500/50 rounded-2xl"
+          >
+            <PostImage src={post.imageUrl} alt={post.title} className="!w-auto" />
+          </button>
+        </div>
+      )}
+
+      <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-slate-400">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-700/50 bg-slate-800/30 px-3 py-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-pulse" />
+          {typeof commentCounts[post.id] === 'number' ? `${commentCounts[post.id]} comments` : 'Open for feedback'}
+        </span>
+        <div className="flex items-center gap-2">
+          {[
+            { type: 'FIRE' as ReactionType, emoji: '🔥', color: 'from-orange-500 to-red-500' },
+            { type: 'WOW' as ReactionType, emoji: '😮', color: 'from-yellow-400 to-amber-500' },
+            { type: 'LOVE' as ReactionType, emoji: '💖', color: 'from-pink-500 to-fuchsia-500' },
+          ].map(b => {
+            const active = userReaction === b.type;
+            return (
+              <button
+                key={b.type}
+                onClick={() => onReaction(post.id, b.type)}
+                disabled={!session || reactingPostId === post.id}
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold transition-all duration-300 border ${active
+                  ? `bg-gradient-to-r ${b.color} text-white border-transparent shadow-[0_0_16px_rgba(255,255,255,0.25)] scale-[1.05]`
+                  : `border-slate-700 bg-slate-800/50 text-slate-300 hover:border-violet-500/40 hover:bg-slate-700/60 hover:text-white`}`}
+                title={session ? `${b.type} reaction` : 'Нэвтэрч орно уу'}
+              >
+                <span>{b.emoji}</span>
+                <span>{reactionCounts[b.type] || 0}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <CommentsSection
+        postId={post.id}
+        comments={post.comments}
+        onCommentAdded={onCommentAdded}
+      />
+    </article>
+  );
+});
 
 export function HomeFeed() {
   const { session } = useSession();
@@ -300,7 +452,7 @@ export function HomeFeed() {
         return;
       }
 
-      setUserPosts(userPosts.filter((p) => p.id !== postId));
+      setUserPosts(prev => prev.filter((p) => p.id !== postId));
     } catch (err: any) {
       alert(err.message || "Сүлжээний алдаа гарлаа");
     } finally {
@@ -308,7 +460,7 @@ export function HomeFeed() {
     }
   }
 
-  async function handleReaction(postId: string, type: ReactionType) {
+  const handleReaction = useCallback(async (postId: string, type: ReactionType) => {
     if (!session) return;
 
     setReactingPostId(postId);
@@ -326,7 +478,7 @@ export function HomeFeed() {
         return;
       }
       const json = await res.json();
-      setUserPosts(userPosts.map(p => {
+      setUserPosts(prev => prev.map(p => {
         if (p.id !== postId) return p;
         const reactions = [...p.reactions];
         const idx = reactions.findIndex(r => r.userEmail === session.email);
@@ -344,9 +496,9 @@ export function HomeFeed() {
     } finally {
       setReactingPostId(null);
     }
-  }
+  }, [session]);
 
-  async function loadMore() {
+  const loadMore = useCallback(async () => {
     if (!hasMore || loadingMore) return;
     setLoadingMore(true);
     try {
@@ -384,7 +536,7 @@ export function HomeFeed() {
     } finally {
       setLoadingMore(false);
     }
-  }
+  }, [hasMore, loadingMore, cursor]);
 
   const feedStats = useMemo(() => {
     if (!userPosts.length) {
@@ -666,141 +818,25 @@ export function HomeFeed() {
         )}
 
         {filteredPosts.map((post) => (
-          <article
+          <PostCard
             key={post.id}
-            className="relative overflow-hidden rounded-3xl border border-slate-700/50 glass-panel glass-panel-hover px-4 py-5 shadow-[0_12px_40px_rgba(0,0,0,0.45)] sm:px-6 group"
-          >
-            <div className="absolute inset-0 rounded-3xl border border-white/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" aria-hidden="true" />
-            <header className="relative flex items-start gap-3 z-10">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  console.log('Avatar clicked:', post.authorEmail);
-                  if (post.authorEmail !== 'news-bot' && post.authorEmail !== 'ai-assistant') {
-                    console.log('Navigating to profile:', `/profile?user=${encodeURIComponent(post.authorEmail)}`);
-                    router.push(`/profile?user=${encodeURIComponent(post.authorEmail)}`);
-                  } else {
-                    console.log('Skipping navigation for bot:', post.authorEmail);
-                  }
-                }}
-                disabled={post.authorEmail === 'news-bot' || post.authorEmail === 'ai-assistant'}
-                className={`relative z-20 flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full text-sm font-bold text-white shadow-lg group-hover:shadow-xl transition-all ${
-                  post.authorEmail === 'news-bot' 
-                    ? 'bg-gradient-to-br from-cyan-500 via-blue-500 to-purple-500' 
-                    : 'bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900'
-                } ${post.authorEmail !== 'news-bot' && post.authorEmail !== 'ai-assistant' ? 'cursor-pointer hover:scale-110 hover:ring-2 hover:ring-violet-400/50 active:scale-95' : 'cursor-default'}`}
-                title={post.authorEmail !== 'news-bot' && post.authorEmail !== 'ai-assistant' ? `${post.author}-н profile харах` : ''}
-                style={{ pointerEvents: 'auto' }}
-              >
-                {post.authorEmail === 'news-bot' ? '📰' : getInitials(post.author || post.authorEmail)}
-              </button>
-              <div className="flex-1 min-w-0">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <div className="truncate text-sm font-bold text-slate-100">{post.author}</div>
-                      {post.authorEmail === 'news-bot' && (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] text-cyan-300 font-medium">
-                          🤖 Мэдээ
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-[11px] text-slate-500">{formatRelativeTime(post.createdAt)}</div>
-                    {session && post.authorEmail === session.email && (
-                      <span className="mt-1 inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-300 font-medium">
-                        ✓ Таны пост
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 text-[11px] text-slate-400">
-                    <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-emerald-300 font-semibold">
-                      XP {xpMap[post.authorEmail] ?? 0}
-                    </span>
-                    {session && post.authorEmail === session.email && post.authorEmail !== 'news-bot' && (
-                      <button
-                        onClick={() => handleDeletePost(post.id)}
-                        disabled={deletingPostId === post.id}
-                        className="rounded-full border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-[10px] text-red-300 hover:bg-red-500/20 disabled:opacity-60 transition-all"
-                      >
-                        {deletingPostId === post.id ? "⏳" : "🗑️ Устгах"}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </header>
-
-            <h3 className="mt-4 text-lg font-bold text-white leading-snug">{post.title}</h3>
-            <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-300">{post.description}</p>
-
-            {post.imageUrl && (
-              <div className="mt-4 flex justify-center">
-                <button
-                  type="button"
-                  onClick={() => setLightbox({ src: post.imageUrl!, alt: post.title })}
-                  className="inline-block focus:outline-none focus:ring-2 focus:ring-violet-500/50 rounded-2xl"
-                >
-                  <PostImage src={post.imageUrl} alt={post.title} className="!w-auto" />
-                </button>
-              </div>
-            )}
-
-            <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-slate-400">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-700/50 bg-slate-800/30 px-3 py-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-pulse" />
-                {typeof commentCounts[post.id] === 'number' ? `${commentCounts[post.id]} comments` : 'Open for feedback'}
-              </span>
-              {/* Reaction bar */}
-              {(() => {
-                const userReaction = session ? post.reactions.find(r => r.userEmail === session.email)?.type : null;
-                const counts = {
-                  FIRE: post.reactions.filter(r => r.type === 'FIRE').length,
-                  WOW: post.reactions.filter(r => r.type === 'WOW').length,
-                  LOVE: post.reactions.filter(r => r.type === 'LOVE').length,
-                };
-                const buttons: { type: ReactionType; label: string; emoji: string; color: string }[] = [
-                  { type: 'FIRE', label: 'gal', emoji: '🔥', color: 'from-orange-500 to-red-500' },
-                  { type: 'WOW', label: 'wow', emoji: '😮', color: 'from-yellow-400 to-amber-500' },
-                  { type: 'LOVE', label: 'love', emoji: '💖', color: 'from-pink-500 to-fuchsia-500' },
-                ];
-                return (
-                  <div className="flex items-center gap-2">
-                    {buttons.map(b => {
-                      const active = userReaction === b.type;
-                      return (
-                        <button
-                          key={b.type}
-                          onClick={() => handleReaction(post.id, b.type)}
-                          disabled={!session || reactingPostId === post.id}
-                          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold transition-all duration-300 border ${active
-                            ? `bg-gradient-to-r ${b.color} text-white border-transparent shadow-[0_0_16px_rgba(255,255,255,0.25)] scale-[1.05]`
-                            : `border-slate-700 bg-slate-800/50 text-slate-300 hover:border-violet-500/40 hover:bg-slate-700/60 hover:text-white`}`}
-                          title={session ? `${b.label} reaction` : 'Нэвтэрч орно уу'}
-                        >
-                          <span>{b.emoji}</span>
-                          <span>{counts[b.type] || 0}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
-            </div>
-            {/* Comments Section */}
-            <CommentsSection
-              postId={post.id}
-              comments={post.comments}
-              onCommentAdded={(newComment) => {
-                setUserPosts(userPosts.map(p =>
-                  p.id === post.id
-                    ? { ...p, comments: [...(p.comments || []), newComment] }
-                    : p
-                ));
-              }}
-            />
-          </article>
+            post={post}
+            session={session}
+            xpMap={xpMap}
+            commentCounts={commentCounts}
+            onDelete={handleDeletePost}
+            onReaction={handleReaction}
+            onLightbox={(src, alt) => setLightbox({ src, alt })}
+            onCommentAdded={(newComment) => {
+              setUserPosts(prev => prev.map(p =>
+                p.id === post.id
+                  ? { ...p, comments: [...(p.comments || []), newComment] }
+                  : p
+              ));
+            }}
+            deletingPostId={deletingPostId}
+            reactingPostId={reactingPostId}
+          />
         ))}
       </div>
 

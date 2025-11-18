@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "../auth/useSession";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 
 export function Topbar() {
   const pathname = usePathname();
@@ -52,9 +52,10 @@ export function Topbar() {
       }
     }
     loadXp();
+    return () => { active = false; };
   }, [session?.email]);
 
-  const markAllRead = async () => {
+  const markAllRead = useCallback(async () => {
     try {
       const res = await fetch('/api/notifications/mark-read', { method: 'POST' });
       const data = await res.json();
@@ -64,9 +65,9 @@ export function Topbar() {
         setNotifications(prev => prev.map(n => ({ ...n, read: true })));
       }
     } catch {}
-  };
+  }, []);
 
-  const clearAll = async () => {
+  const clearAll = useCallback(async () => {
     if (!confirm('Бүх мэдэгдлийг устгах уу?')) return;
     try {
       const res = await fetch('/api/notifications/clear', { method: 'POST' });
@@ -76,16 +77,16 @@ export function Topbar() {
         setUnreadCount(0);
       }
     } catch {}
-  };
+  }, []);
 
-  const tabs = [
+  const tabs = useMemo(() => [
     { href: "/", label: "Home" },
     { href: "/contests", label: "Contests" },
     { href: "/lessons", label: "Lessons" },
     { href: "/profile", label: "Profile" },
     { href: "/leaderboard", label: "Leaderboard" },
     ...(session?.role === "teacher" ? [{ href: "/admin", label: "Admin" }] : []),
-  ];
+  ], [session?.role]);
 
   return (
     <header className="sticky top-0 z-50 backdrop-blur-xl bg-slate-950/80 border-b border-slate-800/50">
