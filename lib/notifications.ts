@@ -55,12 +55,13 @@ export async function addNotification(userEmail: string, actorEmail: string, typ
   };
 }
 
-export async function getUserNotifications(userEmail: string): Promise<Notification[]> {
+export async function getUserNotifications(userEmail: string, limit: number = 50): Promise<Notification[]> {
   const { data, error } = await supabase
     .from('notifications')
     .select('*')
     .eq('user_email', userEmail)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(limit);
 
   if (error || !data) return [];
   

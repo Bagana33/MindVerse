@@ -198,11 +198,12 @@ export async function setExperience(email: string, points: number): Promise<User
   return dbToUser(data);
 }
 
-export async function getAllUsers(): Promise<User[]> {
+export async function getAllUsers(limit: number = 100): Promise<User[]> {
   const { data, error } = await supabase
     .from('users')
     .select('*')
-    .order('experience', { ascending: false });
+    .order('experience', { ascending: false })
+    .limit(limit);
 
   if (error || !data) {
     console.error('Error fetching users:', error);
@@ -228,12 +229,13 @@ export async function getLeaderboard(): Promise<User[]> {
 }
 
 // Lightweight leaderboard query selecting only necessary columns
-export async function getLeaderboardLight(grade?: string): Promise<User[]> {
+export async function getLeaderboardLight(grade?: string, limit: number = 100): Promise<User[]> {
   let query = supabase
     .from('users')
     .select('email,name,nickname,avatar_url,avatar_color,role,grade,experience')
     .eq('role', 'student')
-    .order('experience', { ascending: false });
+    .order('experience', { ascending: false })
+    .limit(limit);
 
   if (grade && ['10','11','12'].includes(grade)) {
     query = query.eq('grade', grade);

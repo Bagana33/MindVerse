@@ -14,4 +14,12 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: false,
     autoRefreshToken: false,
   },
+  db: {
+    schema: 'public',
+  },
+  global: {
+    headers: {
+      'x-application-name': 'neoncanvas',
+    },
+  },
 });
