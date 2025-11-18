@@ -631,7 +631,7 @@ export function HomeFeed() {
       {/* Removed tabs/search/live-sync header as requested */}
 
       {trendingPost && (
-        <div className="grid gap-4 md:grid-cols-[1.6fr,1fr]">
+        <div className="grid gap-4">
           <div className="rounded-3xl border border-slate-800 bg-gradient-to-br from-slate-950 to-slate-900 px-5 py-5 shadow-[0_15px_40px_rgba(0,0,0,0.45)]">
             <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.3em] text-slate-500">
               <span>Featured</span>
@@ -654,23 +654,6 @@ export function HomeFeed() {
             >
               Jump to post →
             </button>
-          </div>
-          <div className="rounded-3xl border border-slate-800 bg-slate-900/60 px-5 py-5">
-            <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Studio pulse</p>
-            <div className="mt-3 space-y-3 text-xs text-slate-300">
-              <div className="flex items-center justify-between rounded-2xl border border-slate-800/70 bg-slate-950/60 px-3 py-2">
-                <span>Latest ship</span>
-                <span>{feedStats.latest ? formatRelativeTime(feedStats.latest.createdAt) : "—"}</span>
-              </div>
-              <div className="flex items-center justify-between rounded-2xl border border-slate-800/70 bg-slate-950/60 px-3 py-2">
-                <span>Active creators</span>
-                <span>{feedStats.uniqueCreators}</span>
-              </div>
-              <div className="flex items-center justify-between rounded-2xl border border-slate-800/70 bg-slate-950/60 px-3 py-2">
-                <span>Reactions today</span>
-                <span>{feedStats.totalLikes}</span>
-              </div>
-            </div>
           </div>
         </div>
       )}
