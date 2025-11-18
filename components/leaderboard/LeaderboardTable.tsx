@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "../auth/useSession";
 import Medal3D from "./Medal3D";
+import { cachedFetch } from "../../lib/fetchCache";
 
 type LeaderboardUser = {
   email: string;
@@ -25,12 +26,10 @@ export function LeaderboardSidebar({ compact = false }: { compact?: boolean }) {
   useEffect(() => {
     async function fetchLeaderboard() {
       try {
-        const res = await fetch("/api/leaderboard");
-        if (res.ok) {
-          const json = await res.json();
-          const data = json.leaderboard || [];
-          setUsers(compact ? data.slice(0, 5) : data);
-        }
+        const res = await cachedFetch("/api/leaderboard");
+        const json = await res.json();
+        const data = json.leaderboard || [];
+        setUsers(compact ? data.slice(0, 5) : data);
       } catch (err) {
         console.error("Failed to fetch leaderboard:", err);
       } finally {

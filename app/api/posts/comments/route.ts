@@ -15,7 +15,12 @@ export async function GET(req: Request) {
   }
 
   const comments = await getPostComments(postId);
-  return NextResponse.json({ ok: true, comments });
+  return new NextResponse(JSON.stringify({ ok: true, comments }), {
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'public, s-maxage=10, stale-while-revalidate=60'
+    }
+  });
 }
 
 // POST: Create a comment

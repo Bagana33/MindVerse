@@ -6,6 +6,7 @@ import PostImage from "../posts/PostImage";
 import ImageLightbox from "../posts/ImageLightbox";
 import { useSession } from "../auth/useSession";
 import { CommentsSection } from "../posts/CommentsSection";
+import { cachedFetch, invalidateCache } from "../../lib/fetchCache";
 
 type ReactionType = 'FIRE' | 'WOW' | 'LOVE';
 type PostReaction = { userEmail: string; type: ReactionType };
@@ -91,14 +92,12 @@ export function HomeFeed() {
   useEffect(() => {
     async function fetchXp() {
       try {
-        const res = await fetch('/api/leaderboard');
-        if (res.ok) {
-          const json = await res.json();
-          if (Array.isArray(json.leaderboard)) {
-            const map: Record<string, number> = {};
-            json.leaderboard.forEach((u: any) => { if (u.email) map[u.email] = u.experience ?? 0; });
-            setXpMap(map);
-          }
+        const res = await cachedFetch('/api/leaderboard');
+        const json = await res.json();
+        if (Array.isArray(json.leaderboard)) {
+          const map: Record<string, number> = {};
+          json.leaderboard.forEach((u: any) => { if (u.email) map[u.email] = u.experience ?? 0; });
+          setXpMap(map);
         }
       } catch (e) { /* silent */ }
     }
@@ -254,6 +253,9 @@ export function HomeFeed() {
       const initialComments = await fetchCommentsOnce(json.post.id);
       const postWithComments: UserPost = { ...json.post, comments: initialComments };
       setUserPosts([postWithComments, ...userPosts]);
+
+      // Invalidate leaderboard cache since XP may have changed
+      invalidateCache('/api/leaderboard');
 
       // Light polling for AI critique (in case it's added a moment later)
       // Try up to 5 times every 2s; update the post in place when AI comment appears

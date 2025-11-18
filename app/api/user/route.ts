@@ -27,5 +27,10 @@ export async function GET(req: Request) {
     experience: user.experience,
   };
 
-  return NextResponse.json({ ok: true, user: safe });
+  return new NextResponse(JSON.stringify({ ok: true, user: safe }), {
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=120'
+    }
+  });
 }
