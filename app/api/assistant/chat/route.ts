@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getSessionFromCookies } from "../../../../lib/session";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY || "");
 
 function fallbackDesignTips(q: string): string {
   const s = q.toLowerCase();
@@ -74,7 +74,7 @@ export async function POST(req: Request) {
   const history = Array.isArray(body?.history) ? body.history.slice(-6) : [];
 
   // Basic runtime checks for clearer errors (after parsing message so we can fallback usefully)
-  if (!process.env.OPENAI_API_KEY) {
+  if (!process.env.GOOGLE_GEMINI_API_KEY) {
     // Offline fallback tips (still return ok=true so UI shows something useful)
     const offline = fallbackDesignTips(message);
     return NextResponse.json({ ok: true, answer: offline, offline: true });
@@ -96,20 +96,27 @@ export async function POST(req: Request) {
 Хариултаа богино, тод, 3–6 мөр байлга.`;
 
   try {
-    const messages = [
-      { role: "system", content: systemPrompt },
-      ...history.filter((m: any) => typeof m?.role === 'string' && typeof m?.content === 'string').map((m: any) => ({ role: m.role, content: m.content })),
-      { role: "user", content: message },
-    ] as { role: "system" | "user" | "assistant"; content: string }[];
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    
+    // Build conversation history for Gemini
+    const chatHistory = history
+      .filter((m: any) => typeof m?.role === 'string' && typeof m?.content === 'string')
+      .map((m: any) => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }]
+      }));
 
-    const completion = await openai.chat.completions.create({
-      model: process.env.OPENAI_CHAT_MODEL || "gpt-4o-mini",
-      messages,
-      max_tokens: 350,
-      temperature: 0.5,
+    const chat = model.startChat({
+      history: chatHistory,
+      generationConfig: {
+        maxOutputTokens: 350,
+        temperature: 0.5,
+      },
     });
 
-    const answer = completion.choices?.[0]?.message?.content?.trim() ||
+    const result = await chat.sendMessage(`${systemPrompt}\n\nХэрэглэгчийн асуулт: ${message}`);
+    const response = await result.response;
+    const answer = response.text().trim() || 
       "Сайн асуулт байна. Илүү тодорхой тайлбар өгвөл би илүү нарийн зөвлөмж өгч чадна.";
 
     return NextResponse.json({ ok: true, answer });

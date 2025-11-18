@@ -41,7 +41,7 @@ export default function StudentAssistant() {
       const json = await res.json();
       if (!res.ok || !json.ok) throw new Error(json.error || "Алдаа гарлаа");
       const answerText = json.offline
-        ? `ℹ️ OpenAI одоогоор ашиглах боломжгүй (rate limit эсвэл config). Доорх зөвлөгөөг ашиглана уу:\n\n${json.answer}`
+        ? `ℹ️ Google Gemini одоогоор ашиглах боломжгүй (API key эсвэл config). Доорх зөвлөгөөг ашиглана уу:\n\n${json.answer}`
         : json.answer;
       setMessages((m) => [...m, { role: "assistant", content: answerText }]);
     } catch (e: any) {
