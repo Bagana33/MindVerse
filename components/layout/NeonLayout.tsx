@@ -20,10 +20,9 @@ export function NeonLayout({ children }: { children: ReactNode }) {
 
       <main className="flex-1 w-full max-w-6xl mx-auto px-4 pb-10 pt-6 grid gap-6 md:grid-cols-[1.8fr,0.9fr]">
         {children}
+        <StudentAssistant />
       </main>
-
-  <StudentAssistant />
-  <footer className="w-full max-w-6xl mx-auto px-4 pb-8 pt-2 text-center text-xs text-slate-500 border-t border-slate-800/50">
+      <footer className="w-full max-w-6xl mx-auto px-4 pb-8 pt-2 text-center text-xs text-slate-500 border-t border-slate-800/50">
         <div className="flex items-center justify-center gap-2">
           <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
           <span>Mind Verse · Graphic Design & Learning · {new Date().getFullYear()}</span>
