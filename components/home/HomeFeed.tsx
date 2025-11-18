@@ -493,28 +493,7 @@ export function HomeFeed() {
               ))}
             </div>
           </div>
-          <div className="grid w-full grid-cols-2 gap-3 text-xs text-slate-300 sm:w-auto">
-            <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
-              <p className="text-[11px] text-slate-400">Shots today</p>
-              <p className="text-lg font-semibold text-white">{userPosts.length}</p>
-              <p className="text-[10px] text-slate-500">Live entries</p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
-              <p className="text-[11px] text-slate-400">Creators</p>
-              <p className="text-lg font-semibold text-white">{feedStats.uniqueCreators}</p>
-              <p className="text-[10px] text-slate-500">Studio buzzing</p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
-              <p className="text-[11px] text-slate-400">Reactions</p>
-              <p className="text-lg font-semibold text-white">{feedStats.totalLikes}</p>
-              <p className="text-[10px] text-slate-500">Community love</p>
-            </div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
-              <p className="text-[11px] text-slate-400">Avg ❤️ / shot</p>
-              <p className="text-lg font-semibold text-white">{feedStats.avgLikes.toFixed(1)}</p>
-              <p className="text-[10px] text-slate-500">Momentum</p>
-            </div>
-          </div>
+          {/* Removed mini stats cards (Shots, Creators, Reactions, Avg) */}
         </div>
       </div>
 
