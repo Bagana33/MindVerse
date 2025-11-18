@@ -649,59 +649,7 @@ export function HomeFeed() {
         </div>
       )}
 
-      <div className="rounded-3xl border border-slate-800 bg-slate-900/50 px-4 py-4 sm:px-5">
-        <div className="flex flex-wrap items-center gap-2">
-          {feedTabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`rounded-2xl px-3 py-1.5 text-xs font-semibold transition ${
-                activeTab === tab.id
-                  ? "bg-gradient-to-r from-violet-500 to-purple-500 text-white shadow-[0_4px_12px_rgba(139,92,246,0.4)]"
-                  : "border border-transparent bg-slate-950/60 text-slate-400 hover:border-slate-700 hover:text-slate-200"
-              }`}
-            >
-              <div className="flex flex-col leading-tight">
-                <span>{tab.label}</span>
-                <span className="text-[10px] font-normal text-slate-400">{tab.helper}</span>
-              </div>
-            </button>
-          ))}
-        </div>
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          <div className="flex min-w-[200px] flex-1 items-center gap-2 rounded-full border border-slate-800 bg-slate-950/60 px-3 py-1.5 text-xs text-slate-200 focus-within:border-violet-500/40">
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              className="text-slate-500"
-            >
-              <path
-                d="M11 19C15.4183 19 19 15.4183 19 11C19 6.58172 15.4183 3 11 3C6.58172 3 3 6.58172 3 11C3 15.4183 6.58172 19 11 19Z"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path d="M21 21L16.65 16.65" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search titles, tools, people..."
-              className="flex-1 bg-transparent text-slate-200 placeholder:text-slate-500 focus:outline-none"
-            />
-          </div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-[11px] text-emerald-300">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-            Live sync
-          </div>
-          <span className="text-[11px] text-slate-500">{feedStats.totalLikes} reactions captured</span>
-        </div>
-      </div>
+      {/* Removed tabs/search/live-sync header as requested */}
 
       {trendingPost && (
         <div className="grid gap-4 md:grid-cols-[1.6fr,1fr]">
