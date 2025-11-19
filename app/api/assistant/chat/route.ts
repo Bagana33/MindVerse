@@ -2,10 +2,20 @@ import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { getSessionFromCookies } from "../../../../lib/session";
 
-// DeepSeek uses OpenAI-compatible API
-const deepseek = new OpenAI({
-  apiKey: process.env.DEEPSEEK_API_KEY || "",
-  baseURL: "https://api.deepseek.com/v1",
+// Select provider: prefer OpenRouter (can have free tier) then fallback to DeepSeek direct
+const useOpenRouter = !!process.env.OPENROUTER_API_KEY;
+const client = new OpenAI({
+  apiKey: useOpenRouter ? (process.env.OPENROUTER_API_KEY || "") : (process.env.DEEPSEEK_API_KEY || ""),
+  baseURL: useOpenRouter ? "https://openrouter.ai/api/v1" : "https://api.deepseek.com/v1",
+  // OpenRouter recommends setting these headers
+  ...(useOpenRouter
+    ? ({
+        defaultHeaders: {
+          "HTTP-Referer": process.env.OPENROUTER_SITE_URL || "http://localhost:3000",
+          "X-Title": process.env.OPENROUTER_APP_NAME || "Mind Verse",
+        },
+      } as any)
+    : {}),
 });
 
 function fallbackDesignTips(q: string): string {
@@ -78,7 +88,7 @@ export async function POST(req: Request) {
   const history = Array.isArray(body?.history) ? body.history.slice(-6) : [];
 
   // Basic runtime checks for clearer errors (after parsing message so we can fallback usefully)
-  if (!process.env.DEEPSEEK_API_KEY) {
+  if (!process.env.DEEPSEEK_API_KEY && !process.env.OPENROUTER_API_KEY) {
     // Offline fallback tips (still return ok=true so UI shows something useful)
     const offline = fallbackDesignTips(message);
     return NextResponse.json({ ok: true, answer: offline, offline: true });
@@ -109,8 +119,8 @@ export async function POST(req: Request) {
       { role: "user", content: message },
     ] as Array<{ role: "system" | "user" | "assistant"; content: string }>;
 
-    const completion = await deepseek.chat.completions.create({
-      model: "deepseek-chat",
+    const completion = await client.chat.completions.create({
+      model: useOpenRouter ? "deepseek/deepseek-chat" : "deepseek-chat",
       messages,
       temperature: 0.5,
       max_tokens: 350,
@@ -131,6 +141,6 @@ export async function POST(req: Request) {
       'unavailable';
     // Fallback to curated tips on failure, so students still get value
     const tips = fallbackDesignTips(message);
-    return NextResponse.json({ ok: true, answer: tips, offline: true, offlineReason, provider: 'deepseek' });
+    return NextResponse.json({ ok: true, answer: tips, offline: true, offlineReason, provider: useOpenRouter ? 'openrouter/deepseek' : 'deepseek' });
   }
 }
