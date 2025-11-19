@@ -110,6 +110,25 @@ Environment variables should ONLY be set in:
 - `.env.local` (for local development)
 - Vercel Dashboard (for production)
 
+Use `.env.example` as the reference template for required keys. Create your local file with:
+```bash
+cp .env.example .env.local
+```
+
+### If a key was exposed (rotate immediately)
+
+If any real secret was shared in chat, logs, code, or a commit:
+
+1. Rotate the key at the provider dashboard
+	- Groq → Generate a new key, delete the old one
+	- OpenRouter / DeepSeek / OpenAI → Create a new key, revoke the old
+	- Google Gemini → Regenerate API key
+	- Cloudinary → Reset API Secret
+	- Supabase → Regenerate anon key (and update clients)
+	- Cron secret → Create a new random value
+2. Update `.env.local` and Vercel Environment Variables with the new values
+3. Redeploy
+
 ## Current Status Checklist
 
 After setup, verify:

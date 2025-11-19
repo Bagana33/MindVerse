@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSessionFromCookies } from "../../../../lib/session";
 import { toggleReactionWithType, getPost, ReactionType } from "../../../../lib/posts";
-// XP is no longer awarded on reactions per updated rules
+import { addExperience } from "../../../../lib/users";
 import { addNotification } from "../../../../lib/notifications";
 
 export async function POST(req: Request) {
@@ -33,6 +33,11 @@ export async function POST(req: Request) {
   
   if (!result.success) {
     return NextResponse.json({ ok: false, error: "Reaction хийхэд алдаа гарлаа" }, { status: 500 });
+  }
+
+  // Award 0.3 XP to the user who reacted (if newly added)
+  if (result.added) {
+    await addExperience(session.email, 0.3);
   }
 
   // If reaction newly added (not removed/updated), send notification to post author
