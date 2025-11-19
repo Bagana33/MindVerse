@@ -1,22 +1,8 @@
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { getSessionFromCookies } from "../../../../lib/session";
 
-// Select provider: prefer OpenRouter (can have free tier) then fallback to DeepSeek direct
-const useOpenRouter = !!process.env.OPENROUTER_API_KEY;
-const client = new OpenAI({
-  apiKey: useOpenRouter ? (process.env.OPENROUTER_API_KEY || "") : (process.env.DEEPSEEK_API_KEY || ""),
-  baseURL: useOpenRouter ? "https://openrouter.ai/api/v1" : "https://api.deepseek.com/v1",
-  // OpenRouter recommends setting these headers
-  ...(useOpenRouter
-    ? ({
-        defaultHeaders: {
-          "HTTP-Referer": process.env.OPENROUTER_SITE_URL || "http://localhost:3000",
-          "X-Title": process.env.OPENROUTER_APP_NAME || "Mind Verse",
-        },
-      } as any)
-    : {}),
-});
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY || "");
 
 function fallbackDesignTips(q: string): string {
   const s = q.toLowerCase();
@@ -88,7 +74,7 @@ export async function POST(req: Request) {
   const history = Array.isArray(body?.history) ? body.history.slice(-6) : [];
 
   // Basic runtime checks for clearer errors (after parsing message so we can fallback usefully)
-  if (!process.env.DEEPSEEK_API_KEY && !process.env.OPENROUTER_API_KEY) {
+  if (!process.env.GOOGLE_GEMINI_API_KEY) {
     // Offline fallback tips (still return ok=true so UI shows something useful)
     const offline = fallbackDesignTips(message);
     return NextResponse.json({ ok: true, answer: offline, offline: true });
@@ -110,23 +96,33 @@ export async function POST(req: Request) {
 Хариултаа богино, тод, 3–6 мөр байлга.`;
 
   try {
-    // Build OpenAI-style chat messages for DeepSeek
-    const messages = [
-      { role: "system", content: systemPrompt },
-      ...history
-        .filter((m: any) => typeof m?.role === "string" && typeof m?.content === "string")
-        .map((m: any) => ({ role: m.role, content: m.content })),
-      { role: "user", content: message },
-    ] as Array<{ role: "system" | "user" | "assistant"; content: string }>;
+    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    
+    // Build conversation history for Gemini
+    // Make sure history starts with 'user' and alternates correctly
+    const chatHistory = history
+      .filter((m: any) => typeof m?.role === 'string' && typeof m?.content === 'string')
+      .map((m: any) => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }]
+      }));
 
-    const completion = await client.chat.completions.create({
-      model: useOpenRouter ? "deepseek/deepseek-chat" : "deepseek-chat",
-      messages,
-      temperature: 0.5,
-      max_tokens: 350,
+    // Ensure history starts with user message, not model
+    if (chatHistory.length > 0 && chatHistory[0].role === 'model') {
+      chatHistory.shift(); // Remove first element if it's a model message
+    }
+
+    const chat = model.startChat({
+      history: chatHistory,
+      generationConfig: {
+        maxOutputTokens: 350,
+        temperature: 0.5,
+      },
     });
 
-    const answer = (completion.choices?.[0]?.message?.content || "").trim() ||
+    const result = await chat.sendMessage(`${systemPrompt}\n\nХэрэглэгчийн асуулт: ${message}`);
+    const response = await result.response;
+    const answer = response.text().trim() || 
       "Сайн асуулт байна. Илүү тодорхой тайлбар өгвөл би илүү нарийн зөвлөмж өгч чадна.";
 
     return NextResponse.json({ ok: true, answer });
@@ -134,13 +130,8 @@ export async function POST(req: Request) {
     const code = e?.status ?? e?.code ?? e?.response?.status;
     const msg = e?.message || "Assistant error";
     console.error("Assistant error:", code, msg);
-    // Provide a clearer offline reason for UI
-    const offlineReason =
-      code === 402 ? 'insufficient_balance' :
-      code === 401 || code === 403 ? 'invalid_credentials' :
-      'unavailable';
     // Fallback to curated tips on failure, so students still get value
     const tips = fallbackDesignTips(message);
-    return NextResponse.json({ ok: true, answer: tips, offline: true, offlineReason, provider: useOpenRouter ? 'openrouter/deepseek' : 'deepseek' });
+    return NextResponse.json({ ok: true, answer: tips, offline: true });
   }
 }
