@@ -26,7 +26,12 @@ export async function POST(req: Request) {
   let body: any = {};
   try { body = await req.json(); } catch {}
   const rawType = (body?.type || '').toString().toUpperCase();
-  const type: ReactionType = rawType === 'WOW' ? 'WOW' : rawType === 'LOVE' ? 'LOVE' : 'FIRE';
+  const type: ReactionType = 
+    rawType === 'WOW' ? 'WOW' : 
+    rawType === 'LOVE' ? 'LOVE' : 
+    rawType === 'COOL' ? 'COOL' : 
+    rawType === 'STAR' ? 'STAR' : 
+    'FIRE';
 
   // Toggle / update reaction by type
   const result = await toggleReactionWithType(postId, session.email, type);
@@ -43,7 +48,12 @@ export async function POST(req: Request) {
   // If reaction newly added (not removed/updated), send notification to post author
   if (result.added && post.authorEmail !== session.email) {
     try {
-      const emoji = type === 'FIRE' ? '🔥' : type === 'WOW' ? '😮' : '💖';
+      const emoji = 
+        type === 'FIRE' ? '🔥' : 
+        type === 'WOW' ? '😮' : 
+        type === 'LOVE' ? '💖' :
+        type === 'COOL' ? '😎' :
+        type === 'STAR' ? '⭐' : '🔥';
       await addNotification(
         post.authorEmail,
         session.email,
@@ -56,7 +66,7 @@ export async function POST(req: Request) {
   }
 
   // Aggregate counts per type
-  const counts = { FIRE: 0, WOW: 0, LOVE: 0 } as Record<ReactionType, number>;
+  const counts = { FIRE: 0, WOW: 0, LOVE: 0, COOL: 0, STAR: 0 } as Record<ReactionType, number>;
   result.post?.reactions.forEach(r => { counts[r.type] = (counts[r.type] || 0) + 1; });
 
   return NextResponse.json({

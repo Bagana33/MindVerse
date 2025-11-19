@@ -137,7 +137,7 @@ export function LeaderboardSidebar({ compact = false }: { compact?: boolean }) {
                   ? "bg-gradient-to-r from-violet-300 to-purple-300 bg-clip-text text-transparent" 
                   : "text-slate-400"
               }`}>
-                {u.experience.toLocaleString()}
+                {u.experience.toFixed(1)}
                 <span className="text-[10px] ml-0.5">XP</span>
               </div>
             </li>
@@ -400,7 +400,7 @@ export function LeaderboardFull() {
               </div>
               <div className="text-[11px] flex flex-col items-end gap-1">
                 <span className="font-semibold bg-gradient-to-r from-nc-accentC to-nc-accent bg-clip-text text-transparent">
-                  {u.experience.toLocaleString()} XP
+                  {u.experience.toFixed(1)} XP
                 </span>
                 <span className="text-[10px] text-nc-muted">
                   {u.experience >= 1000 ? "� �🎖️ ✨" : u.experience >= 500 ? "�️ ✨" : u.experience >= 100 ? "✨" : "🌱"}

@@ -8,7 +8,7 @@ import { useSession } from "../auth/useSession";
 import { CommentsSection } from "../posts/CommentsSection";
 import { cachedFetch, invalidateCache } from "../../lib/fetchCache";
 
-type ReactionType = 'FIRE' | 'WOW' | 'LOVE';
+type ReactionType = 'FIRE' | 'WOW' | 'LOVE' | 'COOL' | 'STAR';
 type PostReaction = { userEmail: string; type: ReactionType };
 type Comment = {
   id: string;
@@ -97,6 +97,8 @@ const PostCard = memo(({
     FIRE: post.reactions.filter(r => r.type === 'FIRE').length,
     WOW: post.reactions.filter(r => r.type === 'WOW').length,
     LOVE: post.reactions.filter(r => r.type === 'LOVE').length,
+    COOL: post.reactions.filter(r => r.type === 'COOL').length,
+    STAR: post.reactions.filter(r => r.type === 'STAR').length,
   }), [post.reactions]);
 
   return (
@@ -186,6 +188,8 @@ const PostCard = memo(({
             { type: 'FIRE' as ReactionType, emoji: '🔥', color: 'from-orange-500 to-red-500' },
             { type: 'WOW' as ReactionType, emoji: '😮', color: 'from-yellow-400 to-amber-500' },
             { type: 'LOVE' as ReactionType, emoji: '💖', color: 'from-pink-500 to-fuchsia-500' },
+            { type: 'COOL' as ReactionType, emoji: '😎', color: 'from-blue-500 to-cyan-500' },
+            { type: 'STAR' as ReactionType, emoji: '⭐', color: 'from-yellow-500 to-orange-400' },
           ].map(b => {
             const active = userReaction === b.type;
             return (

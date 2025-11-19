@@ -1,7 +1,7 @@
 // Supabase-based post storage
 import { supabase } from './supabase';
 
-export type ReactionType = 'FIRE' | 'WOW' | 'LOVE';
+export type ReactionType = 'FIRE' | 'WOW' | 'LOVE' | 'COOL' | 'STAR';
 export type PostReaction = { userEmail: string; type: ReactionType };
 export type Visibility = 'PUBLIC' | 'PRIVATE';
 export type UserPost = {
