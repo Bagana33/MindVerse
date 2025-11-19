@@ -42,7 +42,15 @@ export default function StudentAssistant() {
       console.log("API Response:", json); // Debug log
       if (!res.ok || !json.ok) throw new Error(json.error || "Алдаа гарлаа");
       const answerText = json.offline
-        ? `ℹ️ DeepSeek одоогоор ашиглах боломжгүй (API key эсвэл config). Доорх зөвлөгөөг ашиглана уу:\n\n${json.answer}`
+        ? (() => {
+            const reason = json.offlineReason as string | undefined;
+            const hint = reason === 'insufficient_balance'
+              ? 'Тайлбар: DeepSeek API credit дууссан эсвэл идэвхгүй байна.'
+              : reason === 'invalid_credentials'
+              ? 'Тайлбар: API key буруу эсвэл эрх хүрэхгүй байна.'
+              : 'Тайлбар: Үйлчилгээ түр ашиглах боломжгүй.';
+            return `ℹ️ DeepSeek одоогоор ашиглах боломжгүй. ${hint}\n\n${json.answer}`;
+          })()
         : json.answer;
       setMessages((m) => [...m, { role: "assistant", content: answerText }]);
     } catch (e: any) {

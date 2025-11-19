@@ -124,8 +124,13 @@ export async function POST(req: Request) {
     const code = e?.status ?? e?.code ?? e?.response?.status;
     const msg = e?.message || "Assistant error";
     console.error("Assistant error:", code, msg);
+    // Provide a clearer offline reason for UI
+    const offlineReason =
+      code === 402 ? 'insufficient_balance' :
+      code === 401 || code === 403 ? 'invalid_credentials' :
+      'unavailable';
     // Fallback to curated tips on failure, so students still get value
     const tips = fallbackDesignTips(message);
-    return NextResponse.json({ ok: true, answer: tips, offline: true });
+    return NextResponse.json({ ok: true, answer: tips, offline: true, offlineReason, provider: 'deepseek' });
   }
 }
