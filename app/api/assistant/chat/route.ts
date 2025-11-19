@@ -96,7 +96,7 @@ export async function POST(req: Request) {
 Хариултаа богино, тод, 3–6 мөр байлга.`;
 
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     
     // Build conversation history for Gemini
     // Make sure history starts with 'user' and alternates correctly
