@@ -1,8 +1,12 @@
 import { NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import OpenAI from "openai";
 import { getSessionFromCookies } from "../../../../lib/session";
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY || "");
+// Use Groq (free, fast, OpenAI-compatible API)
+const client = new OpenAI({
+  apiKey: process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY || "",
+  baseURL: process.env.GROQ_API_KEY ? "https://api.groq.com/openai/v1" : undefined,
+});
 
 function fallbackDesignTips(q: string): string {
   const s = q.toLowerCase();
@@ -74,7 +78,7 @@ export async function POST(req: Request) {
   const history = Array.isArray(body?.history) ? body.history.slice(-6) : [];
 
   // Basic runtime checks for clearer errors (after parsing message so we can fallback usefully)
-  if (!process.env.GOOGLE_GEMINI_API_KEY) {
+  if (!process.env.GROQ_API_KEY && !process.env.OPENAI_API_KEY) {
     // Offline fallback tips (still return ok=true so UI shows something useful)
     const offline = fallbackDesignTips(message);
     return NextResponse.json({ ok: true, answer: offline, offline: true });
@@ -96,33 +100,23 @@ export async function POST(req: Request) {
 Хариултаа богино, тод, 3–6 мөр байлга.`;
 
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    
-    // Build conversation history for Gemini
-    // Make sure history starts with 'user' and alternates correctly
-    const chatHistory = history
-      .filter((m: any) => typeof m?.role === 'string' && typeof m?.content === 'string')
-      .map((m: any) => ({
-        role: m.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: m.content }]
-      }));
+    // Build OpenAI-style messages
+    const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+      { role: "system", content: systemPrompt },
+      ...history
+        .filter((m: any) => typeof m?.role === "string" && typeof m?.content === "string")
+        .map((m: any) => ({ role: m.role as "user" | "assistant", content: m.content })),
+      { role: "user", content: message },
+    ];
 
-    // Ensure history starts with user message, not model
-    if (chatHistory.length > 0 && chatHistory[0].role === 'model') {
-      chatHistory.shift(); // Remove first element if it's a model message
-    }
-
-    const chat = model.startChat({
-      history: chatHistory,
-      generationConfig: {
-        maxOutputTokens: 350,
-        temperature: 0.5,
-      },
+    const completion = await client.chat.completions.create({
+      model: process.env.GROQ_API_KEY ? "llama-3.3-70b-versatile" : "gpt-3.5-turbo",
+      messages,
+      temperature: 0.5,
+      max_tokens: 350,
     });
 
-    const result = await chat.sendMessage(`${systemPrompt}\n\nХэрэглэгчийн асуулт: ${message}`);
-    const response = await result.response;
-    const answer = response.text().trim() || 
+    const answer = (completion.choices?.[0]?.message?.content || "").trim() ||
       "Сайн асуулт байна. Илүү тодорхой тайлбар өгвөл би илүү нарийн зөвлөмж өгч чадна.";
 
     return NextResponse.json({ ok: true, answer });
