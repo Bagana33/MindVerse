@@ -42,7 +42,7 @@ export default function StudentAssistant() {
       console.log("API Response:", json); // Debug log
       if (!res.ok || !json.ok) throw new Error(json.error || "Алдаа гарлаа");
       const answerText = json.offline
-        ? `ℹ️ Google Gemini одоогоор ашиглах боломжгүй (API key эсвэл config). Доорх зөвлөгөөг ашиглана уу:\n\n${json.answer}`
+        ? `ℹ️ DeepSeek одоогоор ашиглах боломжгүй (API key эсвэл config). Доорх зөвлөгөөг ашиглана уу:\n\n${json.answer}`
         : json.answer;
       setMessages((m) => [...m, { role: "assistant", content: answerText }]);
     } catch (e: any) {
