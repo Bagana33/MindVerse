@@ -96,15 +96,21 @@ export async function POST(req: Request) {
 Хариултаа богино, тод, 3–6 мөр байлга.`;
 
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
     
     // Build conversation history for Gemini
+    // Make sure history starts with 'user' and alternates correctly
     const chatHistory = history
       .filter((m: any) => typeof m?.role === 'string' && typeof m?.content === 'string')
       .map((m: any) => ({
         role: m.role === 'assistant' ? 'model' : 'user',
         parts: [{ text: m.content }]
       }));
+
+    // Ensure history starts with user message, not model
+    if (chatHistory.length > 0 && chatHistory[0].role === 'model') {
+      chatHistory.shift(); // Remove first element if it's a model message
+    }
 
     const chat = model.startChat({
       history: chatHistory,

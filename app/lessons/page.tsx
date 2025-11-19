@@ -136,13 +136,27 @@ export default function LessonsPage() {
         body: JSON.stringify({ title, description, targetGrades, questions, files }),
       });
 
+      // Check if response has content
+      const text = await res.text();
+      if (!text) {
+        setError("Сервэр хариу өгөөгүй байна");
+        return;
+      }
+
+      let json;
+      try {
+        json = JSON.parse(text);
+      } catch (parseErr) {
+        console.error("JSON parse error:", text);
+        setError("Сервэрийн хариу буруу форматтай байна");
+        return;
+      }
+
       if (!res.ok) {
-        const json = await res.json();
         setError(json.error || "Алдаа гарлаа");
         return;
       }
 
-      const json = await res.json();
       setLessons([json.lesson, ...lessons]);
       setTitle("");
       setDescription("");
@@ -151,6 +165,7 @@ export default function LessonsPage() {
       setFiles([]);
       setShowCreateForm(false);
     } catch (err: any) {
+      console.error("Create lesson error:", err);
       setError(err.message || "Сүлжээний алдаа гарлаа");
     } finally {
       setCreating(false);

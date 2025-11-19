@@ -39,12 +39,14 @@ export default function StudentAssistant() {
         body: JSON.stringify({ message: text, history: next }),
       });
       const json = await res.json();
+      console.log("API Response:", json); // Debug log
       if (!res.ok || !json.ok) throw new Error(json.error || "Алдаа гарлаа");
       const answerText = json.offline
         ? `ℹ️ Google Gemini одоогоор ашиглах боломжгүй (API key эсвэл config). Доорх зөвлөгөөг ашиглана уу:\n\n${json.answer}`
         : json.answer;
       setMessages((m) => [...m, { role: "assistant", content: answerText }]);
     } catch (e: any) {
+      console.error("Chat error:", e); // Debug log
       const msg = typeof e?.message === 'string' ? e.message : "Одоогоор хариулах боломжгүй байна.";
       setMessages((m) => [...m, { role: "assistant", content: msg }]);
     } finally {
