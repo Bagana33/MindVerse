@@ -87,26 +87,19 @@ export function ProfileView() {
           setEditGrade("");
         }
 
-        // Fetch user's posts (fetch more posts for profile page)
-        const postsRes = await fetch("/api/posts?limit=50");
+        // Fetch user's posts directly from user-specific endpoint
+        const postsRes = await fetch(`/api/posts/user/${encodeURIComponent(targetEmail)}`);
         if (postsRes.ok) {
           const json = await postsRes.json();
           console.log('🔍 Profile posts fetch:', {
-            totalPosts: json.posts?.length,
+            endpoint: `/api/posts/user/${targetEmail}`,
+            postsCount: json.posts?.length,
             targetEmail,
-            samplePost: json.posts?.[0],
           });
-          // Ensure json.posts is an array before filtering
-          const allPosts = Array.isArray(json.posts) ? json.posts : [];
-          const targetPosts = allPosts.filter((p: UserPost) => {
-            const matches = p.authorEmail === targetEmail;
-            if (allPosts.length < 10) {
-              console.log(`  Post "${p.title}" by ${p.authorEmail}: ${matches ? '✅' : '❌'}`);
-            }
-            return matches;
-          });
-          console.log(`✅ Found ${targetPosts.length} posts for ${targetEmail}`);
-          setUserPosts(targetPosts);
+          // Posts are already filtered by the API
+          const posts = Array.isArray(json.posts) ? json.posts : [];
+          console.log(`✅ Found ${posts.length} posts for ${targetEmail}`);
+          setUserPosts(posts);
         } else {
           console.error("Failed to fetch posts:", postsRes.status);
           setUserPosts([]);

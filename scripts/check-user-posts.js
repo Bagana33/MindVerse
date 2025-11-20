@@ -10,8 +10,9 @@ const supabase = createClient(
 async function checkUserPosts() {
   // Check multiple users
   const emails = [
+    'ejk.kej08@gmail.com', // Bumanjargal T from screenshot
     'amina0924dnd@gmail.com',
-    'aifanbagana@gmail.com', // From screenshot - logged in user
+    'aykozbaurjan@gmail.com', // Has multiple posts
   ];
   
   for (const targetEmail of emails) {

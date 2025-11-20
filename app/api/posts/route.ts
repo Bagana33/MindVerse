@@ -14,7 +14,7 @@ const openai = new OpenAI({
 export async function GET(req: Request) {
   const session = await getSessionFromCookies();
   const { searchParams } = new URL(req.url);
-  const limit = Math.max(1, Math.min(50, Number(searchParams.get('limit') || 20)));
+  const limit = Math.max(1, Math.min(200, Number(searchParams.get('limit') || 20))); // Increased max to 200
   const before = searchParams.get('before') || undefined;
   const posts = await getPostsPage(limit, before);
 
