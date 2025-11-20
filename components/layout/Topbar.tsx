@@ -1,18 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "../auth/useSession";
 import { useEffect, useState, useCallback, useMemo } from "react";
 
 export function Topbar() {
   const pathname = usePathname();
+  const router = useRouter();
   const { session, logout } = useSession();
   const [notifications, setNotifications] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [open, setOpen] = useState(false);
   const [loadingNotifs, setLoadingNotifs] = useState(false);
   const [xp, setXp] = useState<number | null>(null);
+  const [searchInput, setSearchInput] = useState("");
 
   const fetchNotifications = useCallback(async () => {
     if (!session) return;
@@ -131,6 +133,16 @@ export function Topbar() {
             <input
               type="text"
               placeholder="🔍 Дизайн, tag хайх..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && searchInput.trim()) {
+                  // Navigate to home with search query
+                  const params = new URLSearchParams();
+                  params.set('search', searchInput.trim());
+                  router.push(`/?${params.toString()}`);
+                }
+              }}
               className="hidden md:block w-56 glass-panel rounded-full px-4 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all"
             />
             {session ? (

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, memo } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import PostImage from "../posts/PostImage";
 import ImageLightbox from "../posts/ImageLightbox";
 import { useSession } from "../auth/useSession";
@@ -221,6 +221,7 @@ const PostCard = memo(({
 export function HomeFeed() {
   const { session } = useSession();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [userPosts, setUserPosts] = useState<UserPost[]>([]);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [title, setTitle] = useState("");
@@ -244,6 +245,14 @@ export function HomeFeed() {
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
   const [selectedGrade, setSelectedGrade] = useState<string>("all"); // Grade filter: "all", "10", "11", "12", "Р"
+
+  // Read search query from URL params
+  useEffect(() => {
+    const query = searchParams.get('search');
+    if (query) {
+      setSearchQuery(query);
+    }
+  }, [searchParams]);
 
   // Fetch leaderboard to map user experience
   useEffect(() => {
@@ -789,22 +798,47 @@ export function HomeFeed() {
 
       {/* Removed tabs/search/live-sync header as requested */}
 
-      {/* Grade Filter */}
-      <div className="flex items-center gap-2 flex-wrap rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
-        <span className="text-xs font-medium text-slate-400">Анги:</span>
-        {['all', '10', '11', '12', 'Р'].map(grade => (
-          <button
-            key={grade}
-            onClick={() => setSelectedGrade(grade)}
-            className={`rounded-full px-4 py-1.5 text-xs font-medium transition-all ${
-              selectedGrade === grade
-                ? 'bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white shadow-[0_4px_16px_rgba(139,92,246,0.4)]'
-                : 'border border-slate-700 bg-slate-900/60 text-slate-300 hover:border-violet-500/40 hover:text-white'
-            }`}
-          >
-            {grade === 'all' ? 'Бүх' : `${grade}-р анги`}
-          </button>
-        ))}
+      {/* Search and Grade Filter */}
+      <div className="space-y-3">
+        {/* Search bar */}
+        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
+          <div className="flex items-center gap-3">
+            <span className="text-lg">🔍</span>
+            <input
+              type="text"
+              placeholder="Хэрэглэгч нэр эсвэл постын гарчиг, тайлбараар хайх..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="flex-1 bg-transparent text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="text-slate-400 hover:text-slate-200 text-sm"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Grade Filter */}
+        <div className="flex items-center gap-2 flex-wrap rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
+          <span className="text-xs font-medium text-slate-400">Анги:</span>
+          {['all', '10', '11', '12', 'Р'].map(grade => (
+            <button
+              key={grade}
+              onClick={() => setSelectedGrade(grade)}
+              className={`rounded-full px-4 py-1.5 text-xs font-medium transition-all ${
+                selectedGrade === grade
+                  ? 'bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white shadow-[0_4px_16px_rgba(139,92,246,0.4)]'
+                  : 'border border-slate-700 bg-slate-900/60 text-slate-300 hover:border-violet-500/40 hover:text-white'
+              }`}
+            >
+              {grade === 'all' ? 'Бүх' : `${grade}-р анги`}
+            </button>
+          ))}
+        </div>
       </div>
 
       {trendingPost && (
