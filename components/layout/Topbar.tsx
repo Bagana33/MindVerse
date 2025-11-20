@@ -201,9 +201,9 @@ export function Topbar() {
                 </div>
                 <div className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs glass-panel">
                   <span className="w-6 h-6 rounded-full bg-gradient-to-tr from-sky-500 to-violet-500 flex items-center justify-center text-[10px] font-bold shadow-lg">
-                    {session.name?.[0]?.toUpperCase() || session.email[0]?.toUpperCase() || "U"}
+                    {session.nickname?.[0]?.toUpperCase() || session.name?.[0]?.toUpperCase() || session.email[0]?.toUpperCase() || "U"}
                   </span>
-                  <span className="text-slate-200 font-medium">{session.name || session.email.split('@')[0]}</span>
+                  <span className="text-slate-200 font-medium">{session.nickname || session.name || session.email.split('@')[0]}</span>
                   <span className="ml-1 inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-400 font-medium">
                     {session.role === "teacher" ? "✨ Багш" : "👨‍🎓 Сурагч"}
                   </span>

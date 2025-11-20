@@ -18,12 +18,12 @@ export type UserPost = {
 };
 
 // Helper to convert DB format to UserPost
-function dbToPost(dbRow: any, reactions: any[]): UserPost {
+function dbToPost(dbRow: any, reactions: any[], authorName?: string): UserPost {
   return {
     id: dbRow.id,
     title: dbRow.title || dbRow.text, // Fallback to text for backward compatibility
     description: dbRow.description || dbRow.text,
-    author: dbRow.author_email,
+    author: authorName || dbRow.author_email, // Use provided name or fallback to email
     authorEmail: dbRow.author_email,
     points: 100, // Default points
     createdAt: dbRow.created_at,
@@ -66,6 +66,13 @@ export async function getUserPosts(email: string): Promise<UserPost[]> {
 
   if (postsError || !posts) return [];
 
+  // Get user info for author name
+  const { data: user } = await supabase
+    .from('users')
+    .select('email, name, nickname')
+    .eq('email', email)
+    .single();
+
   // Get reactions for all posts
   const postIds = posts.map(p => p.id);
   const { data: reactions } = await supabase
@@ -73,9 +80,11 @@ export async function getUserPosts(email: string): Promise<UserPost[]> {
     .select('*')
     .in('post_id', postIds);
 
+  const authorName = user?.nickname || user?.name || email;
+
   return posts.map(post => {
     const postReactions = reactions?.filter(r => r.post_id === post.id) || [];
-    return dbToPost(post, postReactions);
+    return dbToPost(post, postReactions, authorName);
   });
 }
 
@@ -99,17 +108,20 @@ export async function getPostsPage(limit = 20, beforeISO?: string, grade?: strin
   const { data: posts, error: postsError } = await query;
   if (postsError || !posts) return [];
 
-  // If grade filter is provided, need to join with users table to filter by author grade
+  // Get all author emails to fetch user info
+  const authorEmails = [...new Set(posts.map(p => p.author_email))];
+  const { data: users } = await supabase
+    .from('users')
+    .select('email, name, nickname, grade')
+    .in('email', authorEmails);
+
+  // Create maps for quick lookup
+  const userMap = new Map(users?.map(u => [u.email, u]) || []);
+
+  // If grade filter is provided, filter posts by author grade
   let filteredPosts = posts;
   if (grade && grade !== 'all') {
-    const authorEmails = posts.map(p => p.author_email);
-    const { data: users } = await supabase
-      .from('users')
-      .select('email, grade')
-      .in('email', authorEmails);
-    
-    const gradeMap = new Map(users?.map(u => [u.email, u.grade]) || []);
-    filteredPosts = posts.filter(p => gradeMap.get(p.author_email) === grade);
+    filteredPosts = posts.filter(p => userMap.get(p.author_email)?.grade === grade);
   }
 
   const postIds = filteredPosts.map(p => p.id);
@@ -120,7 +132,10 @@ export async function getPostsPage(limit = 20, beforeISO?: string, grade?: strin
 
   return filteredPosts.map(post => {
     const postReactions = reactions?.filter(r => r.post_id === post.id) || [];
-    return dbToPost(post, postReactions);
+    const user = userMap.get(post.author_email);
+    // Use nickname if available, otherwise name, otherwise email
+    const authorName = user?.nickname || user?.name || post.author_email;
+    return dbToPost(post, postReactions, authorName);
   });
 }
 
@@ -209,10 +224,19 @@ export async function getPost(postId: string): Promise<UserPost | null> {
 
   if (error || !post) return null;
 
+  // Get user info for author name
+  const { data: user } = await supabase
+    .from('users')
+    .select('email, name, nickname')
+    .eq('email', post.author_email)
+    .single();
+
   const { data: reactions } = await supabase
     .from('reactions')
     .select('*')
     .eq('post_id', postId);
 
-  return dbToPost(post, reactions || []);
+  const authorName = user?.nickname || user?.name || post.author_email;
+
+  return dbToPost(post, reactions || [], authorName);
 }

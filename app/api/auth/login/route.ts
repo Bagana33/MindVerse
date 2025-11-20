@@ -44,12 +44,14 @@ export async function POST(req: Request) {
     }
 
     let sessionUserName = name;
+    let sessionNickname: string | undefined;
     let sessionRole: Role = role;
 
     if (mode === "signup") {
       try {
         const created = await createUser(email, password, name, role, grade);
         sessionUserName = created.name;
+        sessionNickname = created.nickname;
         sessionRole = created.role as Role;
       } catch (err: any) {
         return NextResponse.json({ ok: false, error: err.message || "Бүртгэл амжилтгүй" }, { status: 400 });
@@ -69,10 +71,11 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: false, error: "Email эсвэл нууц үг буруу байна" }, { status: 401 });
       }
       sessionUserName = user.name;
+      sessionNickname = user.nickname;
       sessionRole = user.role as Role;
     }
 
-    const session: Session = { email, name: sessionUserName, role: sessionRole };
+    const session: Session = { email, name: sessionUserName, nickname: sessionNickname, role: sessionRole };
     await setSessionCookie(session);
     return NextResponse.json({ ok: true, session });
   } catch (error: any) {

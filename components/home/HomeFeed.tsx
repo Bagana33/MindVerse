@@ -629,7 +629,7 @@ export function HomeFeed() {
     return posts;
   }, [userPosts, activeTab, searchQuery, session]);
 
-  const heroName = session?.name || session?.email?.split("@")[0] || "creator";
+  const heroName = session?.nickname || session?.name || session?.email?.split("@")[0] || "creator";
   const trendingPost = feedStats.trending;
   const emptyStateCopy = !userPosts.length
     ? "Платформ дээр эхний бүтээлээ хуваалцаарай."
@@ -685,7 +685,7 @@ export function HomeFeed() {
           {!showCreateForm ? (
             <div className="mt-4 flex items-start gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 to-violet-500 text-sm font-semibold">
-                {session.name?.[0]?.toUpperCase() || session.email[0]?.toUpperCase() || "U"}
+                {session.nickname?.[0]?.toUpperCase() || session.name?.[0]?.toUpperCase() || session.email[0]?.toUpperCase() || "U"}
               </div>
               <button
                 onClick={() => setShowCreateForm(true)}
@@ -698,7 +698,7 @@ export function HomeFeed() {
             <form onSubmit={handleCreatePost} className="mt-4 space-y-4">
               <div className="flex items-start gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 to-violet-500 text-sm font-semibold">
-                  {session.name?.[0]?.toUpperCase() || session.email[0]?.toUpperCase() || "U"}
+                  {session.nickname?.[0]?.toUpperCase() || session.name?.[0]?.toUpperCase() || session.email[0]?.toUpperCase() || "U"}
                 </div>
                 <div className="flex-1 space-y-3">
                   <input

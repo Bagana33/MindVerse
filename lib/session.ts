@@ -5,6 +5,7 @@ export type Role = "student" | "teacher";
 export type Session = {
   email: string;
   name?: string;
+  nickname?: string;
   role: Role;
 };
 

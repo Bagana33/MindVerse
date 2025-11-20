@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 export type ClientSession = {
   email: string;
   name?: string;
+  nickname?: string;
   role: "student" | "teacher";
 } | null;
 
