@@ -44,7 +44,7 @@ CREATE TABLE reactions (
   id SERIAL PRIMARY KEY,
   post_id TEXT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
   user_email TEXT NOT NULL REFERENCES users(email) ON DELETE CASCADE,
-  type TEXT NOT NULL CHECK (type IN ('like', 'love', 'fire', 'clap', 'think')),
+  type TEXT NOT NULL CHECK (type IN ('fire', 'wow', 'love', 'cool', 'star')),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   UNIQUE(post_id, user_email, type)
 );
