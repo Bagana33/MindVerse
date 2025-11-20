@@ -21,8 +21,8 @@ export type UserPost = {
 function dbToPost(dbRow: any, reactions: any[]): UserPost {
   return {
     id: dbRow.id,
-    title: dbRow.text, // Using text field for title
-    description: dbRow.text,
+    title: dbRow.title || dbRow.text, // Fallback to text for backward compatibility
+    description: dbRow.description || dbRow.text,
     author: dbRow.author_email,
     authorEmail: dbRow.author_email,
     points: 100, // Default points
@@ -41,7 +41,9 @@ export async function createPost(data: Omit<UserPost, "id" | "points" | "created
     .insert([{
       id: postId,
       author_email: data.authorEmail,
-      text: data.title || data.description,
+      title: data.title,
+      description: data.description,
+      text: data.description, // Keep for backward compatibility
       image_data: data.imageUrl,
     }])
     .select()

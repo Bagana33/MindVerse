@@ -91,8 +91,13 @@ export function ProfileView() {
         const postsRes = await fetch("/api/posts");
         if (postsRes.ok) {
           const json = await postsRes.json();
-          const targetPosts = (json.posts || []).filter((p: UserPost) => p.authorEmail === targetEmail);
+          // Ensure json.posts is an array before filtering
+          const allPosts = Array.isArray(json.posts) ? json.posts : [];
+          const targetPosts = allPosts.filter((p: UserPost) => p.authorEmail === targetEmail);
           setUserPosts(targetPosts);
+        } else {
+          console.error("Failed to fetch posts:", postsRes.status);
+          setUserPosts([]);
         }
       } catch (err) {
         console.error("Failed to fetch profile data:", err);
