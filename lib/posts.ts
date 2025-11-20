@@ -84,8 +84,8 @@ export async function getAllPosts(): Promise<UserPost[]> {
   return getPostsPage(30);
 }
 
-// Paginated posts with optional cursor (created_at before)
-export async function getPostsPage(limit = 20, beforeISO?: string): Promise<UserPost[]> {
+// Paginated posts with optional cursor (created_at before) and grade filter
+export async function getPostsPage(limit = 20, beforeISO?: string, grade?: string): Promise<UserPost[]> {
   let query = supabase
     .from('posts')
     .select('*')
@@ -99,13 +99,26 @@ export async function getPostsPage(limit = 20, beforeISO?: string): Promise<User
   const { data: posts, error: postsError } = await query;
   if (postsError || !posts) return [];
 
-  const postIds = posts.map(p => p.id);
+  // If grade filter is provided, need to join with users table to filter by author grade
+  let filteredPosts = posts;
+  if (grade && grade !== 'all') {
+    const authorEmails = posts.map(p => p.author_email);
+    const { data: users } = await supabase
+      .from('users')
+      .select('email, grade')
+      .in('email', authorEmails);
+    
+    const gradeMap = new Map(users?.map(u => [u.email, u.grade]) || []);
+    filteredPosts = posts.filter(p => gradeMap.get(p.author_email) === grade);
+  }
+
+  const postIds = filteredPosts.map(p => p.id);
   const { data: reactions } = await supabase
     .from('reactions')
     .select('*')
     .in('post_id', postIds);
 
-  return posts.map(post => {
+  return filteredPosts.map(post => {
     const postReactions = reactions?.filter(r => r.post_id === post.id) || [];
     return dbToPost(post, postReactions);
   });

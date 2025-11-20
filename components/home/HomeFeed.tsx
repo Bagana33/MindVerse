@@ -243,6 +243,7 @@ export function HomeFeed() {
   const [hasMore, setHasMore] = useState<boolean>(true);
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
+  const [selectedGrade, setSelectedGrade] = useState<string>("all"); // Grade filter: "all", "10", "11", "12", "Р"
 
   // Fetch leaderboard to map user experience
   useEffect(() => {
@@ -263,13 +264,14 @@ export function HomeFeed() {
   useEffect(() => {
     async function fetchPosts() {
       try {
-        const res = await fetch("/api/posts?limit=20");
+        const gradeParam = selectedGrade !== 'all' ? `&grade=${encodeURIComponent(selectedGrade)}` : '';
+        const res = await fetch(`/api/posts?limit=10${gradeParam}`);
         if (res.ok) {
           const json = await res.json();
           const posts: UserPost[] = json.posts || [];
           setUserPosts(posts);
           setCursor(posts.length ? posts[posts.length - 1].createdAt : null);
-          setHasMore(posts.length === 20);
+          setHasMore(posts.length === 10);
 
           // Fetch comment counts in batch for labels
           const ids = posts.map(p => p.id).join(',');
@@ -288,7 +290,7 @@ export function HomeFeed() {
       }
     }
     fetchPosts();
-  }, []);
+  }, [selectedGrade]); // Re-fetch when grade filter changes
 
   async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -506,7 +508,8 @@ export function HomeFeed() {
     if (!hasMore || loadingMore) return;
     setLoadingMore(true);
     try {
-      const url = cursor ? `/api/posts?limit=20&before=${encodeURIComponent(cursor)}` : `/api/posts?limit=20`;
+      const gradeParam = selectedGrade !== 'all' ? `&grade=${encodeURIComponent(selectedGrade)}` : '';
+      const url = cursor ? `/api/posts?limit=10&before=${encodeURIComponent(cursor)}${gradeParam}` : `/api/posts?limit=10${gradeParam}`;
       const res = await fetch(url);
       if (!res.ok) return;
       const json = await res.json();
@@ -525,7 +528,7 @@ export function HomeFeed() {
       
       // Cursor is based on the last fetched post (not sorted), to maintain DB order
       setCursor(more[more.length - 1].createdAt || null);
-      setHasMore(more.length === 20);
+      setHasMore(more.length === 10);
       
       const ids = more.map(p => p.id).join(',');
       if (ids) {
@@ -540,7 +543,7 @@ export function HomeFeed() {
     } finally {
       setLoadingMore(false);
     }
-  }, [hasMore, loadingMore, cursor]);
+  }, [hasMore, loadingMore, cursor, selectedGrade]);
 
   const feedStats = useMemo(() => {
     if (!userPosts.length) {
@@ -786,6 +789,24 @@ export function HomeFeed() {
 
       {/* Removed tabs/search/live-sync header as requested */}
 
+      {/* Grade Filter */}
+      <div className="flex items-center gap-2 flex-wrap rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
+        <span className="text-xs font-medium text-slate-400">Анги:</span>
+        {['all', '10', '11', '12', 'Р'].map(grade => (
+          <button
+            key={grade}
+            onClick={() => setSelectedGrade(grade)}
+            className={`rounded-full px-4 py-1.5 text-xs font-medium transition-all ${
+              selectedGrade === grade
+                ? 'bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white shadow-[0_4px_16px_rgba(139,92,246,0.4)]'
+                : 'border border-slate-700 bg-slate-900/60 text-slate-300 hover:border-violet-500/40 hover:text-white'
+            }`}
+          >
+            {grade === 'all' ? 'Бүх' : `${grade}-р анги`}
+          </button>
+        ))}
+      </div>
+
       {trendingPost && (
         <div className="grid gap-4">
           <div className="rounded-3xl border border-slate-800 bg-gradient-to-br from-slate-950 to-slate-900 px-5 py-5 shadow-[0_15px_40px_rgba(0,0,0,0.45)]">
@@ -850,9 +871,9 @@ export function HomeFeed() {
           <button
             onClick={loadMore}
             disabled={loadingMore}
-            className="px-4 py-2 rounded-lg text-xs font-medium bg-slate-900/60 border border-slate-700 text-slate-300 hover:border-violet-500/40 hover:text-slate-100 disabled:opacity-60"
+            className="px-6 py-3 rounded-xl text-sm font-medium bg-gradient-to-r from-violet-500 to-fuchsia-500 text-white shadow-[0_4px_16px_rgba(139,92,246,0.4)] hover:shadow-[0_6px_20px_rgba(139,92,246,0.6)] disabled:opacity-60 transition-all"
           >
-            {loadingMore ? 'Уншиж байна…' : 'Илүү ачаалах'}
+            {loadingMore ? 'Уншиж байна…' : 'See more'}
           </button>
         </div>
       )}

@@ -16,7 +16,8 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const limit = Math.max(1, Math.min(200, Number(searchParams.get('limit') || 20))); // Increased max to 200
   const before = searchParams.get('before') || undefined;
-  const posts = await getPostsPage(limit, before);
+  const grade = searchParams.get('grade') || undefined; // Filter by grade
+  const posts = await getPostsPage(limit, before, grade);
 
   // If user is signed in, include their private posts; otherwise only public posts
   const visible = session
