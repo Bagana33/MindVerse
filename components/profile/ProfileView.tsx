@@ -91,9 +91,21 @@ export function ProfileView() {
         const postsRes = await fetch("/api/posts");
         if (postsRes.ok) {
           const json = await postsRes.json();
+          console.log('🔍 Profile posts fetch:', {
+            totalPosts: json.posts?.length,
+            targetEmail,
+            samplePost: json.posts?.[0],
+          });
           // Ensure json.posts is an array before filtering
           const allPosts = Array.isArray(json.posts) ? json.posts : [];
-          const targetPosts = allPosts.filter((p: UserPost) => p.authorEmail === targetEmail);
+          const targetPosts = allPosts.filter((p: UserPost) => {
+            const matches = p.authorEmail === targetEmail;
+            if (allPosts.length < 10) {
+              console.log(`  Post "${p.title}" by ${p.authorEmail}: ${matches ? '✅' : '❌'}`);
+            }
+            return matches;
+          });
+          console.log(`✅ Found ${targetPosts.length} posts for ${targetEmail}`);
           setUserPosts(targetPosts);
         } else {
           console.error("Failed to fetch posts:", postsRes.status);
