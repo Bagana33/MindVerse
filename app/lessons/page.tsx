@@ -11,6 +11,7 @@ type Lesson = {
   description: string;
   authorName: string;
   authorEmail: string;
+  targetGrades?: string[];
   questions: any[];
   files?: any[];
   createdAt: string;
@@ -36,6 +37,7 @@ export default function LessonsPage() {
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [editingLessonId, setEditingLessonId] = useState<string | null>(null);
   
   // Form state
   const [title, setTitle] = useState("");
@@ -130,8 +132,11 @@ export default function LessonsPage() {
     setCreating(true);
 
     try {
-      const res = await fetch("/api/lessons", {
-        method: "POST",
+      const endpoint = editingLessonId ? `/api/lessons/${editingLessonId}` : "/api/lessons";
+      const method = editingLessonId ? "PUT" : "POST";
+
+      const res = await fetch(endpoint, {
+        method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, description, targetGrades, questions, files }),
       });
@@ -157,18 +162,67 @@ export default function LessonsPage() {
         return;
       }
 
-      setLessons([json.lesson, ...lessons]);
-      setTitle("");
-      setDescription("");
-      setTargetGrades([]);
-      setQuestions([{ question: "", options: ["", "", "", ""], correctAnswer: 0, explanation: "" }]);
-      setFiles([]);
-      setShowCreateForm(false);
+      if (editingLessonId) {
+        // Update existing lesson
+        setLessons(lessons.map(l => l.id === editingLessonId ? json.lesson : l));
+      } else {
+        // Add new lesson
+        setLessons([json.lesson, ...lessons]);
+      }
+
+      resetForm();
     } catch (err: any) {
-      console.error("Create lesson error:", err);
+      console.error("Create/update lesson error:", err);
       setError(err.message || "Сүлжээний алдаа гарлаа");
     } finally {
       setCreating(false);
+    }
+  }
+
+  function resetForm() {
+    setTitle("");
+    setDescription("");
+    setTargetGrades([]);
+    setQuestions([{ question: "", options: ["", "", "", ""], correctAnswer: 0, explanation: "" }]);
+    setFiles([]);
+    setShowCreateForm(false);
+    setEditingLessonId(null);
+    setError(null);
+  }
+
+  function startEditLesson(lesson: Lesson) {
+    setEditingLessonId(lesson.id);
+    setTitle(lesson.title);
+    setDescription(lesson.description);
+    setTargetGrades((lesson as any).targetGrades || []);
+    setQuestions(lesson.questions.map(q => ({
+      question: q.question,
+      options: [...q.options],
+      correctAnswer: q.correctAnswer,
+      explanation: q.explanation || ""
+    })));
+    setFiles(lesson.files || []);
+    setShowCreateForm(true);
+  }
+
+  async function handleDeleteLesson(lessonId: string) {
+    if (!confirm("Энэ хичээлийг устгах уу?")) return;
+
+    try {
+      const res = await fetch(`/api/lessons/${lessonId}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) {
+        const json = await res.json();
+        alert(json.error || "Алдаа гарлаа");
+        return;
+      }
+
+      setLessons(lessons.filter(l => l.id !== lessonId));
+    } catch (err) {
+      console.error("Delete lesson error:", err);
+      alert("Сүлжээний алдаа гарлаа");
     }
   }
 
@@ -189,7 +243,9 @@ export default function LessonsPage() {
 
         {showCreateForm && session && session.role === "teacher" && (
           <div className="bg-slate-900/40 border border-slate-800 rounded-2xl px-6 py-5 shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
-            <h2 className="text-lg font-semibold mb-4">Шинэ хичээл үүсгэх</h2>
+            <h2 className="text-lg font-semibold mb-4">
+              {editingLessonId ? "Хичээл засах" : "Шинэ хичээл үүсгэх"}
+            </h2>
             <form onSubmit={handleCreateLesson} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium mb-2">Гарчиг</label>
@@ -362,14 +418,7 @@ export default function LessonsPage() {
               <div className="flex gap-2 justify-end">
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowCreateForm(false);
-                    setTitle("");
-                    setDescription("");
-                    setQuestions([{ question: "", options: ["", "", "", ""], correctAnswer: 0, explanation: "" }]);
-                    setFiles([]);
-                    setError(null);
-                  }}
+                  onClick={resetForm}
                   className="px-4 py-2 rounded-lg border border-slate-700 text-sm hover:bg-slate-800 transition-colors"
                 >
                   Болих
@@ -379,7 +428,7 @@ export default function LessonsPage() {
                   disabled={creating}
                   className="px-6 py-2 rounded-lg bg-gradient-to-r from-violet-500 to-purple-500 text-white text-sm font-medium disabled:opacity-60"
                 >
-                  {creating ? "Үүсгэж байна..." : "Хичээл үүсгэх"}
+                  {creating ? (editingLessonId ? "Хадгалж байна..." : "Үүсгэж байна...") : (editingLessonId ? "Хадгалах" : "Хичээл үүсгэх")}
                 </button>
               </div>
             </form>
@@ -394,15 +443,14 @@ export default function LessonsPage() {
           </div>
         ) : (
           <div className="grid gap-4">
-            {lessons.map((lesson) => (
-              <Link
-                key={lesson.id}
-                href={`/lessons/${lesson.id}`}
-                className="block bg-slate-900/40 border border-slate-800 rounded-2xl px-6 py-5 hover:border-violet-500/50 hover:-translate-y-0.5 transition-all"
-              >
+            {lessons.map((lesson) => {
+              const isAuthor = session?.email === lesson.authorEmail;
+              
+              return (
+              <div key={lesson.id} className="bg-slate-900/40 border border-slate-800 rounded-2xl px-6 py-5 hover:border-violet-500/50 transition-all">
                 <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1">
-                    <h3 className="text-lg font-semibold text-slate-200 mb-2">{lesson.title}</h3>
+                  <Link href={`/lessons/${lesson.id}`} className="flex-1">
+                    <h3 className="text-lg font-semibold text-slate-200 mb-2 hover:text-violet-300 transition-colors">{lesson.title}</h3>
                     <p className="text-sm text-slate-400 mb-3">{lesson.description}</p>
                     <div className="flex items-center gap-4 text-xs text-slate-500">
                       <span>👤 {lesson.authorName}</span>
@@ -412,11 +460,43 @@ export default function LessonsPage() {
                       )}
                       <span>{new Date(lesson.createdAt).toLocaleDateString("mn-MN")}</span>
                     </div>
+                  </Link>
+                  <div className="flex flex-col gap-2">
+                    <Link 
+                      href={`/lessons/${lesson.id}`}
+                      className="text-violet-400 text-sm hover:text-violet-300 transition-colors"
+                    >
+                      →
+                    </Link>
+                    {isAuthor && (
+                      <div className="flex flex-col gap-1">
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            startEditLesson(lesson);
+                          }}
+                          className="px-3 py-1 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 text-xs transition-colors"
+                          title="Засах"
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.preventDefault();
+                            handleDeleteLesson(lesson.id);
+                          }}
+                          className="px-3 py-1 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 text-xs transition-colors"
+                          title="Устгах"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  <div className="text-violet-400 text-sm">→</div>
                 </div>
-              </Link>
-            ))}
+              </div>
+            );
+            })}
           </div>
         )}
       </div>

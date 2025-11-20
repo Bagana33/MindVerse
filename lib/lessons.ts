@@ -203,6 +203,85 @@ export async function getLesson(id: string): Promise<Lesson | null> {
   );
 }
 
+export async function updateLesson(
+  id: string,
+  userEmail: string,
+  updates: {
+    title?: string;
+    description?: string;
+    targetGrades?: string[];
+    questions?: Question[];
+    files?: LessonFile[];
+  }
+): Promise<Lesson | null> {
+  // Verify ownership
+  const existingLesson = await getLesson(id);
+  if (!existingLesson || existingLesson.authorEmail !== userEmail) {
+    return null;
+  }
+
+  // Update lesson metadata
+  const lessonUpdate: any = {};
+  if (updates.title !== undefined) lessonUpdate.title = updates.title;
+  if (updates.description !== undefined) lessonUpdate.description = updates.description;
+  if (updates.targetGrades !== undefined) lessonUpdate.target_grades = updates.targetGrades;
+
+  if (Object.keys(lessonUpdate).length > 0) {
+    const { error: lessonError } = await supabase
+      .from('lessons')
+      .update(lessonUpdate)
+      .eq('id', id);
+
+    if (lessonError) {
+      throw lessonError;
+    }
+  }
+
+  // Update questions if provided
+  if (updates.questions !== undefined) {
+    // Delete existing questions
+    await supabase.from('lesson_questions').delete().eq('lesson_id', id);
+
+    // Insert new questions
+    if (updates.questions.length > 0) {
+      await supabase.from('lesson_questions').insert(
+        updates.questions.map((q, idx) => ({
+          id: `${id}-q${idx + 1}`,
+          lesson_id: id,
+          question: q.question,
+          options: q.options,
+          correct_answer: q.correctAnswer,
+          explanation: q.explanation,
+          order_index: idx,
+        }))
+      );
+    }
+  }
+
+  // Update files if provided
+  if (updates.files !== undefined) {
+    // Delete existing files
+    await supabase.from('lesson_files').delete().eq('lesson_id', id);
+
+    // Insert new files
+    if (updates.files.length > 0) {
+      await supabase.from('lesson_files').insert(
+        updates.files.map(f => ({
+          id: f.id || `${id}-file-${Date.now()}`,
+          lesson_id: id,
+          file_name: f.fileName,
+          file_type: f.fileType,
+          file_url: f.fileUrl,
+          file_size: f.fileSize || 0,
+        }))
+      );
+    }
+  }
+
+  // Return updated lesson
+  return await getLesson(id);
+}
+
 export async function deleteLesson(id: string, userEmail: string): Promise<boolean> {
   const { data, error } = await supabase
     .from('lessons')
