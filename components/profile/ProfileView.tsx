@@ -87,8 +87,8 @@ export function ProfileView() {
           setEditGrade("");
         }
 
-        // Fetch user's posts
-        const postsRes = await fetch("/api/posts");
+        // Fetch user's posts (fetch more posts for profile page)
+        const postsRes = await fetch("/api/posts?limit=50");
         if (postsRes.ok) {
           const json = await postsRes.json();
           console.log('🔍 Profile posts fetch:', {
