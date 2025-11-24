@@ -37,6 +37,7 @@ export async function PUT(
   const targetGrades = Array.isArray(body?.targetGrades) ? body.targetGrades : undefined;
   const questions = body?.questions;
   const files = body?.files;
+  let sanitizedFiles: any[] | undefined = undefined;
 
   // Validate if provided
   if (title !== undefined && title.length < 1) {
@@ -71,14 +72,25 @@ export async function PUT(
   }
 
   // Validate files if provided
-  if (files !== undefined && Array.isArray(files)) {
-    for (const file of files) {
-      if (!file.fileName || !file.fileType || !file.fileUrl) {
+  if (files !== undefined) {
+    if (!Array.isArray(files)) {
+      return NextResponse.json({ ok: false, error: "Файлын формат буруу байна" }, { status: 400 });
+    }
+    sanitizedFiles = [];
+    for (const [idx, file] of files.entries()) {
+      if (!file?.fileName || !file?.fileUrl) {
         return NextResponse.json({ ok: false, error: "Файл буруу форматтай байна" }, { status: 400 });
       }
       if (file.fileSize && file.fileSize > 20 * 1024 * 1024) {
         return NextResponse.json({ ok: false, error: `Файл хэт том байна: ${file.fileName} (максимум 20MB)` }, { status: 400 });
       }
+      sanitizedFiles.push({
+        id: file.id || `file-${Date.now()}-${idx}`,
+        fileName: file.fileName,
+        fileType: file.fileType || 'application/octet-stream',
+        fileUrl: file.fileUrl,
+        fileSize: file.fileSize || 0,
+      });
     }
   }
 
@@ -96,14 +108,8 @@ export async function PUT(
       explanation: q.explanation?.trim() || undefined,
     }));
   }
-  if (files !== undefined) {
-    updates.files = files.map((f: any, idx: number) => ({
-      id: f.id || `file-${Date.now()}-${idx}`,
-      fileName: f.fileName,
-      fileType: f.fileType,
-      fileUrl: f.fileUrl,
-      fileSize: f.fileSize || 0,
-    }));
+  if (sanitizedFiles !== undefined) {
+    updates.files = sanitizedFiles;
   }
 
   const updatedLesson = await updateLesson(params.id, session.email, updates);

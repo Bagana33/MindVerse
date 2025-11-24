@@ -51,6 +51,7 @@ export async function POST(req: Request) {
   const targetGrades = Array.isArray(body?.targetGrades) ? body.targetGrades : [];
   const questions = body?.questions || [];
   const files = body?.files || [];
+  const sanitizedFiles: any[] = [];
 
   if (!title || title.length < 1) {
     return NextResponse.json(
@@ -103,22 +104,52 @@ export async function POST(req: Request) {
     }
   }
 
-  // Validate files if provided
+  // Debug: log request summary only (avoid dumping large base64 strings)
+  console.log('Lesson POST request body:', {
+    title,
+    descriptionLength: description.length,
+    questionsCount: questions.length,
+    filesCount: Array.isArray(files) ? files.length : 0,
+  });
   if (Array.isArray(files)) {
-    for (const file of files) {
-      if (!file.fileName || !file.fileType || !file.fileUrl) {
+    console.log('Lesson files meta:', files.map((f: any) => ({
+      fileName: f?.fileName,
+      fileType: f?.fileType,
+      fileSize: f?.fileSize,
+      hasUrl: Boolean(f?.fileUrl),
+    })));
+    for (const [idx, file] of files.entries()) {
+      // Accept any file type, fallback to octet-stream if missing
+      if (!file?.fileName || !file?.fileUrl) {
+        console.error('File validation error:', file);
         return NextResponse.json(
           { ok: false, error: "Файл буруу форматтай байна" },
           { status: 400 }
         );
       }
-      // Check file size (max 20MB for demo)
+      const fileType = file.fileType || 'application/octet-stream';
       if (file.fileSize && file.fileSize > 20 * 1024 * 1024) {
         return NextResponse.json(
           { ok: false, error: `Файл хэт том байна: ${file.fileName} (максимум 20MB)` },
           { status: 400 }
         );
       }
+
+      sanitizedFiles.push({
+        id: file.id || `file-${Date.now()}-${idx}`,
+        fileName: file.fileName,
+        fileType,
+        fileUrl: file.fileUrl,
+        fileSize: file.fileSize || 0,
+      });
+
+      // Log file details for debugging
+      console.log('Lesson file received:', {
+        fileName: file.fileName,
+        fileType,
+        fileSize: file.fileSize,
+        fileUrl: file.fileUrl ? file.fileUrl.substring(0, 30) + '...' : undefined
+      });
     }
   }
 
@@ -136,13 +167,7 @@ export async function POST(req: Request) {
       correctAnswer: q.correctAnswer,
       explanation: q.explanation?.trim() || undefined,
     })),
-    files: files.map((f: any, idx: number) => ({
-      id: `file-${Date.now()}-${idx}`,
-      fileName: f.fileName,
-      fileType: f.fileType,
-      fileUrl: f.fileUrl,
-      fileSize: f.fileSize || 0,
-    })),
+    files: sanitizedFiles,
   });
 
   // Send notification to all students about new lesson

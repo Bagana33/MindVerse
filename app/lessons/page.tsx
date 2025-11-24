@@ -48,6 +48,7 @@ export default function LessonsPage() {
   ]);
   const [files, setFiles] = useState<FileInput[]>([]);
   const [creating, setCreating] = useState(false);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -59,10 +60,22 @@ export default function LessonsPage() {
       const res = await fetch("/api/lessons");
       if (res.ok) {
         const json = await res.json();
-        setLessons(json.lessons || []);
+        // Defensive: always array, always targetGrades is array
+        const lessonsArr = Array.isArray(json.lessons) ? json.lessons : [];
+        setLessons(
+          lessonsArr.map(l => ({
+            ...l,
+            targetGrades: Array.isArray(l.targetGrades) ? l.targetGrades : [],
+            questions: Array.isArray(l.questions) ? l.questions : [],
+            files: Array.isArray(l.files) ? l.files : [],
+          }))
+        );
+      } else {
+        setLessons([]);
       }
     } catch (err) {
       console.error("Failed to fetch lessons:", err);
+      setLessons([]);
     } finally {
       setLoading(false);
     }
@@ -90,36 +103,109 @@ export default function LessonsPage() {
     setQuestions(updated);
   }
 
-  function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const uploadedFiles = e.target.files;
     if (!uploadedFiles || uploadedFiles.length === 0) return;
 
     setError(null);
 
-    Array.from(uploadedFiles).forEach(file => {
-      // Max 20MB per file
-      if (file.size > 20 * 1024 * 1024) {
-        setError(`Файл хэт том байна: ${file.name} (максимум 20MB)`);
-        return;
-      }
+    setUploadingFiles(true);
+    const newFiles: FileInput[] = [];
 
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const result = event.target?.result as string;
-        const newFile: FileInput = {
+    try {
+      for (const file of Array.from(uploadedFiles)) {
+        // Max 20MB per file to stay within DB + CDN limits
+        if (file.size > 20 * 1024 * 1024) {
+          setError(`Файл хэт том байна: ${file.name} (максимум 20MB)`);
+          continue;
+        }
+
+        const baseInfo = {
           id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           fileName: file.name,
-          fileType: file.type,
-          fileUrl: result,
+          fileType: file.type || "application/octet-stream",
           fileSize: file.size,
         };
-        setFiles(prev => [...prev, newFile]);
-      };
-      reader.onerror = () => {
-        setError(`Файл уншихад алдаа гарлаа: ${file.name}`);
-      };
-      reader.readAsDataURL(file);
-    });
+
+        // Try Cloudinary (allows any file type and avoids huge payloads)
+        try {
+          const signRes = await fetch("/api/uploads/sign", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ folder: "neoncanvas/lessons" }),
+          });
+
+          if (signRes.ok) {
+            const signJson = await signRes.json();
+            if (signJson?.ok && signJson.cloudName && signJson.apiKey && signJson.signature) {
+              const form = new FormData();
+              form.append("file", file);
+              form.append("api_key", signJson.apiKey);
+              form.append("timestamp", String(signJson.timestamp));
+              form.append("signature", signJson.signature);
+              form.append("folder", signJson.folder || "neoncanvas/lessons");
+
+              const uploadRes = await fetch(
+                `https://api.cloudinary.com/v1_1/${signJson.cloudName}/auto/upload`,
+                { method: "POST", body: form }
+              );
+
+              if (!uploadRes.ok) {
+                throw new Error(`Upload failed with ${uploadRes.status}`);
+              }
+
+              const uploadJson = await uploadRes.json();
+              if (!uploadJson?.secure_url) {
+                throw new Error("No secure_url returned");
+              }
+
+              newFiles.push({
+                ...baseInfo,
+                fileType:
+                  file.type ||
+                  (uploadJson.resource_type && uploadJson.format
+                    ? `${uploadJson.resource_type}/${uploadJson.format}`
+                    : "application/octet-stream"),
+                fileUrl: uploadJson.secure_url,
+              });
+              continue;
+            }
+          }
+
+          throw new Error("Signing failed");
+        } catch (cloudErr) {
+          // Fallback to base64 (small files) if Cloudinary is not configured
+          try {
+            const dataUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = (event) => {
+                const result = event.target?.result as string;
+                if (!result) reject(new Error("No file content"));
+                else resolve(result);
+              };
+              reader.onerror = () => reject(new Error(`Файл уншихад алдаа гарлаа: ${file.name}`));
+              reader.readAsDataURL(file);
+            });
+
+            newFiles.push({
+              ...baseInfo,
+              fileUrl: dataUrl,
+            });
+          } catch (readErr: any) {
+            console.error("File upload failed:", cloudErr, readErr);
+            setError(`Файл байрлуулахад алдаа гарлаа: ${file.name}`);
+          }
+        }
+      }
+
+      if (newFiles.length > 0) {
+        setFiles((prev) => [...prev, ...newFiles]);
+      }
+    } finally {
+      setUploadingFiles(false);
+      // Allow uploading the same file again if needed
+      e.target.value = "";
+    }
   }
 
   function removeFile(fileId: string) {
@@ -128,6 +214,10 @@ export default function LessonsPage() {
 
   async function handleCreateLesson(e: React.FormEvent) {
     e.preventDefault();
+    if (uploadingFiles) {
+      setError("Файл байршиж байна, түр хүлээгээд дахин оролдоно уу.");
+      return;
+    }
     setError(null);
     setCreating(true);
 
@@ -141,19 +231,26 @@ export default function LessonsPage() {
         body: JSON.stringify({ title, description, targetGrades, questions, files }),
       });
 
-      // Check if response has content
-      const text = await res.text();
-      if (!text) {
-        setError("Сервэр хариу өгөөгүй байна");
+      const contentType = res.headers.get("content-type") || "";
+      let json: any = null;
+      if (contentType.includes("application/json")) {
+        json = await res.json().catch(() => null);
+      } else {
+        const text = await res.text();
+        if (res.status === 413) {
+          setError("Илгээсэн өгөгдөл хэт том байна. Файлаа багасгах эсвэл дахин оролдоно уу.");
+        } else {
+          console.error("Non-JSON response from /api/lessons:", {
+            status: res.status,
+            preview: text?.slice(0, 200),
+          });
+          setError("Сервэрийн хариу буруу форматтай байна");
+        }
         return;
       }
 
-      let json;
-      try {
-        json = JSON.parse(text);
-      } catch (parseErr) {
-        console.error("JSON parse error:", text);
-        setError("Сервэрийн хариу буруу форматтай байна");
+      if (!json) {
+        setError("Сервэр хариу өгөөгүй байна");
         return;
       }
 
@@ -322,6 +419,9 @@ export default function LessonsPage() {
                       accept="*/*"
                     />
                   </label>
+                  {uploadingFiles && (
+                    <p className="text-xs text-slate-400">Файл байршиж байна...</p>
+                  )}
                   {files.length > 0 && (
                     <div className="space-y-2 mt-3">
                       {files.map((file) => (
@@ -425,7 +525,7 @@ export default function LessonsPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={creating}
+                  disabled={creating || uploadingFiles}
                   className="px-6 py-2 rounded-lg bg-gradient-to-r from-violet-500 to-purple-500 text-white text-sm font-medium disabled:opacity-60"
                 >
                   {creating ? (editingLessonId ? "Хадгалж байна..." : "Үүсгэж байна...") : (editingLessonId ? "Хадгалах" : "Хичээл үүсгэх")}
