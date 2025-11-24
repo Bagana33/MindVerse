@@ -174,27 +174,10 @@ export default function LessonsPage() {
 
           throw new Error("Signing failed");
         } catch (cloudErr) {
-          // Fallback to base64 (small files) if Cloudinary is not configured
-          try {
-            const dataUrl = await new Promise<string>((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = (event) => {
-                const result = event.target?.result as string;
-                if (!result) reject(new Error("No file content"));
-                else resolve(result);
-              };
-              reader.onerror = () => reject(new Error(`Файл уншихад алдаа гарлаа: ${file.name}`));
-              reader.readAsDataURL(file);
-            });
-
-            newFiles.push({
-              ...baseInfo,
-              fileUrl: dataUrl,
-            });
-          } catch (readErr: any) {
-            console.error("File upload failed:", cloudErr, readErr);
-            setError(`Файл байрлуулахад алдаа гарлаа: ${file.name}`);
-          }
+          // Avoid pushing large base64 bodies to the API (causes 413). Require Cloudinary for >0 files.
+          console.error("Cloudinary upload failed:", cloudErr);
+          setError("Файл байршуулж чадсангүй. Cloudinary тохиргоогоо шалгана уу эсвэл файлаа багасгаарай.");
+          continue;
         }
       }
 
@@ -238,7 +221,7 @@ export default function LessonsPage() {
       } else {
         const text = await res.text();
         if (res.status === 413) {
-          setError("Илгээсэн өгөгдөл хэт том байна. Файлаа багасгах эсвэл дахин оролдоно уу.");
+          setError("Илгээсэн өгөгдөл хэт том байна. Cloudinary тохиргоогоо шалгаад дахин оролдох эсвэл файлаа 20MB-аас багасгаарай.");
         } else {
           console.error("Non-JSON response from /api/lessons:", {
             status: res.status,
