@@ -370,15 +370,52 @@ export function LeaderboardFull() {
             u.experience >= 500 ? "Advanced" :
             u.experience >= 100 ? "Intermediate" : "Beginner";
           const isMe = session?.email === u.email;
+          const topFrames = [
+            {
+              container: "relative overflow-hidden border-2 border-amber-400/70 bg-gradient-to-br from-amber-500/12 via-amber-300/6 to-amber-500/18 shadow-[0_15px_50px_rgba(251,191,36,0.25)]",
+              glow: "bg-amber-400/25",
+              rankBg: "bg-gradient-to-br from-amber-400 via-yellow-300 to-amber-500 text-slate-900",
+              avatarRing: "ring-2 ring-amber-300 shadow-[0_0_25px_rgba(251,191,36,0.35)]",
+              xp: "bg-gradient-to-r from-amber-200 to-yellow-200 bg-clip-text text-transparent"
+            },
+            {
+              container: "relative overflow-hidden border-2 border-slate-200/70 bg-gradient-to-br from-slate-200/18 via-slate-100/8 to-slate-200/20 shadow-[0_15px_50px_rgba(148,163,184,0.25)]",
+              glow: "bg-slate-200/20",
+              rankBg: "bg-gradient-to-br from-slate-100 via-slate-300 to-slate-500 text-slate-900",
+              avatarRing: "ring-2 ring-slate-200 shadow-[0_0_25px_rgba(148,163,184,0.35)]",
+              xp: "bg-gradient-to-r from-slate-100 to-slate-200 bg-clip-text text-transparent"
+            },
+            {
+              container: "relative overflow-hidden border-2 border-orange-300/70 bg-gradient-to-br from-orange-400/12 via-orange-200/6 to-orange-500/18 shadow-[0_15px_50px_rgba(249,115,22,0.25)]",
+              glow: "bg-orange-300/25",
+              rankBg: "bg-gradient-to-br from-orange-300 via-orange-400 to-amber-500 text-slate-900",
+              avatarRing: "ring-2 ring-orange-300 shadow-[0_0_25px_rgba(249,115,22,0.35)]",
+              xp: "bg-gradient-to-r from-orange-200 to-amber-200 bg-clip-text text-transparent"
+            },
+          ];
+          const isTop3 = idx < 3;
+          const frame = isTop3 ? topFrames[idx] : null;
           
           return (
             <div
               key={u.email}
-              className={`grid grid-cols-[40px,1fr,110px,120px] gap-3 items-center px-2 py-2 rounded-xl border bg-white/5 hover:bg-nc-accent/5 hover:translate-x-0.5 transition-all ${isMe ? 'border-violet-500/50 shadow-[0_0_18px_rgba(139,92,246,0.3)]' : 'border-slate-800/80'}`}
+              className={`grid grid-cols-[40px,1fr,110px,120px] gap-3 items-center px-3 py-3 rounded-xl transition-all ${
+                frame
+                  ? `${frame.container}`
+                  : `border bg-white/5 hover:bg-nc-accent/5 hover:translate-x-0.5 ${isMe ? 'border-violet-500/50 shadow-[0_0_18px_rgba(139,92,246,0.3)]' : 'border-slate-800/80'}`
+              }`}
             >
+              {frame && (
+                <>
+                  <div className={`absolute inset-0 blur-2xl opacity-60 ${frame.glow}`} aria-hidden="true"></div>
+                  <div className="absolute inset-0 border border-white/5 rounded-xl pointer-events-none"></div>
+                </>
+              )}
               <div className="flex items-center justify-center">
-                <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-nc-accent to-nc-accentB text-[11px] flex items-center justify-center font-bold shadow-[0_0_16px_rgba(139,92,246,0.6)]">
-                  {idx === 0 ? <Medal3D /> : idx + 1}
+                <div className={`w-7 h-7 rounded-full text-[11px] flex items-center justify-center font-bold shadow-[0_0_16px_rgba(139,92,246,0.6)] ${
+                  frame ? frame.rankBg : 'bg-gradient-to-tr from-nc-accent to-nc-accentB'
+                }`}>
+                  {isTop3 ? (idx === 0 ? <Medal3D /> : idx + 1) : idx + 1}
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -387,7 +424,7 @@ export function LeaderboardFull() {
                     type="button"
                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`/profile?user=${encodeURIComponent(u.email)}`); }}
                     title={`${(u.nickname || u.name || u.email)}-н profile харах`}
-                    className="w-9 h-9 rounded-full border shadow-sm overflow-hidden cursor-pointer hover:ring-2 hover:ring-violet-400/50"
+                    className={`w-9 h-9 rounded-full border shadow-sm overflow-hidden cursor-pointer hover:ring-2 hover:ring-violet-400/50 ${frame ? frame.avatarRing : ''}`}
                     style={{ borderColor: u.avatarColor || '#6366f1' }}
                   >
                     <img 
@@ -401,7 +438,7 @@ export function LeaderboardFull() {
                     type="button"
                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`/profile?user=${encodeURIComponent(u.email)}`); }}
                     title={`${(u.nickname || u.name || u.email)}-н profile харах`}
-                    className="w-9 h-9 rounded-full border flex items-center justify-center text-[11px] font-semibold shadow-sm cursor-pointer hover:ring-2 hover:ring-violet-400/50"
+                    className={`w-9 h-9 rounded-full border flex items-center justify-center text-[11px] font-semibold shadow-sm cursor-pointer hover:ring-2 hover:ring-violet-400/50 ${frame ? frame.avatarRing : ''}`}
                     style={{ 
                       background: `linear-gradient(to top right, ${u.avatarColor || '#6366f1'}, ${u.avatarColor || '#6366f1'}dd)`,
                       borderColor: u.avatarColor || '#6366f1'
@@ -429,15 +466,15 @@ export function LeaderboardFull() {
                   {rankTitle}
                 </span>
               </div>
-              <div className="text-[11px] flex flex-col items-end gap-1">
-                <span className="font-semibold bg-gradient-to-r from-nc-accentC to-nc-accent bg-clip-text text-transparent">
-                  {u.experience.toFixed(1)} XP
-                </span>
-                <span className="text-[10px] text-nc-muted">
-                  {u.experience >= 1000 ? "� �🎖️ ✨" : u.experience >= 500 ? "�️ ✨" : u.experience >= 100 ? "✨" : "🌱"}
-                </span>
+                <div className="text-[11px] flex flex-col items-end gap-1">
+                  <span className={`font-semibold ${frame ? frame.xp : 'bg-gradient-to-r from-nc-accentC to-nc-accent bg-clip-text text-transparent'}`}>
+                    {u.experience.toFixed(1)} XP
+                  </span>
+                  <span className="text-[10px] text-nc-muted">
+                    {u.experience >= 1000 ? "🏵️ 🎖️ ✨" : u.experience >= 500 ? "🎖️ ✨" : u.experience >= 100 ? "✨" : "🌱"}
+                  </span>
+                </div>
               </div>
-            </div>
           );
         })}
         </div>

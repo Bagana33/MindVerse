@@ -8,6 +8,7 @@ export type Comment = {
   authorName?: string;
   content: string;
   isAI: boolean;
+  parentCommentId?: string | null;
   createdAt: string;
 };
 
@@ -18,6 +19,7 @@ function dbToComment(dbRow: any): Comment {
     authorEmail: dbRow.author_email,
     content: dbRow.content,
     isAI: dbRow.is_ai || false,
+    parentCommentId: dbRow.parent_comment_id ?? null,
     createdAt: dbRow.created_at,
   };
 }
@@ -27,6 +29,7 @@ export async function createComment(data: {
   authorEmail: string;
   content: string;
   isAI?: boolean;
+  parentCommentId?: string;
 }): Promise<Comment> {
   const commentId = `comment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   
@@ -38,6 +41,7 @@ export async function createComment(data: {
       author_email: data.authorEmail,
       content: data.content,
       is_ai: data.isAI || false,
+      parent_comment_id: data.parentCommentId || null,
     }])
     .select()
     .single();

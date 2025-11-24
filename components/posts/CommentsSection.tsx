@@ -10,6 +10,7 @@ type Comment = {
   authorEmail: string;
   content: string;
   isAI: boolean;
+  parentCommentId?: string | null;
   createdAt: string;
 };
 
@@ -47,6 +48,8 @@ export function CommentsSection({
   const [loaded, setLoaded] = useState(!!comments && comments.length > 0);
   const [localComments, setLocalComments] = useState<Comment[]>(comments || []);
   const [loading, setLoading] = useState(false);
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [replySubmitting, setReplySubmitting] = useState<string | null>(null);
 
   async function loadComments() {
     if (loaded || loading) return;
@@ -64,16 +67,24 @@ export function CommentsSection({
     }
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!session || !commentText.trim()) return;
+  async function submitComment(content: string, parentCommentId?: string) {
+    if (!session || !content.trim()) return;
 
-    setSubmitting(true);
+    if (!loaded) {
+      await loadComments();
+    }
+
+    if (parentCommentId) {
+      setReplySubmitting(parentCommentId);
+    } else {
+      setSubmitting(true);
+    }
+
     try {
       const res = await fetch("/api/posts/comments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ postId, content: commentText.trim() }),
+        body: JSON.stringify({ postId, content: content.trim(), parentCommentId }),
       });
 
       if (!res.ok) {
@@ -87,8 +98,9 @@ export function CommentsSection({
         id: json.comment.id,
         postId,
         authorEmail: session.email,
-        content: commentText.trim(),
+        content: content.trim(),
         isAI: false,
+        parentCommentId: parentCommentId || null,
         createdAt: new Date().toISOString(),
       };
 
@@ -96,18 +108,44 @@ export function CommentsSection({
         onCommentAdded(newComment);
       }
 
-      setCommentText("");
-      setShowInput(false);
+      setLocalComments((prev) => [...prev, newComment]);
+
+      if (parentCommentId) {
+        setReplyDrafts((prev) => {
+          const next = { ...prev };
+          delete next[parentCommentId];
+          return next;
+        });
+      } else {
+        setCommentText("");
+        setShowInput(false);
+      }
     } catch (err: any) {
       alert(err.message || "Сүлжээний алдаа гарлаа");
     } finally {
       setSubmitting(false);
+      setReplySubmitting(null);
     }
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!session || !commentText.trim()) return;
+    await submitComment(commentText);
   }
 
   const aiComments = localComments.filter((c) => c.isAI) || [];
   const userComments = localComments.filter((c) => !c.isAI) || [];
   const showAIPending = loaded && aiComments.length === 0 && userComments.length === 0;
+
+  const grouped = userComments.reduce<Record<string, Comment[]>>((acc, c) => {
+    const key = c.parentCommentId || "root";
+    acc[key] = acc[key] || [];
+    acc[key].push(c);
+    return acc;
+  }, {});
+  const topLevel = grouped["root"] || [];
+  const repliesFor = (id: string) => grouped[id] || [];
 
   return (
     <div className="mt-4 space-y-3">
@@ -155,47 +193,148 @@ export function CommentsSection({
         </div>
       ))}
 
-      {/* User Comments */}
-      {userComments.map((comment) => (
-        <div
-          key={comment.id}
-          className="rounded-2xl border border-slate-700/50 bg-slate-800/30 px-4 py-3"
-        >
-          <div className="flex items-start gap-3">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                router.push(`/profile?user=${encodeURIComponent(comment.authorEmail)}`);
-              }}
-              className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-purple-500 text-xs font-bold text-white cursor-pointer hover:scale-110 hover:ring-2 hover:ring-violet-400/50 transition-all"
-              title={`${comment.authorEmail.split("@")[0]}-н profile харах`}
-              style={{ pointerEvents: 'auto' }}
-            >
-              {comment.authorEmail[0].toUpperCase()}
-            </button>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    router.push(`/profile?user=${encodeURIComponent(comment.authorEmail)}`);
-                  }}
-                  className="text-xs font-semibold text-slate-200 hover:text-violet-300 transition-colors cursor-pointer"
-                  style={{ pointerEvents: 'auto' }}
-                >
-                  {comment.authorEmail.split("@")[0]}
-                </button>
-                <span className="text-[10px] text-slate-500">{formatRelativeTime(comment.createdAt)}</span>
+      {/* User Comments with replies */}
+      {topLevel.map((comment) => {
+        const replies = repliesFor(comment.id);
+        const replyDraft = replyDrafts[comment.id] || "";
+        const isReplying = replyDrafts.hasOwnProperty(comment.id);
+        const isSending = replySubmitting === comment.id;
+
+        return (
+          <div key={comment.id} className="rounded-2xl border border-slate-700/50 bg-slate-800/30 px-4 py-3 space-y-2">
+            <div className="flex items-start gap-3">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  router.push(`/profile?user=${encodeURIComponent(comment.authorEmail)}`);
+                }}
+                className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-purple-500 text-xs font-bold text-white cursor-pointer hover:scale-110 hover:ring-2 hover:ring-violet-400/50 transition-all"
+                title={`${comment.authorEmail.split("@")[0]}-н profile харах`}
+                style={{ pointerEvents: 'auto' }}
+              >
+                {comment.authorEmail[0].toUpperCase()}
+              </button>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      router.push(`/profile?user=${encodeURIComponent(comment.authorEmail)}`);
+                    }}
+                    className="text-xs font-semibold text-slate-200 hover:text-violet-300 transition-colors cursor-pointer"
+                    style={{ pointerEvents: 'auto' }}
+                  >
+                    {comment.authorEmail.split("@")[0]}
+                  </button>
+                  <span className="text-[10px] text-slate-500">{formatRelativeTime(comment.createdAt)}</span>
+                </div>
+                <p className="text-sm text-slate-300 leading-relaxed">{comment.content}</p>
+                <div className="flex items-center gap-3 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReplyDrafts((prev) => ({
+                        ...prev,
+                        [comment.id]: prev[comment.id] || "",
+                      }));
+                    }}
+                    className="text-[11px] text-slate-400 hover:text-violet-300"
+                  >
+                    ↩️ Хариулах
+                  </button>
+                </div>
+                {isReplying && (
+                  <div className="mt-2 space-y-2">
+                    <textarea
+                      value={replyDraft}
+                      onChange={(e) =>
+                        setReplyDrafts((prev) => ({ ...prev, [comment.id]: e.target.value }))
+                      }
+                      placeholder="Хариу бичих..."
+                      className="w-full rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 focus:border-violet-500/40 focus:outline-none"
+                      rows={2}
+                      disabled={isSending}
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={isSending || !replyDraft.trim()}
+                        onClick={() => submitComment(replyDraft, comment.id)}
+                        className="rounded-full bg-gradient-to-r from-violet-500 to-purple-500 px-4 py-1.5 text-[11px] font-medium text-white shadow-[0_4px_12px_rgba(139,92,246,0.4)] hover:shadow-[0_6px_16px_rgba(139,92,246,0.6)] disabled:opacity-60 transition-all"
+                      >
+                        {isSending ? "Илгээж байна..." : "Хариулах"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isSending}
+                        onClick={() =>
+                          setReplyDrafts((prev) => {
+                            const next = { ...prev };
+                            delete next[comment.id];
+                            return next;
+                          })
+                        }
+                        className="rounded-full border border-slate-700 px-3 py-1.5 text-[11px] text-slate-400 hover:text-slate-200 hover:border-slate-600 disabled:opacity-60 transition-colors"
+                      >
+                        Болих
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
-              <p className="text-sm text-slate-300 leading-relaxed">{comment.content}</p>
             </div>
+
+            {replies.length > 0 && (
+              <div className="space-y-2 pl-10">
+                {replies.map((reply) => (
+                  <div
+                    key={reply.id}
+                    className="rounded-xl border border-slate-700/40 bg-slate-900/40 px-3 py-2"
+                  >
+                    <div className="flex items-start gap-2">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          router.push(`/profile?user=${encodeURIComponent(reply.authorEmail)}`);
+                        }}
+                        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-slate-700 to-slate-800 text-[11px] font-bold text-white cursor-pointer hover:ring-2 hover:ring-violet-400/50 transition-all"
+                        title={`${reply.authorEmail.split("@")[0]}-н profile харах`}
+                        style={{ pointerEvents: 'auto' }}
+                      >
+                        {reply.authorEmail[0].toUpperCase()}
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              router.push(`/profile?user=${encodeURIComponent(reply.authorEmail)}`);
+                            }}
+                            className="text-[11px] font-semibold text-slate-200 hover:text-violet-300 transition-colors cursor-pointer"
+                            style={{ pointerEvents: 'auto' }}
+                          >
+                            {reply.authorEmail.split("@")[0]}
+                          </button>
+                          <span className="text-[10px] text-slate-500">{formatRelativeTime(reply.createdAt)}</span>
+                        </div>
+                        <p className="text-[13px] text-slate-300 leading-relaxed">{reply.content}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       {/* Add Comment */}
       {session && (

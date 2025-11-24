@@ -16,6 +16,7 @@ type Comment = {
   authorEmail: string;
   content: string;
   isAI: boolean;
+  parentCommentId?: string | null;
   createdAt: string;
 };
 type UserPost = {

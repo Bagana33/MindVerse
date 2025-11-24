@@ -33,6 +33,7 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const postId = body?.postId;
   const content = (body?.content ?? "").toString().trim();
+  const parentCommentId = body?.parentCommentId ? body.parentCommentId.toString() : undefined;
 
   if (!postId) {
     return NextResponse.json(
@@ -60,6 +61,7 @@ export async function POST(req: Request) {
     authorEmail: session.email,
     content,
     isAI: false,
+    parentCommentId,
   });
 
   return NextResponse.json({ ok: true, comment });
