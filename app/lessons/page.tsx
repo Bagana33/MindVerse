@@ -146,8 +146,9 @@ export default function LessonsPage() {
               form.append("signature", signJson.signature);
               form.append("folder", signJson.folder || "neoncanvas/lessons");
 
+              // Use raw upload endpoint to avoid image-size caps on PSD/ZIP/etc.
               const uploadRes = await fetch(
-                `https://api.cloudinary.com/v1_1/${signJson.cloudName}/auto/upload`,
+                `https://api.cloudinary.com/v1_1/${signJson.cloudName}/raw/upload`,
                 { method: "POST", body: form }
               );
 
