@@ -137,8 +137,8 @@ export default function LessonDetailPage() {
 
     setSubmitError(null);
 
-    if (file.size > 10 * 1024 * 1024) {
-      setSubmitError("Файлын хэмжээ 10MB-аас бага байх ёстой");
+    if (file.size > 20 * 1024 * 1024) {
+      setSubmitError("Файлын хэмжээ 20MB-аас бага байх ёстой");
       return;
     }
 
