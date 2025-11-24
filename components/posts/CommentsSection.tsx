@@ -51,16 +51,27 @@ export function CommentsSection({
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [replySubmitting, setReplySubmitting] = useState<string | null>(null);
 
+  async function safeJson(res: Response) {
+    const ct = res.headers.get("content-type") || "";
+    if (!ct.includes("application/json")) return null;
+    try {
+      return await res.json();
+    } catch {
+      return null;
+    }
+  }
+
   async function loadComments() {
     if (loaded || loading) return;
     setLoading(true);
     try {
       const res = await fetch(`/api/posts/comments?postId=${postId}`);
-      if (res.ok) {
-        const json = await res.json();
-        const list = (json.comments || []) as Comment[];
-        setLocalComments(list);
+      const json = await safeJson(res);
+      if (res.ok && json && Array.isArray(json.comments)) {
+        setLocalComments(json.comments as Comment[]);
         setLoaded(true);
+      } else if (!res.ok) {
+        console.error("Load comments failed:", res.status);
       }
     } finally {
       setLoading(false);
@@ -87,13 +98,13 @@ export function CommentsSection({
         body: JSON.stringify({ postId, content: content.trim(), parentCommentId }),
       });
 
-      if (!res.ok) {
-        const json = await res.json();
-        alert(json.error || "Алдаа гарлаа");
+      const json = await safeJson(res);
+
+      if (!res.ok || !json?.comment) {
+        alert(json?.error || "Алдаа гарлаа");
         return;
       }
 
-      const json = await res.json();
       const newComment: Comment = {
         id: json.comment.id,
         postId,
