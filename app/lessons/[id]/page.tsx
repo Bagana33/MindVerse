@@ -63,6 +63,7 @@ export default function LessonDetailPage() {
   const [filePreview, setFilePreview] = useState<string | null>(null);
   const [fileToUpload, setFileToUpload] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [uploadingSubmission, setUploadingSubmission] = useState(false);
   const [showRewardPopup, setShowRewardPopup] = useState(false);
   const [rewardMessage, setRewardMessage] = useState("");
 
@@ -131,31 +132,62 @@ export default function LessonDetailPage() {
     setScore(0);
   }
 
-  function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setSubmitError(null);
 
-    if (file.size > 20 * 1024 * 1024) {
-      setSubmitError("Файлын хэмжээ 20MB-аас бага байх ёстой");
+    if (file.size > 30 * 1024 * 1024) {
+      setSubmitError("Файлын хэмжээ 30MB-аас бага байх ёстой");
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const result = event.target?.result as string;
-      setFilePreview(result);
-      setFileToUpload(result);
-    };
-    reader.onerror = () => {
-      setSubmitError("Файл уншихад алдаа гарлаа");
-    };
-    reader.readAsDataURL(file);
+    setUploadingSubmission(true);
+    try {
+      const signRes = await fetch("/api/uploads/sign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folder: "neoncanvas/submissions" }),
+      });
+      if (!signRes.ok) throw new Error("sign failed");
+      const signJson = await signRes.json();
+      if (!signJson?.ok || !signJson.cloudName || !signJson.apiKey || !signJson.signature) {
+        throw new Error("sign response invalid");
+      }
+
+      const form = new FormData();
+      form.append("file", file);
+      form.append("api_key", signJson.apiKey);
+      form.append("timestamp", String(signJson.timestamp));
+      form.append("signature", signJson.signature);
+      form.append("folder", signJson.folder || "neoncanvas/submissions");
+
+      const uploadRes = await fetch(
+        `https://api.cloudinary.com/v1_1/${signJson.cloudName}/auto/upload`,
+        { method: "POST", body: form }
+      );
+      if (!uploadRes.ok) throw new Error(`upload failed: ${uploadRes.status}`);
+      const uploadJson = await uploadRes.json();
+      if (!uploadJson?.secure_url) throw new Error("no secure_url");
+
+      setFilePreview(uploadJson.secure_url);
+      setFileToUpload(uploadJson.secure_url);
+    } catch (err) {
+      console.error("Submission upload failed:", err);
+      setSubmitError("Файл байршуулахад алдаа гарлаа. Cloudinary тохиргоогоо шалгаад дахин оролдоно уу, эсвэл файлаа багасгаарай.");
+    } finally {
+      setUploadingSubmission(false);
+      e.target.value = "";
+    }
   }
 
   async function handleSubmitWork() {
     if (!session || !lesson) return;
+    if (uploadingSubmission) {
+      setSubmitError("Файл байршиж байна, түр хүлээгээд дахин оролдоно уу.");
+      return;
+    }
 
     setSubmitting(true);
     setSubmitError(null);
@@ -476,6 +508,9 @@ export default function LessonDetailPage() {
                     onChange={handleFileUpload}
                     className="w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-violet-500/20 file:text-violet-300 hover:file:bg-violet-500/30 file:cursor-pointer"
                   />
+                  {uploadingSubmission && (
+                    <p className="mt-2 text-xs text-slate-400">Файл байршиж байна...</p>
+                  )}
                   {filePreview && (
                     <div className="mt-2 p-2 bg-slate-950/60 rounded-lg text-xs text-green-400">
                       ✓ Файл бэлэн байна
@@ -486,10 +521,10 @@ export default function LessonDetailPage() {
                 <div className="flex gap-2">
                   <button
                     onClick={handleSubmitWork}
-                    disabled={submitting}
+                    disabled={submitting || uploadingSubmission}
                     className="px-6 py-2 rounded-lg bg-gradient-to-r from-violet-500 to-purple-500 text-white text-sm font-medium shadow-[0_4px_16px_rgba(139,92,246,0.4)] hover:shadow-[0_6px_20px_rgba(139,92,246,0.6)] disabled:opacity-60 transition-all"
                   >
-                    {submitting ? "Илгээж байна..." : "Илгээх"}
+                    {submitting ? "Илгээж байна..." : uploadingSubmission ? "Байршуулж байна..." : "Илгээх"}
                   </button>
                   <button
                     onClick={() => {

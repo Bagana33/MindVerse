@@ -128,9 +128,9 @@ export async function POST(req: Request) {
         );
       }
       const fileType = file.fileType || 'application/octet-stream';
-      if (file.fileSize && file.fileSize > 20 * 1024 * 1024) {
+      if (file.fileSize && file.fileSize > 30 * 1024 * 1024) {
         return NextResponse.json(
-          { ok: false, error: `Файл хэт том байна: ${file.fileName} (максимум 20MB)` },
+          { ok: false, error: `Файл хэт том байна: ${file.fileName} (максимум 30MB)` },
           { status: 400 }
         );
       }

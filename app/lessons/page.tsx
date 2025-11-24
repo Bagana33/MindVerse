@@ -114,9 +114,9 @@ export default function LessonsPage() {
 
     try {
       for (const file of Array.from(uploadedFiles)) {
-        // Max 20MB per file to stay within DB + CDN limits
-        if (file.size > 20 * 1024 * 1024) {
-          setError(`Файл хэт том байна: ${file.name} (максимум 20MB)`);
+        // Max 30MB per file to stay within DB + CDN limits
+        if (file.size > 30 * 1024 * 1024) {
+          setError(`Файл хэт том байна: ${file.name} (максимум 30MB)`);
           continue;
         }
 

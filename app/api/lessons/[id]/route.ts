@@ -81,8 +81,8 @@ export async function PUT(
       if (!file?.fileName || !file?.fileUrl) {
         return NextResponse.json({ ok: false, error: "Файл буруу форматтай байна" }, { status: 400 });
       }
-      if (file.fileSize && file.fileSize > 20 * 1024 * 1024) {
-        return NextResponse.json({ ok: false, error: `Файл хэт том байна: ${file.fileName} (максимум 20MB)` }, { status: 400 });
+      if (file.fileSize && file.fileSize > 30 * 1024 * 1024) {
+        return NextResponse.json({ ok: false, error: `Файл хэт том байна: ${file.fileName} (максимум 30MB)` }, { status: 400 });
       }
       sanitizedFiles.push({
         id: file.id || `file-${Date.now()}-${idx}`,
