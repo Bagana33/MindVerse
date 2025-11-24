@@ -138,8 +138,9 @@ export default function LessonDetailPage() {
 
     setSubmitError(null);
 
-    if (file.size > 30 * 1024 * 1024) {
-      setSubmitError("Файлын хэмжээ 30MB-аас бага байх ёстой");
+    if (file.size > 50 * 1024 * 1024) {
+      const mb = (file.size / (1024 * 1024)).toFixed(1);
+      setSubmitError(`Файлын хэмжээ 50MB-аас бага байх ёстой (${mb}MB илэрлээ)`);
       return;
     }
 

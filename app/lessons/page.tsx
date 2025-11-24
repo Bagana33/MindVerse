@@ -114,9 +114,10 @@ export default function LessonsPage() {
 
     try {
       for (const file of Array.from(uploadedFiles)) {
-        // Max 30MB per file to stay within DB + CDN limits
-        if (file.size > 30 * 1024 * 1024) {
-          setError(`Файл хэт том байна: ${file.name} (максимум 30MB)`);
+        // Max 50MB per file to stay within DB + CDN limits
+        if (file.size > 50 * 1024 * 1024) {
+          const mb = (file.size / (1024 * 1024)).toFixed(1);
+          setError(`Файл хэт том байна: ${file.name} (${mb}MB > 50MB)`);
           continue;
         }
 
@@ -221,7 +222,7 @@ export default function LessonsPage() {
       } else {
         const text = await res.text();
         if (res.status === 413) {
-          setError("Илгээсэн өгөгдөл хэт том байна. Cloudinary тохиргоогоо шалгаад дахин оролдох эсвэл файлаа 20MB-аас багасгаарай.");
+          setError("Илгээсэн өгөгдөл хэт том байна. Cloudinary тохиргоогоо шалгаад дахин оролдох эсвэл файлаа 50MB-аас багасгаарай.");
         } else {
           console.error("Non-JSON response from /api/lessons:", {
             status: res.status,
