@@ -253,6 +253,39 @@ export function getWinner(contestId: string): ContestSubmission | null {
   return winner;
 }
 
+export function updateContest(
+  id: string,
+  userEmail: string,
+  updates: Partial<Pick<Contest, "title" | "description" | "startDate" | "endDate" | "prize" | "targetGrades">>
+): Contest | null {
+  const contest = contests.get(id);
+  if (!contest || contest.authorEmail !== userEmail) return null;
+
+  const nextContest = { ...contest };
+
+  if (updates.title !== undefined) nextContest.title = updates.title.trim();
+  if (updates.description !== undefined) nextContest.description = updates.description.trim();
+  if (updates.startDate !== undefined) nextContest.startDate = updates.startDate;
+  if (updates.endDate !== undefined) nextContest.endDate = updates.endDate;
+  if (updates.prize !== undefined) nextContest.prize = updates.prize;
+  if (updates.targetGrades !== undefined) nextContest.targetGrades = updates.targetGrades;
+
+  // Recompute status after updates
+  const now = new Date();
+  const startDate = new Date(nextContest.startDate);
+  const endDate = new Date(nextContest.endDate);
+  if (now >= startDate && now <= endDate) {
+    nextContest.status = "active";
+  } else if (now > endDate) {
+    nextContest.status = "ended";
+  } else {
+    nextContest.status = "upcoming";
+  }
+
+  contests.set(id, nextContest);
+  return nextContest;
+}
+
 export function deleteContest(id: string, userEmail: string): boolean {
   const contest = contests.get(id);
   if (!contest || contest.authorEmail !== userEmail) return false;

@@ -21,6 +21,7 @@ type Contest = {
   id: string;
   title: string;
   description: string;
+  authorEmail?: string;
   authorName: string;
   startDate: string;
   endDate: string;
