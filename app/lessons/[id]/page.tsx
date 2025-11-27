@@ -386,20 +386,23 @@ export default function LessonDetailPage() {
             <div className="mt-4 pt-4 border-t border-slate-700">
               <h3 className="text-sm font-medium text-slate-300 mb-2">📎 Хавсаргасан файлууд</h3>
               <div className="space-y-2">
-                {lesson.files.map((file) => (
-                  <a
-                    key={file.id}
-                    href={file.fileUrl}
-                    download={file.fileName}
-                    className="flex items-center justify-between gap-2 bg-slate-950/60 border border-slate-700 hover:border-violet-500 rounded-lg px-3 py-2 transition-colors group"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-slate-300 truncate group-hover:text-violet-300 transition-colors">{file.fileName}</p>
-                      <p className="text-xs text-slate-500">{(file.fileSize / 1024).toFixed(1)} KB</p>
-                    </div>
-                    <span className="text-xs text-violet-400">Татах</span>
-                  </a>
-                ))}
+                {lesson.files.map((file) => {
+                  const downloadHref = `/api/lessons/download?url=${encodeURIComponent(file.fileUrl)}`;
+                  return (
+                    <a
+                      key={file.id}
+                      href={downloadHref}
+                      download={file.fileName}
+                      className="flex items-center justify-between gap-2 bg-slate-950/60 border border-slate-700 hover:border-violet-500 rounded-lg px-3 py-2 transition-colors group"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-slate-300 truncate group-hover:text-violet-300 transition-colors">{file.fileName}</p>
+                        <p className="text-xs text-slate-500">{(file.fileSize / 1024).toFixed(1)} KB</p>
+                      </div>
+                      <span className="text-xs text-violet-400">Татах</span>
+                    </a>
+                  );
+                })}
               </div>
             </div>
           )}
