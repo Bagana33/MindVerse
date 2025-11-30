@@ -161,15 +161,15 @@ export default function LessonsPage() {
                 throw new Error("No secure_url returned");
               }
 
-              newFiles.push({
-                ...baseInfo,
-                fileType:
-                  file.type ||
-                  (uploadJson.resource_type && uploadJson.format
-                    ? `${uploadJson.resource_type}/${uploadJson.format}`
-                    : "application/octet-stream"),
-                fileUrl: uploadJson.secure_url,
-              });
+newFiles.push({
+  ...baseInfo,
+  fileType:
+    file.type ||
+    (uploadJson.resource_type && uploadJson.format
+      ? `${uploadJson.resource_type}/${uploadJson.format}`
+      : "application/octet-stream"),
+  fileUrl: uploadJson.secure_url,
+});
               continue;
             }
           }

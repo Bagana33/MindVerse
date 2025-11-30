@@ -24,6 +24,7 @@ export default function AdminPage() {
   const [processing, setProcessing] = useState(false);
   const [deletingStudent, setDeletingStudent] = useState<string | null>(null);
   const [gradeFilter, setGradeFilter] = useState<string>("all");
+  const [applyToAll, setApplyToAll] = useState(false);
 
   useEffect(() => {
     if (!sessionLoading && (!session || session.role !== "teacher")) {
@@ -56,7 +57,7 @@ export default function AdminPage() {
     e.preventDefault();
     setMessage(null);
 
-    if (!selectedStudent) {
+    if (!applyToAll && !selectedStudent) {
       setMessage({ type: "error", text: "Сурагч сонгоно уу" });
       return;
     }
@@ -67,17 +68,39 @@ export default function AdminPage() {
       return;
     }
 
+    if (applyToAll) {
+      const scopeText = gradeFilter && gradeFilter !== "all" ? `${gradeFilter} ангийн бүх сурагчид` : "бүх сурагчдад";
+      const confirmText =
+        action === "add"
+          ? `Та ${scopeText} ${xpAmount} XP нэмэх гэж байна. Үргэлжлүүлэх үү?`
+          : `Та ${scopeText} XP-г ${xpAmount} болгож тогтоох гэж байна. Үргэлжлүүлэх үү?`;
+      const ok = confirm(confirmText);
+      if (!ok) {
+        return;
+      }
+    }
+
     setProcessing(true);
 
     try {
+      const payload: any = {
+        action,
+        amount: xpAmount,
+        applyToAll,
+      };
+
+      if (!applyToAll) {
+        payload.studentEmail = selectedStudent;
+      }
+
+      if (gradeFilter && gradeFilter !== "all") {
+        payload.targetGrade = gradeFilter;
+      }
+
       const res = await fetch("/api/admin/manage-xp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          studentEmail: selectedStudent,
-          action,
-          amount: xpAmount,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const json = await res.json();
@@ -89,6 +112,9 @@ export default function AdminPage() {
 
       setMessage({ type: "success", text: json.message });
       setAmount("");
+      if (applyToAll) {
+        setSelectedStudent("");
+      }
       
       // Refresh students list
       const refreshUrl = gradeFilter && gradeFilter !== 'all' ? `/api/leaderboard?grade=${gradeFilter}` : "/api/leaderboard";
@@ -186,6 +212,40 @@ export default function AdminPage() {
           <h2 className="text-xl font-bold text-white">XP удирдлага</h2>
           <p className="mt-1 text-sm text-slate-400">Сурагчдад XP нэмэх эсвэл тогтоох</p>
 
+          {/* Apply to all students toggle */}
+          <div className="mt-4 flex items-center justify-between rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium text-amber-100">Бүх сурагчдад XP өгөх</p>
+              <p className="text-xs text-amber-200/80 mt-0.5">
+                {gradeFilter === "all"
+                  ? "Бүх ангийн сурагчдад нэг дор XP нэмнэ"
+                  : `${gradeFilter} ангийн бүх сурагчдад XP өгнө`}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const next = !applyToAll;
+                setApplyToAll(next);
+                if (next) {
+                  setSelectedStudent("");
+                }
+              }}
+              className={`relative inline-flex h-9 w-16 items-center rounded-full border px-1 transition-all ${
+                applyToAll
+                  ? "bg-amber-400/90 border-amber-200 shadow-[0_0_0_3px_rgba(251,191,36,0.15)]"
+                  : "bg-slate-800 border-slate-600"
+              }`}
+              aria-pressed={applyToAll}
+            >
+              <span
+                className={`inline-block h-7 w-7 transform rounded-full bg-white shadow transition ${
+                  applyToAll ? "translate-x-7" : "translate-x-0"
+                }`}
+              />
+            </button>
+          </div>
+
           {/* Grade Filter */}
           <div className="mt-4">
             <label className="block text-xs text-slate-400 mb-2 font-medium">🎒 Ангиар шүүх</label>
@@ -221,18 +281,25 @@ export default function AdminPage() {
                 Сурагч сонгох
               </label>
               <select
-                value={selectedStudent}
+                value={applyToAll ? "" : selectedStudent}
                 onChange={(e) => setSelectedStudent(e.target.value)}
                 className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-slate-200 focus:border-violet-500/40 focus:outline-none"
-                required
+                required={!applyToAll}
+                disabled={applyToAll}
               >
-                <option value="">-- Сурагч сонгох --</option>
-                {students.map((student) => (
-                  <option key={student.email} value={student.email}>
-                    {student.name || student.email} (Одоогийн XP: {student.experience})
-                  </option>
-                ))}
+                <option value="">{applyToAll ? "Бүх сурагчдад XP өгөх" : "-- Сурагч сонгох --"}</option>
+                {!applyToAll &&
+                  students.map((student) => (
+                    <option key={student.email} value={student.email}>
+                      {student.name || student.email} (Одоогийн XP: {student.experience})
+                    </option>
+                  ))}
               </select>
+              {applyToAll && (
+                <p className="mt-1 text-xs text-amber-200/80">
+                  Одоогийн анги сонголт: {gradeFilter === "all" ? "бүх анги" : `${gradeFilter} анги`}
+                </p>
+              )}
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">

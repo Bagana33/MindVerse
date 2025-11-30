@@ -32,23 +32,43 @@ export async function createComment(data: {
   parentCommentId?: string;
 }): Promise<Comment> {
   const commentId = `comment-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-  
-  const { data: inserted, error } = await supabase
+  const payload: any = {
+    id: commentId,
+    post_id: data.postId,
+    author_email: data.authorEmail,
+    content: data.content,
+    is_ai: data.isAI || false,
+    parent_comment_id: data.parentCommentId || null,
+  };
+
+  const attemptInsert = async (body: any) => supabase
     .from('comments')
-    .insert([{
+    .insert([body])
+    .select()
+    .single();
+
+  let { data: inserted, error } = await attemptInsert(payload);
+
+  // Fallback for environments where migration for parent_comment_id isn't applied yet
+  if (error && String(error.message || "").toLowerCase().includes("parent_comment_id")) {
+    console.warn('parent_comment_id missing, retrying insert without it');
+    const { data: fallbackData, error: fallbackErr } = await attemptInsert({
       id: commentId,
       post_id: data.postId,
       author_email: data.authorEmail,
       content: data.content,
       is_ai: data.isAI || false,
-      parent_comment_id: data.parentCommentId || null,
-    }])
-    .select()
-    .single();
+    });
+    inserted = fallbackData;
+    error = fallbackErr;
+  }
 
-  if (error) {
-    console.error('Error creating comment:', error);
-    throw error;
+  if (error || !inserted) {
+    console.error('Error creating comment:', {
+      payload,
+      error
+    });
+    throw error || new Error('Failed to create comment');
   }
 
   return dbToComment(inserted);

@@ -50,6 +50,7 @@ export function CommentsSection({
   const [loading, setLoading] = useState(false);
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [replySubmitting, setReplySubmitting] = useState<string | null>(null);
+  const [collapsedComments, setCollapsedComments] = useState<Record<string, boolean>>({});
 
   async function safeJson(res: Response) {
     const ct = res.headers.get("content-type") || "";
@@ -58,6 +59,14 @@ export function CommentsSection({
       return await res.json();
     } catch {
       return null;
+    }
+  }
+
+  async function safeText(res: Response) {
+    try {
+      return await res.text();
+    } catch {
+      return "";
     }
   }
 
@@ -99,9 +108,9 @@ export function CommentsSection({
       });
 
       const json = await safeJson(res);
-
       if (!res.ok || !json?.comment) {
-        alert(json?.error || "Алдаа гарлаа");
+        const fallback = !json ? await safeText(res) : "";
+        alert(json?.error || fallback || `Алдаа гарлаа (status ${res.status})`);
         return;
       }
 
@@ -210,6 +219,7 @@ export function CommentsSection({
         const replyDraft = replyDrafts[comment.id] || "";
         const isReplying = replyDrafts.hasOwnProperty(comment.id);
         const isSending = replySubmitting === comment.id;
+        const isCollapsed = collapsedComments[comment.id];
 
         return (
           <div key={comment.id} className="rounded-2xl border border-slate-700/50 bg-slate-800/30 px-4 py-3 space-y-2">
@@ -242,107 +252,117 @@ export function CommentsSection({
                     {comment.authorEmail.split("@")[0]}
                   </button>
                   <span className="text-[10px] text-slate-500">{formatRelativeTime(comment.createdAt)}</span>
-                </div>
-                <p className="text-sm text-slate-300 leading-relaxed">{comment.content}</p>
-                <div className="flex items-center gap-3 mt-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      setReplyDrafts((prev) => ({
-                        ...prev,
-                        [comment.id]: prev[comment.id] || "",
-                      }));
-                    }}
-                    className="text-[11px] text-slate-400 hover:text-violet-300"
+                    onClick={() => setCollapsedComments((prev) => ({ ...prev, [comment.id]: !isCollapsed }))}
+                    className="ml-2 text-[10px] text-slate-400 hover:text-violet-300 border border-slate-700 rounded px-2 py-0.5"
                   >
-                    ↩️ Хариулах
+                    {isCollapsed ? "Дэлгэрэнгүй" : "Хураах"}
                   </button>
                 </div>
-                {isReplying && (
-                  <div className="mt-2 space-y-2">
-                    <textarea
-                      value={replyDraft}
-                      onChange={(e) =>
-                        setReplyDrafts((prev) => ({ ...prev, [comment.id]: e.target.value }))
-                      }
-                      placeholder="Хариу бичих..."
-                      className="w-full rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 focus:border-violet-500/40 focus:outline-none"
-                      rows={2}
-                      disabled={isSending}
-                    />
-                    <div className="flex gap-2">
+                {!isCollapsed && (
+                  <>
+                    <p className="text-sm text-slate-300 leading-relaxed">{comment.content}</p>
+                    <div className="flex items-center gap-3 mt-2">
                       <button
                         type="button"
-                        disabled={isSending || !replyDraft.trim()}
-                        onClick={() => submitComment(replyDraft, comment.id)}
-                        className="rounded-full bg-gradient-to-r from-violet-500 to-purple-500 px-4 py-1.5 text-[11px] font-medium text-white shadow-[0_4px_12px_rgba(139,92,246,0.4)] hover:shadow-[0_6px_16px_rgba(139,92,246,0.6)] disabled:opacity-60 transition-all"
+                        onClick={() => {
+                          setReplyDrafts((prev) => ({
+                            ...prev,
+                            [comment.id]: prev[comment.id] || "",
+                          }));
+                        }}
+                        className="text-[11px] text-slate-400 hover:text-violet-300"
                       >
-                        {isSending ? "Илгээж байна..." : "Хариулах"}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={isSending}
-                        onClick={() =>
-                          setReplyDrafts((prev) => {
-                            const next = { ...prev };
-                            delete next[comment.id];
-                            return next;
-                          })
-                        }
-                        className="rounded-full border border-slate-700 px-3 py-1.5 text-[11px] text-slate-400 hover:text-slate-200 hover:border-slate-600 disabled:opacity-60 transition-colors"
-                      >
-                        Болих
+                        ↩️ Хариулах
                       </button>
                     </div>
-                  </div>
+                    {isReplying && (
+                      <div className="mt-2 space-y-2">
+                        <textarea
+                          value={replyDraft}
+                          onChange={(e) =>
+                            setReplyDrafts((prev) => ({ ...prev, [comment.id]: e.target.value }))
+                          }
+                          placeholder="Хариу бичих..."
+                          className="w-full rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 focus:border-violet-500/40 focus:outline-none"
+                          rows={2}
+                          disabled={isSending}
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            disabled={isSending || !replyDraft.trim()}
+                            onClick={() => submitComment(replyDraft, comment.id)}
+                            className="rounded-full bg-gradient-to-r from-violet-500 to-purple-500 px-4 py-1.5 text-[11px] font-medium text-white shadow-[0_4px_12px_rgba(139,92,246,0.4)] hover:shadow-[0_6px_16px_rgba(139,92,246,0.6)] disabled:opacity-60 transition-all"
+                          >
+                            {isSending ? "Илгээж байна..." : "Хариулах"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isSending}
+                            onClick={() =>
+                              setReplyDrafts((prev) => {
+                                const next = { ...prev };
+                                delete next[comment.id];
+                                return next;
+                              })
+                            }
+                            className="rounded-full border border-slate-700 px-3 py-1.5 text-[11px] text-slate-400 hover:text-slate-200 hover:border-slate-600 disabled:opacity-60 transition-colors"
+                          >
+                            Болих
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {replies.length > 0 && (
+                      <div className="space-y-2 pl-10">
+                        {replies.map((reply) => (
+                          <div
+                            key={reply.id}
+                            className="rounded-xl border border-slate-700/40 bg-slate-900/40 px-3 py-2"
+                          >
+                            <div className="flex items-start gap-2">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  router.push(`/profile?user=${encodeURIComponent(reply.authorEmail)}`);
+                                }}
+                                className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-slate-700 to-slate-800 text-[11px] font-bold text-white cursor-pointer hover:ring-2 hover:ring-violet-400/50 transition-all"
+                                title={`${reply.authorEmail.split("@")[0]}-н profile харах`}
+                                style={{ pointerEvents: 'auto' }}
+                              >
+                                {reply.authorEmail[0].toUpperCase()}
+                              </button>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      router.push(`/profile?user=${encodeURIComponent(reply.authorEmail)}`);
+                                    }}
+                                    className="text-[11px] font-semibold text-slate-200 hover:text-violet-300 transition-colors cursor-pointer"
+                                    style={{ pointerEvents: 'auto' }}
+                                  >
+                                    {reply.authorEmail.split("@")[0]}
+                                  </button>
+                                  <span className="text-[10px] text-slate-500">{formatRelativeTime(reply.createdAt)}</span>
+                                </div>
+                                <p className="text-[13px] text-slate-300 leading-relaxed">{reply.content}</p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
-
-            {replies.length > 0 && (
-              <div className="space-y-2 pl-10">
-                {replies.map((reply) => (
-                  <div
-                    key={reply.id}
-                    className="rounded-xl border border-slate-700/40 bg-slate-900/40 px-3 py-2"
-                  >
-                    <div className="flex items-start gap-2">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          router.push(`/profile?user=${encodeURIComponent(reply.authorEmail)}`);
-                        }}
-                        className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-slate-700 to-slate-800 text-[11px] font-bold text-white cursor-pointer hover:ring-2 hover:ring-violet-400/50 transition-all"
-                        title={`${reply.authorEmail.split("@")[0]}-н profile харах`}
-                        style={{ pointerEvents: 'auto' }}
-                      >
-                        {reply.authorEmail[0].toUpperCase()}
-                      </button>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              router.push(`/profile?user=${encodeURIComponent(reply.authorEmail)}`);
-                            }}
-                            className="text-[11px] font-semibold text-slate-200 hover:text-violet-300 transition-colors cursor-pointer"
-                            style={{ pointerEvents: 'auto' }}
-                          >
-                            {reply.authorEmail.split("@")[0]}
-                          </button>
-                          <span className="text-[10px] text-slate-500">{formatRelativeTime(reply.createdAt)}</span>
-                        </div>
-                        <p className="text-[13px] text-slate-300 leading-relaxed">{reply.content}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         );
       })}
