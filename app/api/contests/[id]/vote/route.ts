@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromCookies } from "../../../../../lib/session";
 import { voteSubmission, getContest } from "../../../../../lib/contests";
 
@@ -12,19 +12,37 @@ export async function POST(
   }
 
   const params = await context.params;
-  const body = await req.json().catch(() => ({}));
-  const submissionId = body?.submissionId;
-
-  if (!submissionId) {
-    return NextResponse.json({ ok: false, error: "Submission ID шаардлагатай" }, { status: 400 });
-  }
-
-  const success = voteSubmission(params.id, submissionId, session.email);
-
-  if (!success) {
-    return NextResponse.json({ ok: false, error: "Санал өгөхөд алдаа гарлаа" }, { status: 400 });
-  }
-
   const contest = getContest(params.id);
-  return NextResponse.json({ ok: true, contest });
+  if (!contest) {
+    return NextResponse.json({ ok: false, error: "Уралдаан олдсонгүй" }, { status: 404 });
+  }
+
+  if (contest.status !== "active") {
+    return NextResponse.json({ ok: false, error: "Уралдаан идэвхтэй биш байна" }, { status: 400 });
+  }
+
+  try {
+    const body = await req.json();
+    const { submissionId } = body;
+
+    if (!submissionId) {
+      return NextResponse.json({ ok: false, error: "Submission ID шаардлагатай" }, { status: 400 });
+    }
+
+    const submission = voteSubmission(params.id, submissionId, session.email);
+
+    if (!submission) {
+      return NextResponse.json({ ok: false, error: "Санал өгөх боломжгүй" }, { status: 400 });
+    }
+
+    const updatedContest = getContest(params.id);
+    return NextResponse.json({ ok: true, contest: updatedContest });
+  } catch (err: any) {
+    console.error("Vote submission error:", err);
+    return NextResponse.json(
+      { ok: false, error: err.message || "Серверийн алдаа" },
+      { status: 500 }
+    );
+  }
 }
+
