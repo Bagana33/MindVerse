@@ -207,7 +207,13 @@ export default function LessonDetailPage() {
       }
 
       const json = await res.json();
-      setRewardMessage("Амжилттай илгээлээ! Багш таны ажлыг шалгаад XP өгнө.");
+      // Check if this was a resubmission by checking if lesson has existing submission
+      const isResubmission = lesson.submissions?.some(s => s.studentEmail === session.email);
+      setRewardMessage(
+        isResubmission 
+          ? "Амжилттай шинэчиллээ! Багш таны ажлыг дахин шалгаад XP өгнө." 
+          : "Амжилттай илгээлээ! Багш таны ажлыг шалгаад XP өгнө."
+      );
       setShowRewardPopup(true);
       
       setTimeout(() => {
@@ -295,7 +301,7 @@ export default function LessonDetailPage() {
   const isAuthor = session?.email === lesson.authorEmail;
   const isStudent = session?.role === "student";
   const mySubmission = lesson.submissions?.find(s => s.studentEmail === session?.email);
-  const canSubmit = isStudent && !mySubmission;
+  const canSubmit = isStudent; // Allow resubmission
 
   if (showResults) {
     const percentage = Math.round((score / lesson.questions.length) * 100);
@@ -492,16 +498,25 @@ export default function LessonDetailPage() {
         {canSubmit && (
           <div className="bg-slate-900/40 border border-slate-800 rounded-2xl px-6 py-5">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Даалгавраа илгээх</h2>
+              <h2 className="text-lg font-semibold">
+                {mySubmission ? "Даалгавраа дахин илгээх" : "Даалгавраа илгээх"}
+              </h2>
               {!showSubmitSection && (
                 <button
                   onClick={() => setShowSubmitSection(true)}
                   className="px-4 py-2 rounded-lg bg-violet-500 hover:bg-violet-600 text-white text-sm transition-colors"
                 >
-                  Ажил илгээх
+                  {mySubmission ? "Дахин илгээх" : "Ажил илгээх"}
                 </button>
               )}
             </div>
+            {mySubmission && !showSubmitSection && (
+              <div className="mb-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                <p className="text-sm text-blue-400">
+                  ℹ️ Та аль хэдийн даалгавраа илгээсэн байна. Дахин илгээвэл өмнөх submission шинэчлэгдэнэ.
+                </p>
+              </div>
+            )}
             
             {showSubmitSection && (
               <div className="space-y-4">

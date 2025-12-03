@@ -299,6 +299,7 @@ export async function submitToLesson(
   studentName: string,
   fileUrl?: string
 ): Promise<LessonSubmission | null> {
+  // Check if submission already exists
   const { data: existing } = await supabase
     .from('lesson_submissions')
     .select('*')
@@ -306,21 +307,49 @@ export async function submitToLesson(
     .eq('student_email', studentEmail)
     .single();
 
-  if (existing) return null;
+  let submissionId: string;
+  let data: any;
+  let error: any;
 
-  const submissionId = `sub-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-
-  const { data, error } = await supabase
-    .from('lesson_submissions')
-    .insert([{
-      id: submissionId,
-      lesson_id: lessonId,
-      student_email: studentEmail,
-      student_name: studentName,
-      file_url: fileUrl,
-    }])
-    .select()
-    .single();
+  if (existing) {
+    // Update existing submission (resubmission)
+    submissionId = existing.id;
+    const { data: updated, error: updateError } = await supabase
+      .from('lesson_submissions')
+      .update({
+        file_url: fileUrl,
+        student_name: studentName,
+        submitted_at: new Date().toISOString(),
+        // Reset grading when resubmitting
+        score: null,
+        feedback: null,
+        reward_xp: null,
+        graded_at: null,
+      })
+      .eq('id', submissionId)
+      .select()
+      .single();
+    
+    data = updated;
+    error = updateError;
+  } else {
+    // Create new submission
+    submissionId = `sub-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const { data: inserted, error: insertError } = await supabase
+      .from('lesson_submissions')
+      .insert([{
+        id: submissionId,
+        lesson_id: lessonId,
+        student_email: studentEmail,
+        student_name: studentName,
+        file_url: fileUrl,
+      }])
+      .select()
+      .single();
+    
+    data = inserted;
+    error = insertError;
+  }
 
   if (error || !data) return null;
 
