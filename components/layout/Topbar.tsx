@@ -85,6 +85,7 @@ export function Topbar() {
     { href: "/", label: "Home" },
     { href: "/contests", label: "Contests" },
     { href: "/lessons", label: "Lessons" },
+    { href: "/spinner", label: "Spinner" },
     { href: "/profile", label: "Profile" },
     { href: "/leaderboard", label: "Leaderboard" },
     ...(session?.role === "teacher" ? [{ href: "/admin", label: "Admin" }] : []),
