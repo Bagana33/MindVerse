@@ -11,6 +11,7 @@ export default function SpinnerPage() {
   const [spinning, setSpinning] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [rotation, setRotation] = useState(0);
+  const [shareCopied, setShareCopied] = useState(false);
 
   const colors = [
     "#8b5cf6", // violet
@@ -61,6 +62,38 @@ export default function SpinnerPage() {
       setSelectedIndex(randomIndex);
       setSpinning(false);
     }, 3000);
+  }
+
+  async function handleShare() {
+    if (selectedIndex === null) return;
+
+    const selectedOption = options[selectedIndex];
+    const shareText = `🎰 Lucky Spinner: "${selectedOption}" сонгогдлоо!`;
+    const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
+
+    // Try Web Share API first (mobile)
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Lucky Spinner Result',
+          text: shareText,
+          url: shareUrl,
+        });
+        return;
+      } catch (err) {
+        // User cancelled or error, fall back to clipboard
+      }
+    }
+
+    // Fall back to clipboard
+    const shareData = `${shareText}\n\n${shareUrl}`;
+    try {
+      await navigator.clipboard.writeText(shareData);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2000);
+    } catch (err) {
+      alert('Хуваалцах боломжгүй байна');
+    }
   }
 
   const anglePerSlice = 360 / options.length;
@@ -206,7 +239,23 @@ export default function SpinnerPage() {
                 <div className="text-2xl font-bold text-violet-300 mb-1">
                   {options[selectedIndex]}
                 </div>
-                <div className="text-sm text-slate-400">Сонгогдлоо!</div>
+                <div className="text-sm text-slate-400 mb-4">Сонгогдлоо!</div>
+                <button
+                  onClick={handleShare}
+                  className="px-6 py-2 rounded-full bg-gradient-to-r from-violet-500 to-purple-500 text-white font-medium hover:shadow-lg transition-all flex items-center gap-2 mx-auto"
+                >
+                  {shareCopied ? (
+                    <>
+                      <span>✓</span>
+                      <span>Хуулагдлаа!</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>📤</span>
+                      <span>Найзуудтай хуваалцах</span>
+                    </>
+                  )}
+                </button>
               </div>
             </div>
           )}

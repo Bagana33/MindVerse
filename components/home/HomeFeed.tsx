@@ -184,6 +184,37 @@ const PostCard = memo(({
           <span className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-pulse" />
           {typeof commentCounts[post.id] === 'number' ? `${commentCounts[post.id]} comments` : 'Open for feedback'}
         </span>
+        <button
+          onClick={async () => {
+            const shareText = `${post.title}${post.description ? `\n\n${post.description}` : ''}`;
+            const shareUrl = typeof window !== 'undefined' ? `${window.location.origin}/?post=${post.id}` : '';
+            
+            if (navigator.share) {
+              try {
+                await navigator.share({
+                  title: post.title,
+                  text: shareText,
+                  url: shareUrl,
+                });
+                return;
+              } catch (err) {
+                // Fall back to clipboard
+              }
+            }
+            
+            try {
+              await navigator.clipboard.writeText(`${shareText}\n\n${shareUrl}`);
+              alert('Линк хуулагдлаа!');
+            } catch (err) {
+              alert('Хуваалцах боломжгүй байна');
+            }
+          }}
+          className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-[11px] text-slate-300 hover:border-violet-500/40 hover:bg-slate-700/60 hover:text-white transition-all"
+          title="Найзуудтай хуваалцах"
+        >
+          <span>📤</span>
+          <span>Хуваалцах</span>
+        </button>
         <div className="flex items-center gap-2">
           {[
             { type: 'FIRE' as ReactionType, emoji: '🔥', color: 'from-orange-500 to-red-500' },
