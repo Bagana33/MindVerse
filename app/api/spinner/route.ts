@@ -111,11 +111,16 @@ export async function POST(req: Request) {
   }
 }
 
-// DELETE: Remove a spinner option
+// DELETE: Remove a spinner option (only teachers)
 export async function DELETE(req: Request) {
   const session = await getSessionFromCookies();
   if (!session) {
     return NextResponse.json({ ok: false, error: "Нэвтэрнэ үү" }, { status: 401 });
+  }
+
+  // Only teachers can delete options
+  if (session.role !== "teacher") {
+    return NextResponse.json({ ok: false, error: "Зөвхөн багш устгах эрхтэй" }, { status: 403 });
   }
 
   try {

@@ -267,10 +267,11 @@ export default function SpinnerPage() {
                   style={{ backgroundColor: colors[index % colors.length] }}
                 />
                 <span className="flex-1 text-sm text-slate-200 truncate">{option}</span>
-                {options.length > 2 && session && (
+                {options.length > 2 && session && session.role === "teacher" && (
                   <button
                     onClick={() => removeOption(option)}
                     className="text-red-400 hover:text-red-300 text-xs px-2"
+                    title="Устгах"
                   >
                     ✕
                   </button>
