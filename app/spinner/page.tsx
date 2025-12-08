@@ -72,7 +72,7 @@ export default function SpinnerPage() {
   ];
 
   async function addOption() {
-    if (!newOption.trim() || options.length >= 12) return;
+    if (!newOption.trim()) return;
     if (!session) {
       alert("Нэвтэрнэ үү");
       return;
@@ -140,13 +140,31 @@ export default function SpinnerPage() {
     setSpinning(true);
     setSelectedIndex(null);
 
-    // Random selection
-    const randomIndex = Math.floor(Math.random() * options.length);
+    // Better random selection using crypto.getRandomValues for true randomness
+    let randomValue: number;
+    if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
+      const randomArray = new Uint32Array(1);
+      window.crypto.getRandomValues(randomArray);
+      randomValue = randomArray[0] / (0xFFFFFFFF + 1);
+    } else {
+      // Fallback to Math.random if crypto not available
+      randomValue = Math.random();
+    }
+    
+    // Use the random value to select index - ensure uniform distribution
+    const randomIndex = Math.floor(randomValue * options.length);
     
     // Calculate rotation (multiple full spins + final position)
-    const fullSpins = 8 + Math.random() * 4; // 8-12 full spins for smoother effect
+    // Add extra randomness to rotation for more unpredictable results
+    const baseSpins = 10;
+    const extraSpins = Math.random() * 6; // 0-6 additional spins
+    const fullSpins = baseSpins + extraSpins;
     const anglePerSlice = 360 / options.length;
-    const finalAngle = randomIndex * anglePerSlice;
+    
+    // Add small random offset to final angle for more randomness
+    // But keep it within the slice to ensure correct selection
+    const randomOffset = (Math.random() - 0.5) * (anglePerSlice * 0.2); // ±10% of slice
+    const finalAngle = randomIndex * anglePerSlice + randomOffset;
     
     // Get current rotation and normalize
     const currentNormalized = ((rotation % 360) + 360) % 360;
@@ -218,7 +236,7 @@ export default function SpinnerPage() {
 
         {/* Options Input */}
         <div className="glass-panel p-6 rounded-2xl space-y-4">
-          <h2 className="text-xl font-semibold text-slate-200 mb-4">Сонголтууд ({options.length}/12)</h2>
+          <h2 className="text-xl font-semibold text-slate-200 mb-4">Сонголтууд ({options.length})</h2>
           
           <div className="flex gap-2">
             <input
@@ -228,11 +246,10 @@ export default function SpinnerPage() {
               onKeyDown={(e) => e.key === "Enter" && addOption()}
               placeholder="Шинэ сонголт нэмэх..."
               className="flex-1 px-4 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-slate-100 focus:outline-none focus:ring-2 focus:ring-violet-500"
-              disabled={options.length >= 12}
             />
             <button
               onClick={addOption}
-              disabled={!newOption.trim() || options.length >= 12}
+              disabled={!newOption.trim()}
               className="px-6 py-2 rounded-lg bg-violet-500 hover:bg-violet-600 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
               + Нэмэх
@@ -373,7 +390,7 @@ export default function SpinnerPage() {
         {/* Instructions */}
         <div className="glass-panel p-4 rounded-xl bg-blue-500/10 border border-blue-500/30">
           <p className="text-sm text-blue-300">
-            💡 <strong>Зөвлөмж:</strong> Хамгийн багадаа 2 сонголт шаардлагатай. Хамгийн ихдээ 12 сонголт оруулж болно.
+            💡 <strong>Зөвлөмж:</strong> Хамгийн багадаа 2 сонголт шаардлагатай. Хязгааргүй сонголт нэмж болно.
           </p>
         </div>
       </div>

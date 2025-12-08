@@ -62,14 +62,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Сонголт оруулна уу" }, { status: 400 });
     }
 
-    // Check current count
-    const { count } = await supabase
-      .from('spinner_options')
-      .select('*', { count: 'exact', head: true });
-
-    if (count && count >= 12) {
-      return NextResponse.json({ ok: false, error: "Хамгийн ихдээ 12 сонголт байх боломжтой" }, { status: 400 });
-    }
+    // No limit on number of options
 
     // Check if option already exists
     const { data: existing } = await supabase
