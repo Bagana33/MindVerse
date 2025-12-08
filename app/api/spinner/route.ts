@@ -3,8 +3,10 @@ import { getSessionFromCookies } from "../../../lib/session";
 import { supabase } from "../../../lib/supabase";
 
 // GET: Get all spinner options
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const session = await getSessionFromCookies();
+    
     const { data, error } = await supabase
       .from('spinner_options')
       .select('*')
@@ -17,6 +19,7 @@ export async function GET() {
         return NextResponse.json({ 
           ok: true, 
           options: ["Сонголт 1", "Сонголт 2", "Сонголт 3"],
+          userOptionCount: 0,
           warning: "Table not created yet. Please run migration."
         });
       }
@@ -24,25 +27,39 @@ export async function GET() {
       // Return defaults on any error
       return NextResponse.json({ 
         ok: true, 
-        options: ["Сонголт 1", "Сонголт 2", "Сонголт 3"]
+        options: ["Сонголт 1", "Сонголт 2", "Сонголт 3"],
+        userOptionCount: 0
       });
     }
 
     const options = (data || []).map(row => row.option_text);
+    
+    // Get user's option count if logged in
+    let userOptionCount = 0;
+    if (session?.email) {
+      const { count } = await supabase
+        .from('spinner_options')
+        .select('*', { count: 'exact', head: true })
+        .eq('added_by', session.email);
+      userOptionCount = count || 0;
+    }
+    
     // If no options, return defaults
     if (options.length === 0) {
       return NextResponse.json({ 
         ok: true, 
-        options: ["Сонголт 1", "Сонголт 2", "Сонголт 3"]
+        options: ["Сонголт 1", "Сонголт 2", "Сонголт 3"],
+        userOptionCount
       });
     }
-    return NextResponse.json({ ok: true, options });
+    return NextResponse.json({ ok: true, options, userOptionCount });
   } catch (err: any) {
     console.error("Get spinner options error:", err);
     // Always return defaults on error
     return NextResponse.json({ 
       ok: true, 
-      options: ["Сонголт 1", "Сонголт 2", "Сонголт 3"]
+      options: ["Сонголт 1", "Сонголт 2", "Сонголт 3"],
+      userOptionCount: 0
     });
   }
 }
@@ -62,7 +79,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Сонголт оруулна уу" }, { status: 400 });
     }
 
-    // No limit on number of options
+    // Check how many options this user has already added
+    const { count: userOptionCount } = await supabase
+      .from('spinner_options')
+      .select('*', { count: 'exact', head: true })
+      .eq('added_by', session.email);
+
+    if (userOptionCount && userOptionCount >= 2) {
+      return NextResponse.json({ 
+        ok: false, 
+        error: "Та зөвхөн 2 сонголт нэмж болно" 
+      }, { status: 400 });
+    }
 
     // Check if option already exists
     const { data: existing } = await supabase
@@ -104,7 +132,18 @@ export async function POST(req: Request) {
       .order('created_at', { ascending: true });
 
     const options = (allOptions || []).map(row => row.option_text);
-    return NextResponse.json({ ok: true, options });
+    
+    // Get updated user option count
+    const { count: updatedUserOptionCount } = await supabase
+      .from('spinner_options')
+      .select('*', { count: 'exact', head: true })
+      .eq('added_by', session.email);
+    
+    return NextResponse.json({ 
+      ok: true, 
+      options,
+      userOptionCount: updatedUserOptionCount || 0
+    });
   } catch (err: any) {
     console.error("Add spinner option error:", err);
     return NextResponse.json({ ok: false, error: "Серверийн алдаа" }, { status: 500 });

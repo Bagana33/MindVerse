@@ -13,6 +13,7 @@ export default function SpinnerPage() {
   const [rotation, setRotation] = useState(0);
   const [shareCopied, setShareCopied] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [userOptionCount, setUserOptionCount] = useState(0);
 
   // Load shared options from API
   useEffect(() => {
@@ -25,9 +26,11 @@ export default function SpinnerPage() {
         const json = await res.json();
         if (json.ok && Array.isArray(json.options) && json.options.length > 0) {
           setOptions(json.options);
+          setUserOptionCount(json.userOptionCount || 0);
         } else {
           // Fallback to default if empty or invalid
           setOptions(["Сонголт 1", "Сонголт 2", "Сонголт 3"]);
+          setUserOptionCount(0);
         }
       } catch (err) {
         console.error("Failed to fetch spinner options:", err);
@@ -53,6 +56,7 @@ export default function SpinnerPage() {
       const json = await res.json();
       if (json.ok && Array.isArray(json.options) && json.options.length > 0) {
         setOptions(json.options);
+        setUserOptionCount(json.userOptionCount || 0);
       }
     } catch (err) {
       // Silently fail, keep current options
@@ -88,6 +92,7 @@ export default function SpinnerPage() {
       const json = await res.json();
       if (json.ok) {
         setOptions(json.options || []);
+        setUserOptionCount(json.userOptionCount || 0);
         setNewOption("");
         // Refresh to show updated list
         await fetchOptions();
@@ -236,21 +241,30 @@ export default function SpinnerPage() {
 
         {/* Options Input */}
         <div className="glass-panel p-6 rounded-2xl space-y-4">
-          <h2 className="text-xl font-semibold text-slate-200 mb-4">Сонголтууд ({options.length})</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-slate-200">Сонголтууд ({options.length})</h2>
+            {session && (
+              <span className="text-sm text-slate-400">
+                Таны сонголт: {userOptionCount}/2
+              </span>
+            )}
+          </div>
           
           <div className="flex gap-2">
             <input
               type="text"
               value={newOption}
               onChange={(e) => setNewOption(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && addOption()}
-              placeholder="Шинэ сонголт нэмэх..."
-              className="flex-1 px-4 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-slate-100 focus:outline-none focus:ring-2 focus:ring-violet-500"
+              onKeyDown={(e) => e.key === "Enter" && userOptionCount < 2 && addOption()}
+              placeholder={userOptionCount >= 2 ? "Та 2 сонголт нэмсэн байна" : "Шинэ сонголт нэмэх..."}
+              disabled={userOptionCount >= 2}
+              className="flex-1 px-4 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-slate-100 focus:outline-none focus:ring-2 focus:ring-violet-500 disabled:opacity-50 disabled:cursor-not-allowed"
             />
             <button
               onClick={addOption}
-              disabled={!newOption.trim()}
+              disabled={!newOption.trim() || userOptionCount >= 2}
               className="px-6 py-2 rounded-lg bg-violet-500 hover:bg-violet-600 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+              title={userOptionCount >= 2 ? "Та зөвхөн 2 сонголт нэмж болно" : ""}
             >
               + Нэмэх
             </button>
