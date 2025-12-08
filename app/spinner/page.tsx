@@ -1,17 +1,64 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { NeonLayout } from "../../components/layout/NeonLayout";
 import { useSession } from "../../components/auth/useSession";
 
 export default function SpinnerPage() {
   const { session } = useSession();
-  const [options, setOptions] = useState<string[]>(["Сонголт 1", "Сонголт 2", "Сонголт 3"]);
+  const [options, setOptions] = useState<string[]>([]);
   const [newOption, setNewOption] = useState("");
   const [spinning, setSpinning] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [rotation, setRotation] = useState(0);
   const [shareCopied, setShareCopied] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  // Load shared options from API
+  useEffect(() => {
+    async function loadOptions() {
+      try {
+        const res = await fetch('/api/spinner');
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const json = await res.json();
+        if (json.ok && Array.isArray(json.options) && json.options.length > 0) {
+          setOptions(json.options);
+        } else {
+          // Fallback to default if empty or invalid
+          setOptions(["Сонголт 1", "Сонголт 2", "Сонголт 3"]);
+        }
+      } catch (err) {
+        console.error("Failed to fetch spinner options:", err);
+        // Fallback to default on any error
+        setOptions(["Сонголт 1", "Сонголт 2", "Сонголт 3"]);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadOptions();
+    // Poll for updates every 2 seconds
+    const interval = setInterval(loadOptions, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  async function fetchOptions() {
+    try {
+      const res = await fetch('/api/spinner');
+      if (!res.ok) {
+        return; // Silently fail, keep current options
+      }
+      const json = await res.json();
+      if (json.ok && Array.isArray(json.options) && json.options.length > 0) {
+        setOptions(json.options);
+      }
+    } catch (err) {
+      // Silently fail, keep current options
+      console.error("Failed to fetch spinner options:", err);
+    }
+  }
 
   const colors = [
     "#8b5cf6", // violet
@@ -24,19 +71,66 @@ export default function SpinnerPage() {
     "#a855f7", // purple
   ];
 
-  function addOption() {
-    if (newOption.trim() && options.length < 12) {
-      setOptions([...options, newOption.trim()]);
-      setNewOption("");
+  async function addOption() {
+    if (!newOption.trim() || options.length >= 12) return;
+    if (!session) {
+      alert("Нэвтэрнэ үү");
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/spinner', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ option: newOption.trim() }),
+      });
+
+      const json = await res.json();
+      if (json.ok) {
+        setOptions(json.options || []);
+        setNewOption("");
+        // Refresh to show updated list
+        await fetchOptions();
+      } else {
+        alert(json.error || "Нэмэхэд алдаа гарлаа");
+      }
+    } catch (err) {
+      console.error("Failed to add option:", err);
+      alert("Алдаа гарлаа");
     }
   }
 
-  function removeOption(index: number) {
-    if (options.length > 2) {
-      setOptions(options.filter((_, i) => i !== index));
-      if (selectedIndex === index) {
-        setSelectedIndex(null);
+  async function removeOption(optionText: string) {
+    if (options.length <= 2) {
+      alert("Хамгийн багадаа 2 сонголт байх ёстой");
+      return;
+    }
+    if (!session) {
+      alert("Нэвтэрнэ үү");
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/spinner', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ option: optionText }),
+      });
+
+      const json = await res.json();
+      if (json.ok) {
+        setOptions(json.options || []);
+        if (selectedIndex !== null && options[selectedIndex] === optionText) {
+          setSelectedIndex(null);
+        }
+        // Refresh to show updated list
+        await fetchOptions();
+      } else {
+        alert(json.error || "Устгахад алдаа гарлаа");
       }
+    } catch (err) {
+      console.error("Failed to remove option:", err);
+      alert("Алдаа гарлаа");
     }
   }
 
@@ -50,18 +144,23 @@ export default function SpinnerPage() {
     const randomIndex = Math.floor(Math.random() * options.length);
     
     // Calculate rotation (multiple full spins + final position)
-    const fullSpins = 5 + Math.random() * 3; // 5-8 full spins
+    const fullSpins = 8 + Math.random() * 4; // 8-12 full spins for smoother effect
     const anglePerSlice = 360 / options.length;
     const finalAngle = randomIndex * anglePerSlice;
-    const totalRotation = rotation + fullSpins * 360 + (360 - (rotation % 360)) + finalAngle;
+    
+    // Get current rotation and normalize
+    const currentNormalized = ((rotation % 360) + 360) % 360;
+    // Calculate target: current + full spins + adjust to target slice
+    const targetRotation = rotation + fullSpins * 360 + (360 - currentNormalized) + finalAngle;
 
-    setRotation(totalRotation);
+    setRotation(targetRotation);
 
-    // Show result after animation
+    // Show result after animation completes
+    const animationDuration = 4000;
     setTimeout(() => {
       setSelectedIndex(randomIndex);
       setSpinning(false);
-    }, 3000);
+    }, animationDuration);
   }
 
   async function handleShare() {
@@ -69,7 +168,6 @@ export default function SpinnerPage() {
 
     const selectedOption = options[selectedIndex];
     const shareText = `🎰 Lucky Spinner: "${selectedOption}" сонгогдлоо!`;
-    const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
 
     // Try Web Share API first (mobile)
     if (navigator.share) {
@@ -77,7 +175,6 @@ export default function SpinnerPage() {
         await navigator.share({
           title: 'Lucky Spinner Result',
           text: shareText,
-          url: shareUrl,
         });
         return;
       } catch (err) {
@@ -86,9 +183,8 @@ export default function SpinnerPage() {
     }
 
     // Fall back to clipboard
-    const shareData = `${shareText}\n\n${shareUrl}`;
     try {
-      await navigator.clipboard.writeText(shareData);
+      await navigator.clipboard.writeText(shareText);
       setShareCopied(true);
       setTimeout(() => setShareCopied(false), 2000);
     } catch (err) {
@@ -97,7 +193,18 @@ export default function SpinnerPage() {
   }
 
   const anglePerSlice = 360 / options.length;
-  const currentRotation = rotation % 360;
+
+  if (loading) {
+    return (
+      <NeonLayout>
+        <div className="max-w-4xl mx-auto space-y-6">
+          <div className="text-center py-12">
+            <div className="text-slate-400">Ачаалж байна...</div>
+          </div>
+        </div>
+      </NeonLayout>
+    );
+  }
 
   return (
     <NeonLayout>
@@ -106,7 +213,7 @@ export default function SpinnerPage() {
           <h1 className="text-4xl font-bold bg-gradient-to-r from-violet-300 via-purple-300 to-pink-300 bg-clip-text text-transparent mb-2">
             🎰 Lucky Spinner
           </h1>
-          <p className="text-slate-400">Сонголтууд оруулаад эргүүлээд санамсаргүй сонголт хий</p>
+          <p className="text-slate-400">Бүгд хамтдаа сонголт нэмж, санамсаргүй сонголт хий</p>
         </div>
 
         {/* Options Input */}
@@ -135,7 +242,7 @@ export default function SpinnerPage() {
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
             {options.map((option, index) => (
               <div
-                key={index}
+                key={`${option}-${index}`}
                 className="flex items-center gap-2 p-3 rounded-lg bg-slate-800/30 border border-slate-700/50"
               >
                 <div
@@ -143,9 +250,9 @@ export default function SpinnerPage() {
                   style={{ backgroundColor: colors[index % colors.length] }}
                 />
                 <span className="flex-1 text-sm text-slate-200 truncate">{option}</span>
-                {options.length > 2 && (
+                {options.length > 2 && session && (
                   <button
-                    onClick={() => removeOption(index)}
+                    onClick={() => removeOption(option)}
                     className="text-red-400 hover:text-red-300 text-xs px-2"
                   >
                     ✕
@@ -161,9 +268,11 @@ export default function SpinnerPage() {
           <div className="relative w-80 h-80 mb-8">
             {/* Wheel Container */}
             <svg
-              className="absolute inset-0 w-full h-full transform transition-transform duration-3000 ease-out"
+              className="absolute inset-0 w-full h-full"
               style={{
-                transform: `rotate(${currentRotation}deg)`,
+                transform: `rotate(${rotation}deg)`,
+                transition: spinning ? 'transform 4000ms cubic-bezier(0.17, 0.67, 0.12, 0.99)' : 'none',
+                willChange: spinning ? 'transform' : 'auto',
               }}
               viewBox="0 0 200 200"
             >
@@ -251,8 +360,8 @@ export default function SpinnerPage() {
                     </>
                   ) : (
                     <>
-                      <span>📤</span>
-                      <span>Найзуудтай хуваалцах</span>
+                      <span>📋</span>
+                      <span>Үр дүнг хуулах</span>
                     </>
                   )}
                 </button>
