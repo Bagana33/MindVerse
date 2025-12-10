@@ -27,7 +27,8 @@ type LessonSubmission = {
   lessonId: string;
   studentEmail: string;
   studentName: string;
-  fileUrl?: string;
+  fileUrl?: string; // Keep for backward compatibility
+  fileUrls?: string[]; // New: array of file URLs (up to 2)
   submittedAt: string;
   score?: number;
   feedback?: string;
