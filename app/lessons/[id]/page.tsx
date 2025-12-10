@@ -60,10 +60,11 @@ export default function LessonDetailPage() {
   // Submission states
   const [showSubmitSection, setShowSubmitSection] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [filePreview, setFilePreview] = useState<string | null>(null);
-  const [fileToUpload, setFileToUpload] = useState<string | null>(null);
+  const [filePreviews, setFilePreviews] = useState<string[]>([]); // Array of file URLs
+  const [filesToUpload, setFilesToUpload] = useState<string[]>([]); // Array of file URLs to submit
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [uploadingSubmission, setUploadingSubmission] = useState(false);
+  const [uploadingFileIndex, setUploadingFileIndex] = useState<number | null>(null); // Track which file is uploading
   const [showRewardPopup, setShowRewardPopup] = useState(false);
   const [rewardMessage, setRewardMessage] = useState("");
 
@@ -133,54 +134,88 @@ export default function LessonDetailPage() {
   }
 
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
     setSubmitError(null);
 
-    if (file.size > 50 * 1024 * 1024) {
-      const mb = (file.size / (1024 * 1024)).toFixed(1);
-      setSubmitError(`Файлын хэмжээ 50MB-аас бага байх ёстой (${mb}MB илэрлээ)`);
+    // Check total number of files (existing + new)
+    const totalFiles = filesToUpload.length + files.length;
+    if (totalFiles > 2) {
+      setSubmitError("Зөвхөн 2 файл оруулах боломжтой");
+      e.target.value = "";
       return;
     }
 
-    setUploadingSubmission(true);
-    try {
-      const signRes = await fetch("/api/uploads/sign", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ folder: "neoncanvas/submissions" }),
-      });
-      if (!signRes.ok) throw new Error("sign failed");
-      const signJson = await signRes.json();
-      if (!signJson?.ok || !signJson.cloudName || !signJson.apiKey || !signJson.signature) {
-        throw new Error("sign response invalid");
+    // Validate file sizes
+    for (const file of files) {
+      if (file.size > 50 * 1024 * 1024) {
+        const mb = (file.size / (1024 * 1024)).toFixed(1);
+        setSubmitError(`Файлын хэмжээ 50MB-аас бага байх ёстой: ${file.name} (${mb}MB)`);
+        e.target.value = "";
+        return;
       }
-
-      const form = new FormData();
-      form.append("file", file);
-      form.append("api_key", signJson.apiKey);
-      form.append("timestamp", String(signJson.timestamp));
-      form.append("signature", signJson.signature);
-      form.append("folder", signJson.folder || "neoncanvas/submissions");
-
-      const uploadRes = await fetch(
-        `https://api.cloudinary.com/v1_1/${signJson.cloudName}/auto/upload`,
-        { method: "POST", body: form }
-      );
-      if (!uploadRes.ok) throw new Error(`upload failed: ${uploadRes.status}`);
-      const uploadJson = await uploadRes.json();
-      if (!uploadJson?.secure_url) throw new Error("no secure_url");
-
-      setFilePreview(uploadJson.secure_url);
-      setFileToUpload(uploadJson.secure_url);
-    } catch (err) {
-      console.error("Submission upload failed:", err);
-      setSubmitError("Файл байршуулахад алдаа гарлаа. Cloudinary тохиргоогоо шалгаад дахин оролдоно уу, эсвэл файлаа багасгаарай.");
-    } finally {
-      setUploadingSubmission(false);
-      e.target.value = "";
     }
+
+    // Upload files one by one
+    const uploadedUrls: string[] = [];
+    setUploadingSubmission(true);
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      setUploadingFileIndex(i);
+      
+      try {
+        const signRes = await fetch("/api/uploads/sign", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ folder: "neoncanvas/submissions" }),
+        });
+        if (!signRes.ok) throw new Error("sign failed");
+        const signJson = await signRes.json();
+        if (!signJson?.ok || !signJson.cloudName || !signJson.apiKey || !signJson.signature) {
+          throw new Error("sign response invalid");
+        }
+
+        const form = new FormData();
+        form.append("file", file);
+        form.append("api_key", signJson.apiKey);
+        form.append("timestamp", String(signJson.timestamp));
+        form.append("signature", signJson.signature);
+        form.append("folder", signJson.folder || "neoncanvas/submissions");
+
+        const uploadRes = await fetch(
+          `https://api.cloudinary.com/v1_1/${signJson.cloudName}/auto/upload`,
+          { method: "POST", body: form }
+        );
+        if (!uploadRes.ok) throw new Error(`upload failed: ${uploadRes.status}`);
+        const uploadJson = await uploadRes.json();
+        if (!uploadJson?.secure_url) throw new Error("no secure_url");
+
+        uploadedUrls.push(uploadJson.secure_url);
+      } catch (err) {
+        console.error(`Submission upload failed for file ${i + 1}:`, err);
+        setSubmitError(`Файл байршуулахад алдаа гарлаа: ${file.name}`);
+        e.target.value = "";
+        setUploadingSubmission(false);
+        setUploadingFileIndex(null);
+        return;
+      }
+    }
+
+    // Update state with all uploaded files
+    setFilesToUpload([...filesToUpload, ...uploadedUrls]);
+    setFilePreviews([...filePreviews, ...uploadedUrls]);
+    setUploadingSubmission(false);
+    setUploadingFileIndex(null);
+    e.target.value = "";
+  }
+
+  function removeFile(index: number) {
+    const newFiles = filesToUpload.filter((_, i) => i !== index);
+    const newPreviews = filePreviews.filter((_, i) => i !== index);
+    setFilesToUpload(newFiles);
+    setFilePreviews(newPreviews);
   }
 
   async function handleSubmitWork() {
@@ -197,7 +232,9 @@ export default function LessonDetailPage() {
       const res = await fetch(`/api/lessons/${lesson.id}/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileUrl: fileToUpload }),
+        body: JSON.stringify({ 
+          fileUrls: filesToUpload.length > 0 ? filesToUpload : undefined 
+        }),
       });
 
       if (!res.ok) {
@@ -219,8 +256,8 @@ export default function LessonDetailPage() {
       setTimeout(() => {
         setShowRewardPopup(false);
         setShowSubmitSection(false);
-        setFilePreview(null);
-        setFileToUpload(null);
+        setFilePreviews([]);
+        setFilesToUpload([]);
         // Refresh lesson data
         fetch(`/api/lessons/${params.id}`)
           .then(r => r.json())
@@ -521,21 +558,56 @@ export default function LessonDetailPage() {
             {showSubmitSection && (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm text-slate-400 mb-2">Файл оруулах (заавал биш)</label>
+                  <label className="block text-sm text-slate-400 mb-2">
+                    Файл оруулах (заавал биш, хамгийн ихдээ 2 файл)
+                    {filesToUpload.length > 0 && (
+                      <span className="ml-2 text-violet-400">({filesToUpload.length}/2)</span>
+                    )}
+                  </label>
                   <input
                     type="file"
+                    multiple
                     onChange={handleFileUpload}
-                    className="w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-violet-500/20 file:text-violet-300 hover:file:bg-violet-500/30 file:cursor-pointer"
+                    disabled={filesToUpload.length >= 2 || uploadingSubmission}
+                    className="w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-violet-500/20 file:text-violet-300 hover:file:bg-violet-500/30 file:cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                   />
-                  {uploadingSubmission && (
-                    <p className="mt-2 text-xs text-slate-400">Файл байршиж байна...</p>
+                  {filesToUpload.length >= 2 && (
+                    <p className="mt-2 text-xs text-yellow-400">Та хамгийн ихдээ 2 файл оруулах боломжтой</p>
                   )}
-                  {filePreview && (
-                    <div className="mt-2 p-2 bg-slate-950/60 rounded-lg text-xs text-green-400">
-                      ✓ Файл бэлэн байна
-                    </div>
+                  {uploadingSubmission && (
+                    <p className="mt-2 text-xs text-slate-400">
+                      Файл байршиж байна... ({uploadingFileIndex !== null ? uploadingFileIndex + 1 : ''})
+                    </p>
                   )}
                 </div>
+                
+                {/* Show uploaded files */}
+                {filePreviews.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs text-slate-400">Бэлэн файлууд:</p>
+                    {filePreviews.map((url, index) => (
+                      <div key={index} className="flex items-center justify-between p-2 bg-slate-950/60 rounded-lg border border-slate-700">
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <span className="text-green-400">✓</span>
+                          <span className="text-xs text-slate-300 truncate">
+                            Файл {index + 1}
+                          </span>
+                          {url.startsWith('data:image/') && (
+                            <span className="text-xs text-slate-500">(Зураг)</span>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => removeFile(index)}
+                          className="px-2 py-1 rounded text-xs bg-red-500/20 hover:bg-red-500/30 text-red-400 transition-colors"
+                          disabled={uploadingSubmission}
+                        >
+                          Устгах
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
                 {submitError && <p className="text-xs text-red-400">{submitError}</p>}
                 <div className="flex gap-2">
                   <button
@@ -548,8 +620,8 @@ export default function LessonDetailPage() {
                   <button
                     onClick={() => {
                       setShowSubmitSection(false);
-                      setFilePreview(null);
-                      setFileToUpload(null);
+                      setFilePreviews([]);
+                      setFilesToUpload([]);
                       setSubmitError(null);
                     }}
                     className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm transition-colors"
@@ -674,18 +746,24 @@ export default function LessonDetailPage() {
                     )}
                   </div>
 
-                  {sub.fileUrl && (
+                  {(sub.fileUrls && sub.fileUrls.length > 0) || sub.fileUrl ? (
                     <div className="mb-3 space-y-2">
-                      {/* File Preview */}
-                      {sub.fileUrl.startsWith('data:image/') ? (
+                      {/* Support both old format (fileUrl) and new format (fileUrls array) */}
+                      {(sub.fileUrls && sub.fileUrls.length > 0 ? sub.fileUrls : [sub.fileUrl]).map((fileUrl: string, fileIndex: number) => (
+                        <div key={fileIndex} className="mb-3">
+                          {sub.fileUrls && sub.fileUrls.length > 1 && (
+                            <p className="text-xs text-slate-400 mb-1">Файл {fileIndex + 1}:</p>
+                          )}
+                          {/* File Preview */}
+                          {fileUrl.startsWith('data:image/') || (fileUrl.startsWith('http') && fileUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i)) ? (
                         <div className="border border-slate-700 rounded-lg overflow-hidden">
                           <img 
-                            src={sub.fileUrl} 
-                            alt="Submission"
+                            src={fileUrl} 
+                            alt={`Submission file ${fileIndex + 1}`}
                             className="w-full max-h-96 object-contain bg-slate-950"
                           />
                         </div>
-                      ) : sub.fileUrl.startsWith('data:application/pdf') ? (
+                          ) : fileUrl.startsWith('data:application/pdf') || (fileUrl.startsWith('http') && fileUrl.match(/\.pdf$/i)) ? (
                         <div className="p-4 bg-slate-950/60 border border-slate-700 rounded-lg text-center">
                           <span className="text-4xl">📄</span>
                           <p className="text-xs text-slate-400 mt-2">PDF файл</p>
@@ -696,15 +774,19 @@ export default function LessonDetailPage() {
                           <p className="text-xs text-slate-400 mt-2">Файл хавсаргасан</p>
                         </div>
                       )}
-                      <a 
-                        href={sub.fileUrl} 
-                        download={`submission-${sub.studentName}.file`}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 hover:text-blue-300 text-xs transition-colors"
+                          <a 
+                            href={fileUrl} 
+                            download={`submission-${sub.studentName}-${fileIndex + 1}.file`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 hover:text-blue-300 text-xs transition-colors mt-2"
                       >
                         � Татаж авах
-                      </a>
+                          </a>
+                        </div>
+                      ))}
                     </div>
-                  )}
+                  ) : null}
 
                   {sub.feedback && (
                     <div className="p-2 bg-slate-900/60 rounded-lg text-xs text-slate-400">

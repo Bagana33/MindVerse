@@ -27,9 +27,20 @@ export async function POST(
       return NextResponse.json({ error: "Invalid JSON format" }, { status: 400 });
     }
 
-    const { fileUrl } = body;
+    const { fileUrl, fileUrls } = body;
 
-    const submission = await submitToLesson(lessonId, session.email, session.name || session.email, fileUrl);
+    // Support both old format (fileUrl) and new format (fileUrls array)
+    // If fileUrls is provided, use it; otherwise fall back to fileUrl as array
+    const urls = fileUrls 
+      ? (Array.isArray(fileUrls) ? fileUrls : [fileUrls])
+      : (fileUrl ? [fileUrl] : undefined);
+
+    // Validate: max 2 files
+    if (urls && urls.length > 2) {
+      return NextResponse.json({ error: "Зөвхөн 2 файл оруулах боломжтой" }, { status: 400 });
+    }
+
+    const submission = await submitToLesson(lessonId, session.email, session.name || session.email, urls);
 
     if (!submission) {
       return NextResponse.json({ error: "Илгээхэд алдаа гарлаа" }, { status: 500 });

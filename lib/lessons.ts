@@ -21,7 +21,8 @@ export type LessonSubmission = {
   lessonId: string;
   studentEmail: string;
   studentName: string;
-  fileUrl?: string;
+  fileUrl?: string; // Keep for backward compatibility
+  fileUrls?: string[]; // New: array of file URLs (up to 2)
   submittedAt: string;
   score?: number;
   feedback?: string;
@@ -82,12 +83,18 @@ function dbToFile(dbRow: any): LessonFile {
 }
 
 function dbToSubmission(dbRow: any): LessonSubmission {
+  // Handle both old file_url and new file_urls
+  const fileUrls = dbRow.file_urls 
+    ? (Array.isArray(dbRow.file_urls) ? dbRow.file_urls : JSON.parse(dbRow.file_urls))
+    : (dbRow.file_url ? [dbRow.file_url] : undefined);
+  
   return {
     id: dbRow.id,
     lessonId: dbRow.lesson_id,
     studentEmail: dbRow.student_email,
     studentName: dbRow.student_name,
-    fileUrl: dbRow.file_url,
+    fileUrl: dbRow.file_url, // Keep for backward compatibility
+    fileUrls: fileUrls, // New array format
     submittedAt: dbRow.submitted_at,
     score: dbRow.score,
     feedback: dbRow.feedback,
@@ -297,7 +304,7 @@ export async function submitToLesson(
   lessonId: string,
   studentEmail: string,
   studentName: string,
-  fileUrl?: string
+  fileUrls?: string[] // Changed to array, max 2 files
 ): Promise<LessonSubmission | null> {
   // Check if submission already exists
   const { data: existing } = await supabase
@@ -311,13 +318,24 @@ export async function submitToLesson(
   let data: any;
   let error: any;
 
+  // Validate: max 2 files
+  if (fileUrls && fileUrls.length > 2) {
+    console.error("Too many files: max 2 allowed");
+    return null;
+  }
+
+  // Prepare file_urls JSON array (keep file_url for backward compatibility)
+  const fileUrlsJson = fileUrls && fileUrls.length > 0 ? fileUrls : null;
+  const fileUrl = fileUrls && fileUrls.length > 0 ? fileUrls[0] : null; // First file for backward compatibility
+
   if (existing) {
     // Update existing submission (resubmission)
     submissionId = existing.id;
     const { data: updated, error: updateError } = await supabase
       .from('lesson_submissions')
       .update({
-        file_url: fileUrl,
+        file_url: fileUrl, // Keep for backward compatibility
+        file_urls: fileUrlsJson, // New array format
         student_name: studentName,
         submitted_at: new Date().toISOString(),
         // Reset grading when resubmitting
@@ -342,7 +360,8 @@ export async function submitToLesson(
         lesson_id: lessonId,
         student_email: studentEmail,
         student_name: studentName,
-        file_url: fileUrl,
+        file_url: fileUrl, // Keep for backward compatibility
+        file_urls: fileUrlsJson, // New array format
       }])
       .select()
       .single();
