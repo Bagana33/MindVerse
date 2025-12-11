@@ -39,6 +39,7 @@ export async function GET() {
       return NextResponse.json({ 
         ok: true, 
         images: [],
+        gameEnded: false,
         warning: "Table not created yet. Please run migration."
       });
     }
@@ -46,7 +47,39 @@ export async function GET() {
     return NextResponse.json({ ok: false, error: "Алдаа гарлаа" }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, images: toClient(data || []) });
+  // Get game state
+  let gameEnded = false;
+  let winner = null;
+  try {
+    const { data: gameState } = await supabase
+      .from("game_state")
+      .select("*")
+      .eq("id", "game-state")
+      .single();
+    
+    if (gameState) {
+      gameEnded = gameState.ended || false;
+      if (gameState.winner_email) {
+        const { getUser } = await import("../../../../lib/users");
+        const winnerUser = await getUser(gameState.winner_email);
+        if (winnerUser) {
+          winner = {
+            email: gameState.winner_email,
+            name: winnerUser.nickname || winnerUser.name || gameState.winner_email,
+          };
+        }
+      }
+    }
+  } catch (stateError) {
+    // Ignore state errors, game might not have state table yet
+  }
+
+  return NextResponse.json({ 
+    ok: true, 
+    images: toClient(data || []),
+    gameEnded,
+    winner,
+  });
 }
 
 export async function POST(req: Request) {

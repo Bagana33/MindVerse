@@ -16,6 +16,11 @@ type GameImage = {
   createdAt: string;
 };
 
+type GameState = {
+  gameEnded: boolean;
+  winner: { email: string; name: string } | null;
+};
+
 export default function GamePage() {
   const { session } = useSession();
   const [images, setImages] = useState<GameImage[]>([]);
@@ -25,6 +30,8 @@ export default function GamePage() {
   const [uploading, setUploading] = useState(false);
   const [newImageUrl, setNewImageUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [gameState, setGameState] = useState<GameState>({ gameEnded: false, winner: null });
+  const [ending, setEnding] = useState(false);
 
   useEffect(() => {
     fetchImages();
@@ -38,6 +45,10 @@ export default function GamePage() {
       const json = await res.json();
       if (json.ok) {
         setImages(json.images || []);
+        setGameState({
+          gameEnded: json.gameEnded || false,
+          winner: json.winner || null,
+        });
       }
     } catch (err) {
       console.error("Fetch game images error:", err);
@@ -127,6 +138,10 @@ export default function GamePage() {
       alert("Нэвтэрнэ үү");
       return;
     }
+    if (gameState.gameEnded) {
+      alert("Тоглоом дууссан байна");
+      return;
+    }
     setVotingId(id);
     try {
       const res = await fetch("/api/game/images/vote", {
@@ -142,6 +157,44 @@ export default function GamePage() {
       console.error("Vote error:", err);
     } finally {
       setVotingId(null);
+    }
+  }
+
+  async function handleEndGame() {
+    if (!session || session.role !== "teacher") {
+      alert("Зөвхөн багш тоглоом дуусгах эрхтэй");
+      return;
+    }
+    if (gameState.gameEnded) {
+      alert("Тоглоом аль хэдийн дууссан байна");
+      return;
+    }
+    if (!confirm("Тоглоомыг дуусгах уу? Хамгийн их like авсан хүүхэд +2 XP хүртнэ.")) {
+      return;
+    }
+    setEnding(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/game/end", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setGameState({
+          gameEnded: true,
+          winner: json.winner,
+        });
+        await fetchImages(); // Refresh to get updated state
+        alert(json.message || "Тоглоом амжилттай дууссан!");
+      } else {
+        setError(json.error || "Тоглоом дуусгахад алдаа гарлаа");
+      }
+    } catch (err) {
+      console.error("End game error:", err);
+      setError("Алдаа гарлаа");
+    } finally {
+      setEnding(false);
     }
   }
 
@@ -165,35 +218,54 @@ export default function GamePage() {
           <p className="text-slate-400 text-sm">
             Зураг оруулаад бүгдээрээ like/dislike өгч хамгийн гоё зургыг тодруулна.
           </p>
+          {session?.role === "teacher" && !gameState.gameEnded && (
+            <button
+              onClick={handleEndGame}
+              disabled={ending || images.length === 0}
+              className="mt-4 px-6 py-2 rounded-lg bg-gradient-to-r from-red-500 to-pink-500 text-white text-sm font-medium shadow-[0_4px_16px_rgba(239,68,68,0.4)] hover:shadow-[0_6px_20px_rgba(239,68,68,0.6)] disabled:opacity-60 transition-all"
+            >
+              {ending ? "Дуусгаж байна..." : "🎯 Тоглоом дуусгах"}
+            </button>
+          )}
+          {gameState.gameEnded && gameState.winner && (
+            <div className="mt-4 glass-panel p-4 rounded-2xl border-2 border-yellow-500/50 bg-gradient-to-r from-yellow-500/10 to-orange-500/10">
+              <div className="text-2xl mb-2">🎉 Баяр хүргэе!</div>
+              <div className="text-lg font-semibold text-yellow-300">
+                {gameState.winner.name} хамгийн их like авсан тул +2 XP хүртлээ!
+              </div>
+            </div>
+          )}
         </div>
 
-        <div className="glass-panel p-6 rounded-2xl space-y-4">
-          <h2 className="text-xl font-semibold text-slate-200">Зураг оруулах</h2>
-          <div className="space-y-3">
-            <input
-              type="text"
-              placeholder="Зурагны URL (эсвэл файл upload хийнэ)"
-              value={newImageUrl}
-              onChange={(e) => setNewImageUrl(e.target.value)}
-              className="w-full px-4 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-slate-100 focus:outline-none focus:ring-2 focus:ring-violet-500"
-            />
-            <div className="flex flex-wrap items-center gap-3">
-              <label className="px-4 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-slate-200 text-sm cursor-pointer hover:border-violet-500">
-                Файл upload
-                <input type="file" accept="image/*" className="hidden" onChange={handleUploadFile} disabled={uploading} />
-              </label>
-              <button
-                onClick={handleAdd}
-                disabled={adding || uploading || !newImageUrl.trim()}
-                className="px-6 py-2 rounded-lg bg-gradient-to-r from-violet-500 to-purple-500 text-white text-sm font-medium shadow-[0_4px_16px_rgba(139,92,246,0.4)] hover:shadow-[0_6px_20px_rgba(139,92,246,0.6)] disabled:opacity-60 transition-all"
-              >
-                {adding ? "Нэмэж байна..." : "Нэмэх"}
-              </button>
-              {uploading && <span className="text-xs text-slate-400">Байршуулж байна...</span>}
+        {!gameState.gameEnded && (
+          <div className="glass-panel p-6 rounded-2xl space-y-4">
+            <h2 className="text-xl font-semibold text-slate-200">Зураг оруулах</h2>
+            <div className="space-y-3">
+              <input
+                type="text"
+                placeholder="Зурагны URL (эсвэл файл upload хийнэ)"
+                value={newImageUrl}
+                onChange={(e) => setNewImageUrl(e.target.value)}
+                className="w-full px-4 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-slate-100 focus:outline-none focus:ring-2 focus:ring-violet-500"
+              />
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="px-4 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-slate-200 text-sm cursor-pointer hover:border-violet-500">
+                  Файл upload
+                  <input type="file" accept="image/*" className="hidden" onChange={handleUploadFile} disabled={uploading} />
+                </label>
+                <button
+                  onClick={handleAdd}
+                  disabled={adding || uploading || !newImageUrl.trim()}
+                  className="px-6 py-2 rounded-lg bg-gradient-to-r from-violet-500 to-purple-500 text-white text-sm font-medium shadow-[0_4px_16px_rgba(139,92,246,0.4)] hover:shadow-[0_6px_20px_rgba(139,92,246,0.6)] disabled:opacity-60 transition-all"
+                >
+                  {adding ? "Нэмэж байна..." : "Нэмэх"}
+                </button>
+                {uploading && <span className="text-xs text-slate-400">Байршуулж байна...</span>}
+              </div>
+              {error && <p className="text-xs text-red-400">{error}</p>}
             </div>
-            {error && <p className="text-xs text-red-400">{error}</p>}
           </div>
-        </div>
+        )}
 
         <div className="space-y-4">
           <h2 className="text-lg font-semibold text-slate-200">Зургууд</h2>
@@ -218,23 +290,23 @@ export default function GamePage() {
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => handleVote(img.id, "like")}
-                          disabled={votingId === img.id}
+                          disabled={votingId === img.id || gameState.gameEnded}
                           className={`px-3 py-1 rounded-full text-xs border transition-all ${
                             liked
                               ? "bg-green-500/20 border-green-500 text-green-300"
                               : "border-slate-700 bg-slate-800/50 text-slate-200 hover:border-green-500/50"
-                          }`}
+                          } ${gameState.gameEnded ? "opacity-50 cursor-not-allowed" : ""}`}
                         >
                           👍 {img.likes}
                         </button>
                         <button
                           onClick={() => handleVote(img.id, "dislike")}
-                          disabled={votingId === img.id}
+                          disabled={votingId === img.id || gameState.gameEnded}
                           className={`px-3 py-1 rounded-full text-xs border transition-all ${
                             disliked
                               ? "bg-red-500/20 border-red-500 text-red-300"
                               : "border-slate-700 bg-slate-800/50 text-slate-200 hover:border-red-500/50"
-                          }`}
+                          } ${gameState.gameEnded ? "opacity-50 cursor-not-allowed" : ""}`}
                         >
                           👎 {img.dislikes}
                         </button>
