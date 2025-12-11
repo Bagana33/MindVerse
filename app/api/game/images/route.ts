@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSessionFromCookies } from "../../../lib/session";
-import { supabase } from "../../../lib/supabase";
+import { getSessionFromCookies } from "../../../../lib/session";
+import { supabase } from "../../../../lib/supabase";
 
 type GameImage = {
   id: string;
@@ -33,6 +33,15 @@ export async function GET() {
     .select("*");
 
   if (error) {
+    // If table doesn't exist, return empty array
+    if (error.code === '42P01' || error.message?.includes('does not exist')) {
+      console.log("game_images table doesn't exist yet, returning empty array");
+      return NextResponse.json({ 
+        ok: true, 
+        images: [],
+        warning: "Table not created yet. Please run migration."
+      });
+    }
     console.error("Game images fetch error:", error);
     return NextResponse.json({ ok: false, error: "Алдаа гарлаа" }, { status: 500 });
   }
@@ -63,6 +72,13 @@ export async function POST(req: Request) {
       }]);
 
     if (error) {
+      // If table doesn't exist, return error with helpful message
+      if (error.code === '42P01' || error.message?.includes('does not exist')) {
+        return NextResponse.json({ 
+          ok: false, 
+          error: "Game table үүсээгүй байна. Supabase дээр migration ажиллуулна уу." 
+        }, { status: 500 });
+      }
       console.error("Game image insert error:", error);
       return NextResponse.json({ ok: false, error: "Нэмэхэд алдаа гарлаа" }, { status: 500 });
     }

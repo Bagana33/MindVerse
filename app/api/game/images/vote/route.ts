@@ -37,7 +37,18 @@ export async function POST(req: Request) {
       .eq("id", id)
       .single();
 
-    if (error || !data) {
+    if (error) {
+      // If table doesn't exist, return error with helpful message
+      if (error.code === '42P01' || error.message?.includes('does not exist')) {
+        return NextResponse.json({ 
+          ok: false, 
+          error: "Game table үүсээгүй байна. Supabase дээр migration ажиллуулна уу." 
+        }, { status: 500 });
+      }
+      return NextResponse.json({ ok: false, error: "Зураг олдсонгүй" }, { status: 404 });
+    }
+    
+    if (!data) {
       return NextResponse.json({ ok: false, error: "Зураг олдсонгүй" }, { status: 404 });
     }
 
@@ -71,11 +82,22 @@ export async function POST(req: Request) {
       .eq("id", id);
 
     if (updateError) {
+      // If table doesn't exist, return error with helpful message
+      if (updateError.code === '42P01' || updateError.message?.includes('does not exist')) {
+        return NextResponse.json({ 
+          ok: false, 
+          error: "Game table үүсээгүй байна. Supabase дээр migration ажиллуулна уу." 
+        }, { status: 500 });
+      }
       console.error("Vote update error:", updateError);
       return NextResponse.json({ ok: false, error: "Санал өгөхөд алдаа" }, { status: 500 });
     }
 
-    const { data: all } = await supabase.from("game_images").select("*");
+    const { data: all, error: fetchError } = await supabase.from("game_images").select("*");
+    if (fetchError) {
+      console.error("Fetch all images error:", fetchError);
+      return NextResponse.json({ ok: false, error: "Зургуудыг авахад алдаа" }, { status: 500 });
+    }
     return NextResponse.json({ ok: true, images: toClient(all || []) });
   } catch (err: any) {
     console.error("Vote error:", err);
