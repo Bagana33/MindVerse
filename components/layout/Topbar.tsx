@@ -85,11 +85,12 @@ export function Topbar() {
     { href: "/", label: "Home" },
     { href: "/contests", label: "Contests" },
     { href: "/lessons", label: "Lessons" },
-    { href: "/spinner", label: "Spinner" },
     { href: "/profile", label: "Profile" },
     { href: "/leaderboard", label: "Leaderboard" },
     ...(session?.role === "teacher" ? [{ href: "/admin", label: "Admin" }] : []),
   ], [session?.role]);
+
+  const [funMenuOpen, setFunMenuOpen] = useState(false);
 
   return (
     <header className="sticky top-0 z-50 backdrop-blur-xl bg-slate-950/80 border-b border-slate-800/50">
@@ -128,6 +129,48 @@ export function Topbar() {
                 </Link>
               );
             })}
+            <div 
+              className="relative"
+              onMouseEnter={() => setFunMenuOpen(true)}
+              onMouseLeave={() => setFunMenuOpen(false)}
+            >
+              <button
+                className={[
+                  "px-4 py-2 text-xs font-medium rounded-full transition-all duration-300",
+                  (pathname === "/spinner" || pathname === "/game")
+                    ? "bg-gradient-to-r from-violet-500 to-purple-500 text-white shadow-[0_4px_16px_rgba(139,92,246,0.5)] scale-105"
+                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50",
+                ].join(" ")}
+              >
+                Fun
+              </button>
+              {funMenuOpen && (
+                <div className="absolute top-full left-0 mt-2 rounded-xl glass-panel backdrop-blur-xl border border-slate-700/40 shadow-xl overflow-hidden z-50 animate-fade-in min-w-[120px]">
+                  <Link
+                    href="/spinner"
+                    className={[
+                      "block px-4 py-2 text-xs font-medium transition-all duration-200",
+                      pathname === "/spinner"
+                        ? "bg-violet-500/20 text-violet-300"
+                        : "text-slate-300 hover:bg-slate-800/60 hover:text-white",
+                    ].join(" ")}
+                  >
+                    Spinner
+                  </Link>
+                  <Link
+                    href="/game"
+                    className={[
+                      "block px-4 py-2 text-xs font-medium transition-all duration-200",
+                      pathname === "/game"
+                        ? "bg-violet-500/20 text-violet-300"
+                        : "text-slate-300 hover:bg-slate-800/60 hover:text-white",
+                    ].join(" ")}
+                  >
+                    Vote
+                  </Link>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
