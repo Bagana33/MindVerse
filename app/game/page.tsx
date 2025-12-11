@@ -19,25 +19,55 @@ type GameImage = {
 type GameState = {
   gameEnded: boolean;
   winner: { email: string; name: string } | null;
+  lessonId: string | null;
+  targetGrade: string | null;
+};
+
+type Lesson = {
+  id: string;
+  title: string;
+  description: string;
+  targetGrades: string[];
 };
 
 export default function GamePage() {
   const { session } = useSession();
   const [images, setImages] = useState<GameImage[]>([]);
   const [loading, setLoading] = useState(true);
-  const [adding, setAdding] = useState(false);
   const [votingId, setVotingId] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [newImageUrl, setNewImageUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [gameState, setGameState] = useState<GameState>({ gameEnded: false, winner: null });
+  const [gameState, setGameState] = useState<GameState>({ 
+    gameEnded: false, 
+    winner: null,
+    lessonId: null,
+    targetGrade: null,
+  });
   const [ending, setEnding] = useState(false);
+  const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [selectedLessonId, setSelectedLessonId] = useState<string>("");
+  const [selectedGrade, setSelectedGrade] = useState<string>("");
+  const [settingUp, setSettingUp] = useState(false);
 
   useEffect(() => {
+    if (session?.role === "teacher") {
+      fetchLessons();
+    }
     fetchImages();
     const interval = setInterval(fetchImages, 2000);
     return () => clearInterval(interval);
-  }, []);
+  }, [session]);
+
+  async function fetchLessons() {
+    try {
+      const res = await fetch("/api/lessons");
+      const json = await res.json();
+      if (json.ok) {
+        setLessons(json.lessons || []);
+      }
+    } catch (err) {
+      console.error("Failed to fetch lessons:", err);
+    }
+  }
 
   async function fetchImages() {
     try {
@@ -48,6 +78,8 @@ export default function GamePage() {
         setGameState({
           gameEnded: json.gameEnded || false,
           winner: json.winner || null,
+          lessonId: json.lessonId || null,
+          targetGrade: json.targetGrade || null,
         });
       }
     } catch (err) {
@@ -57,79 +89,40 @@ export default function GamePage() {
     }
   }
 
-  async function handleUploadFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setError(null);
-    if (file.size > 10 * 1024 * 1024) {
-      setError("Файл 10MB-аас бага байх ёстой");
+  async function handleSetup() {
+    if (!session || session.role !== "teacher") {
+      alert("Зөвхөн багш тоглоом тохируулах эрхтэй");
       return;
     }
-    setUploading(true);
-    try {
-      const signRes = await fetch("/api/uploads/sign", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ folder: "neoncanvas/game" }),
-      });
-      if (!signRes.ok) throw new Error("sign failed");
-      const signJson = await signRes.json();
-      if (!signJson?.ok) throw new Error("sign response invalid");
-
-      const form = new FormData();
-      form.append("file", file);
-      form.append("api_key", signJson.apiKey);
-      form.append("timestamp", String(signJson.timestamp));
-      form.append("signature", signJson.signature);
-      form.append("folder", signJson.folder || "neoncanvas/game");
-
-      const uploadRes = await fetch(
-        `https://api.cloudinary.com/v1_1/${signJson.cloudName}/auto/upload`,
-        { method: "POST", body: form }
-      );
-      if (!uploadRes.ok) throw new Error(`upload failed: ${uploadRes.status}`);
-      const uploadJson = await uploadRes.json();
-      if (!uploadJson?.secure_url) throw new Error("no secure_url");
-
-      setNewImageUrl(uploadJson.secure_url);
-    } catch (err: any) {
-      console.error("Upload error:", err);
-      setError("Зураг байршуулахад алдаа гарлаа");
-    } finally {
-      setUploading(false);
-      e.target.value = "";
-    }
-  }
-
-  async function handleAdd() {
-    if (!session) {
-      alert("Нэвтэрнэ үү");
+    if (!selectedLessonId) {
+      setError("Хичээл сонгоно уу");
       return;
     }
-    if (!newImageUrl.trim()) {
-      setError("Зураг оруулна уу");
-      return;
-    }
-    setAdding(true);
+    setSettingUp(true);
     setError(null);
     try {
-      const res = await fetch("/api/game/images", {
+      const res = await fetch("/api/game/setup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageUrl: newImageUrl.trim() }),
+        body: JSON.stringify({ 
+          lessonId: selectedLessonId,
+          targetGrade: selectedGrade || null,
+        }),
       });
       const json = await res.json();
       if (json.ok) {
-        setImages(json.images || []);
-        setNewImageUrl("");
+        await fetchImages(); // Refresh images
+        setSelectedLessonId("");
+        setSelectedGrade("");
+        alert(json.message || "Тоглоом амжилттай тохируулагдлаа!");
       } else {
-        setError(json.error || "Нэмэхэд алдаа гарлаа");
+        setError(json.error || "Тоглоом тохируулахад алдаа гарлаа");
       }
     } catch (err) {
-      console.error("Add image error:", err);
+      console.error("Setup error:", err);
       setError("Алдаа гарлаа");
     } finally {
-      setAdding(false);
+      setSettingUp(false);
     }
   }
 
@@ -182,6 +175,7 @@ export default function GamePage() {
       const json = await res.json();
       if (json.ok) {
         setGameState({
+          ...gameState,
           gameEnded: true,
           winner: json.winner,
         });
@@ -199,6 +193,7 @@ export default function GamePage() {
   }
 
   const myEmail = session?.email;
+  const selectedLesson = lessons.find(l => l.id === gameState.lessonId);
 
   if (loading) {
     return (
@@ -216,9 +211,17 @@ export default function GamePage() {
             🖼️ Vote Game
           </h1>
           <p className="text-slate-400 text-sm">
-            Зураг оруулаад бүгдээрээ like/dislike өгч хамгийн гоё зургыг тодруулна.
+            Хичээлийн даалгаврын ажлуудыг like/dislike өгч хамгийн гоё ажлыг тодруулна.
           </p>
-          {session?.role === "teacher" && !gameState.gameEnded && (
+          {gameState.lessonId && selectedLesson && (
+            <div className="mt-4 glass-panel p-4 rounded-2xl border border-violet-500/30">
+              <div className="text-lg font-semibold text-violet-300">{selectedLesson.title}</div>
+              {gameState.targetGrade && (
+                <div className="text-sm text-slate-400 mt-1">{gameState.targetGrade} анги</div>
+              )}
+            </div>
+          )}
+          {session?.role === "teacher" && !gameState.gameEnded && gameState.lessonId && (
             <button
               onClick={handleEndGame}
               disabled={ending || images.length === 0}
@@ -237,89 +240,111 @@ export default function GamePage() {
           )}
         </div>
 
-        {!gameState.gameEnded && (
+        {session?.role === "teacher" && !gameState.lessonId && (
           <div className="glass-panel p-6 rounded-2xl space-y-4">
-            <h2 className="text-xl font-semibold text-slate-200">Зураг оруулах</h2>
+            <h2 className="text-xl font-semibold text-slate-200">Тоглоом тохируулах</h2>
             <div className="space-y-3">
-              <input
-                type="text"
-                placeholder="Зурагны URL (эсвэл файл upload хийнэ)"
-                value={newImageUrl}
-                onChange={(e) => setNewImageUrl(e.target.value)}
-                className="w-full px-4 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-slate-100 focus:outline-none focus:ring-2 focus:ring-violet-500"
-              />
-              <div className="flex flex-wrap items-center gap-3">
-                <label className="px-4 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-slate-200 text-sm cursor-pointer hover:border-violet-500">
-                  Файл upload
-                  <input type="file" accept="image/*" className="hidden" onChange={handleUploadFile} disabled={uploading} />
-                </label>
-                <button
-                  onClick={handleAdd}
-                  disabled={adding || uploading || !newImageUrl.trim()}
-                  className="px-6 py-2 rounded-lg bg-gradient-to-r from-violet-500 to-purple-500 text-white text-sm font-medium shadow-[0_4px_16px_rgba(139,92,246,0.4)] hover:shadow-[0_6px_20px_rgba(139,92,246,0.6)] disabled:opacity-60 transition-all"
+              <div>
+                <label className="block text-sm text-slate-300 mb-2">Хичээл сонгох *</label>
+                <select
+                  value={selectedLessonId}
+                  onChange={(e) => setSelectedLessonId(e.target.value)}
+                  className="w-full px-4 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-slate-100 focus:outline-none focus:ring-2 focus:ring-violet-500"
                 >
-                  {adding ? "Нэмэж байна..." : "Нэмэх"}
-                </button>
-                {uploading && <span className="text-xs text-slate-400">Байршуулж байна...</span>}
+                  <option value="">Хичээл сонгох...</option>
+                  {lessons.map(lesson => (
+                    <option key={lesson.id} value={lesson.id}>{lesson.title}</option>
+                  ))}
+                </select>
               </div>
+              <div>
+                <label className="block text-sm text-slate-300 mb-2">Анги (сонгохгүй бол бүх анги)</label>
+                <select
+                  value={selectedGrade}
+                  onChange={(e) => setSelectedGrade(e.target.value)}
+                  className="w-full px-4 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-slate-100 focus:outline-none focus:ring-2 focus:ring-violet-500"
+                >
+                  <option value="">Бүх анги</option>
+                  <option value="10">10 анги</option>
+                  <option value="11">11 анги</option>
+                  <option value="12">12 анги</option>
+                  <option value="Р">Р анги</option>
+                </select>
+              </div>
+              <button
+                onClick={handleSetup}
+                disabled={settingUp || !selectedLessonId}
+                className="w-full px-6 py-2 rounded-lg bg-gradient-to-r from-violet-500 to-purple-500 text-white text-sm font-medium shadow-[0_4px_16px_rgba(139,92,246,0.4)] hover:shadow-[0_6px_20px_rgba(139,92,246,0.6)] disabled:opacity-60 transition-all"
+              >
+                {settingUp ? "Тохируулж байна..." : "Тоглоом эхлүүлэх"}
+              </button>
               {error && <p className="text-xs text-red-400">{error}</p>}
             </div>
           </div>
         )}
 
-        <div className="space-y-4">
-          <h2 className="text-lg font-semibold text-slate-200">Зургууд</h2>
-          {images.length === 0 ? (
-            <div className="glass-panel p-6 rounded-2xl text-center text-slate-400">Одоогоор зураг байхгүй байна.</div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {images.map((img) => {
-                const liked = myEmail && img.likedBy.includes(myEmail);
-                const disliked = myEmail && img.dislikedBy.includes(myEmail);
-                return (
-                  <div key={img.id} className="glass-panel p-4 rounded-2xl space-y-3 border border-slate-800 hover:border-violet-500/40 transition-colors">
-                    <div className="flex items-center justify-between text-xs text-slate-400">
-                      <span>Оруулсан: {img.addedBy || "?"}</span>
-                      <span className="text-slate-500">{new Date(img.createdAt).toLocaleString("mn-MN")}</span>
-                    </div>
-                    <div className="rounded-xl overflow-hidden border border-slate-700 bg-slate-950">
-                      <img src={img.imageUrl} alt="Game item" className="w-full h-64 object-cover" />
-                    </div>
-                    <div className="flex items-center justify-between text-sm text-slate-200">
-                      <span className="text-yellow-300 font-semibold">Оноо: {img.score}</span>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleVote(img.id, "like")}
-                          disabled={votingId === img.id || gameState.gameEnded}
-                          className={`px-3 py-1 rounded-full text-xs border transition-all ${
-                            liked
-                              ? "bg-green-500/20 border-green-500 text-green-300"
-                              : "border-slate-700 bg-slate-800/50 text-slate-200 hover:border-green-500/50"
-                          } ${gameState.gameEnded ? "opacity-50 cursor-not-allowed" : ""}`}
-                        >
-                          👍 {img.likes}
-                        </button>
-                        <button
-                          onClick={() => handleVote(img.id, "dislike")}
-                          disabled={votingId === img.id || gameState.gameEnded}
-                          className={`px-3 py-1 rounded-full text-xs border transition-all ${
-                            disliked
-                              ? "bg-red-500/20 border-red-500 text-red-300"
-                              : "border-slate-700 bg-slate-800/50 text-slate-200 hover:border-red-500/50"
-                          } ${gameState.gameEnded ? "opacity-50 cursor-not-allowed" : ""}`}
-                        >
-                          👎 {img.dislikes}
-                        </button>
+        {!gameState.lessonId && session?.role !== "teacher" && (
+          <div className="glass-panel p-6 rounded-2xl text-center text-slate-400">
+            Багш тоглоом тохируулаагүй байна.
+          </div>
+        )}
+
+        {gameState.lessonId && (
+          <div className="space-y-4">
+            <h2 className="text-lg font-semibold text-slate-200">Ажлууд</h2>
+            {images.length === 0 ? (
+              <div className="glass-panel p-6 rounded-2xl text-center text-slate-400">
+                Одоогоор ажил байхгүй байна.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {images.map((img) => {
+                  const liked = myEmail && img.likedBy.includes(myEmail);
+                  const disliked = myEmail && img.dislikedBy.includes(myEmail);
+                  return (
+                    <div key={img.id} className="glass-panel p-4 rounded-2xl space-y-3 border border-slate-800 hover:border-violet-500/40 transition-colors">
+                      <div className="flex items-center justify-between text-xs text-slate-400">
+                        <span>Оруулсан: {img.addedBy || "?"}</span>
+                        <span className="text-slate-500">{new Date(img.createdAt).toLocaleString("mn-MN")}</span>
+                      </div>
+                      <div className="rounded-xl overflow-hidden border border-slate-700 bg-slate-950">
+                        <img src={img.imageUrl} alt="Game item" className="w-full h-64 object-cover" />
+                      </div>
+                      <div className="flex items-center justify-between text-sm text-slate-200">
+                        <span className="text-yellow-300 font-semibold">Оноо: {img.score}</span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleVote(img.id, "like")}
+                            disabled={votingId === img.id || gameState.gameEnded}
+                            className={`px-3 py-1 rounded-full text-xs border transition-all ${
+                              liked
+                                ? "bg-green-500/20 border-green-500 text-green-300"
+                                : "border-slate-700 bg-slate-800/50 text-slate-200 hover:border-green-500/50"
+                            } ${gameState.gameEnded ? "opacity-50 cursor-not-allowed" : ""}`}
+                          >
+                            👍 {img.likes}
+                          </button>
+                          <button
+                            onClick={() => handleVote(img.id, "dislike")}
+                            disabled={votingId === img.id || gameState.gameEnded}
+                            className={`px-3 py-1 rounded-full text-xs border transition-all ${
+                              disliked
+                                ? "bg-red-500/20 border-red-500 text-red-300"
+                                : "border-slate-700 bg-slate-800/50 text-slate-200 hover:border-red-500/50"
+                            } ${gameState.gameEnded ? "opacity-50 cursor-not-allowed" : ""}`}
+                          >
+                            👎 {img.dislikes}
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </NeonLayout>
   );
 }
-

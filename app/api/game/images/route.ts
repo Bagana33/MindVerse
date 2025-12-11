@@ -28,9 +28,36 @@ function toClient(images: GameImage[]) {
 }
 
 export async function GET() {
+  // Get game state first
+  let gameState = null;
+  try {
+    const { data: stateData } = await supabase
+      .from("game_state")
+      .select("*")
+      .eq("id", "game-state")
+      .single();
+    gameState = stateData;
+  } catch (stateError) {
+    // Ignore state errors, game might not have state table yet
+  }
+
+  // If no lesson selected, return empty
+  if (!gameState?.lesson_id) {
+    return NextResponse.json({ 
+      ok: true, 
+      images: [],
+      gameEnded: false,
+      winner: null,
+      lessonId: null,
+      targetGrade: null,
+    });
+  }
+
+  // Get game images (which are linked to lesson submissions)
   const { data, error } = await supabase
     .from("game_images")
-    .select("*");
+    .select("*")
+    .order("created_at", { ascending: false });
 
   if (error) {
     // If table doesn't exist, return empty array
@@ -40,6 +67,8 @@ export async function GET() {
         ok: true, 
         images: [],
         gameEnded: false,
+        lessonId: gameState?.lesson_id || null,
+        targetGrade: gameState?.target_grade || null,
         warning: "Table not created yet. Please run migration."
       });
     }
@@ -47,81 +76,38 @@ export async function GET() {
     return NextResponse.json({ ok: false, error: "Алдаа гарлаа" }, { status: 500 });
   }
 
-  // Get game state
-  let gameEnded = false;
+  // Get winner info
   let winner = null;
-  try {
-    const { data: gameState } = await supabase
-      .from("game_state")
-      .select("*")
-      .eq("id", "game-state")
-      .single();
-    
-    if (gameState) {
-      gameEnded = gameState.ended || false;
-      if (gameState.winner_email) {
-        const { getUser } = await import("../../../../lib/users");
-        const winnerUser = await getUser(gameState.winner_email);
-        if (winnerUser) {
-          winner = {
-            email: gameState.winner_email,
-            name: winnerUser.nickname || winnerUser.name || gameState.winner_email,
-          };
-        }
+  if (gameState?.ended && gameState.winner_email) {
+    try {
+      const { getUser } = await import("../../../../lib/users");
+      const winnerUser = await getUser(gameState.winner_email);
+      if (winnerUser) {
+        winner = {
+          email: gameState.winner_email,
+          name: winnerUser.nickname || winnerUser.name || gameState.winner_email,
+        };
       }
+    } catch (err) {
+      console.error("Error fetching winner:", err);
     }
-  } catch (stateError) {
-    // Ignore state errors, game might not have state table yet
   }
 
   return NextResponse.json({ 
     ok: true, 
     images: toClient(data || []),
-    gameEnded,
+    gameEnded: gameState?.ended || false,
     winner,
+    lessonId: gameState?.lesson_id || null,
+    targetGrade: gameState?.target_grade || null,
   });
 }
 
+// POST is no longer used - images come from lesson submissions via /api/game/setup
 export async function POST(req: Request) {
-  const session = await getSessionFromCookies();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Нэвтэрнэ үү" }, { status: 401 });
-  }
-
-  try {
-    const body = await req.json();
-    const { imageUrl } = body;
-    if (!imageUrl) {
-      return NextResponse.json({ ok: false, error: "Зураг оруулна уу" }, { status: 400 });
-    }
-
-    const id = `game-img-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-    const { error } = await supabase
-      .from("game_images")
-      .insert([{
-        id,
-        image_url: imageUrl,
-        added_by: session.email,
-      }]);
-
-    if (error) {
-      // If table doesn't exist, return error with helpful message
-      if (error.code === '42P01' || error.message?.includes('does not exist')) {
-        return NextResponse.json({ 
-          ok: false, 
-          error: "Game table үүсээгүй байна. Supabase дээр migration ажиллуулна уу." 
-        }, { status: 500 });
-      }
-      console.error("Game image insert error:", error);
-      return NextResponse.json({ ok: false, error: "Нэмэхэд алдаа гарлаа" }, { status: 500 });
-    }
-
-    // Return updated list
-    const { data: all } = await supabase.from("game_images").select("*");
-    return NextResponse.json({ ok: true, images: toClient(all || []) });
-  } catch (err: any) {
-    console.error("Game image insert error:", err);
-    return NextResponse.json({ ok: false, error: "Серверийн алдаа" }, { status: 500 });
-  }
+  return NextResponse.json({ 
+    ok: false, 
+    error: "Энэ endpoint ашиглахгүй. /api/game/setup ашиглана уу." 
+  }, { status: 400 });
 }
 

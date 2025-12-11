@@ -12,15 +12,18 @@ alter table game_images
 -- Actually, let's use a separate table for game state to track when it ended
 create table if not exists game_state (
   id text primary key default 'game-state',
+  lesson_id text references lessons(id) on delete set null,
+  target_grade text,
   ended boolean default false,
   winner_email text references users(email) on delete set null,
+  winner_submission_id text references lesson_submissions(id) on delete set null,
   ended_at timestamptz,
   ended_by text references users(email) on delete set null
 );
 
 -- Insert initial state if not exists
-insert into game_state (id, ended, ended_at, ended_by)
-values ('game-state', false, null, null)
+insert into game_state (id, lesson_id, target_grade, ended, ended_at, ended_by)
+values ('game-state', null, null, false, null, null)
 on conflict (id) do nothing;
 
 -- RLS for game_state

@@ -63,6 +63,7 @@ export async function POST(req: Request) {
     }
 
     const winnerEmail = winnerImage.added_by;
+    const winnerSubmissionId = winnerImage.submission_id;
     if (!winnerEmail) {
       return NextResponse.json({ ok: false, error: "Ялагчийг тодорхойлох боломжгүй" }, { status: 400 });
     }
@@ -101,8 +102,11 @@ export async function POST(req: Request) {
       .from("game_state")
       .upsert({
         id: "game-state",
+        lesson_id: gameState?.lesson_id || null,
+        target_grade: gameState?.target_grade || null,
         ended: true,
         winner_email: winnerEmail,
+        winner_submission_id: winnerSubmissionId || null,
         ended_at: new Date().toISOString(),
         ended_by: session.email,
       }, {
