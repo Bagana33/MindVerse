@@ -3,23 +3,40 @@
 
 begin;
 
--- Add columns to track if game has ended and who won
-alter table game_images 
-  add column if not exists game_ended boolean default false,
-  add column if not exists winner_email text references users(email) on delete set null;
+-- Add columns to track if game has ended and who won (if game_images table exists)
+do $$
+begin
+  if exists (select 1 from information_schema.tables where table_name = 'game_images') then
+    alter table game_images 
+      add column if not exists game_ended boolean default false,
+      add column if not exists winner_email text references users(email) on delete set null;
+  end if;
+end $$;
 
--- Create a simple game state table (alternative approach - we'll use columns on game_images)
--- Actually, let's use a separate table for game state to track when it ended
+-- Create game_state table if it doesn't exist
 create table if not exists game_state (
   id text primary key default 'game-state',
-  lesson_id text references lessons(id) on delete set null,
-  target_grade text,
   ended boolean default false,
   winner_email text references users(email) on delete set null,
-  winner_submission_id text references lesson_submissions(id) on delete set null,
   ended_at timestamptz,
   ended_by text references users(email) on delete set null
 );
+
+-- Add new columns if they don't exist
+do $$
+begin
+  if not exists (select 1 from information_schema.columns where table_name = 'game_state' and column_name = 'lesson_id') then
+    alter table game_state add column lesson_id text references lessons(id) on delete set null;
+  end if;
+  
+  if not exists (select 1 from information_schema.columns where table_name = 'game_state' and column_name = 'target_grade') then
+    alter table game_state add column target_grade text;
+  end if;
+  
+  if not exists (select 1 from information_schema.columns where table_name = 'game_state' and column_name = 'winner_submission_id') then
+    alter table game_state add column winner_submission_id text references lesson_submissions(id) on delete set null;
+  end if;
+end $$;
 
 -- Insert initial state if not exists
 insert into game_state (id, lesson_id, target_grade, ended, ended_at, ended_by)
