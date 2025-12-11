@@ -91,6 +91,7 @@ export function Topbar() {
   ], [session?.role]);
 
   const [funMenuOpen, setFunMenuOpen] = useState(false);
+  const [funMenuTimeout, setFunMenuTimeout] = useState<NodeJS.Timeout | null>(null);
 
   return (
     <header className="sticky top-0 z-50 backdrop-blur-xl bg-slate-950/80 border-b border-slate-800/50">
@@ -131,8 +132,19 @@ export function Topbar() {
             })}
             <div 
               className="relative"
-              onMouseEnter={() => setFunMenuOpen(true)}
-              onMouseLeave={() => setFunMenuOpen(false)}
+              onMouseEnter={() => {
+                if (funMenuTimeout) {
+                  clearTimeout(funMenuTimeout);
+                  setFunMenuTimeout(null);
+                }
+                setFunMenuOpen(true);
+              }}
+              onMouseLeave={() => {
+                const timeout = setTimeout(() => {
+                  setFunMenuOpen(false);
+                }, 200); // 200ms delay before closing
+                setFunMenuTimeout(timeout);
+              }}
             >
               <button
                 className={[
@@ -146,13 +158,30 @@ export function Topbar() {
               </button>
               {funMenuOpen && (
                 <div 
-                  className="absolute top-full left-0 mt-2 rounded-xl glass-panel backdrop-blur-xl border border-slate-700/40 shadow-xl overflow-hidden z-50 animate-fade-in min-w-[120px]"
-                  onMouseEnter={() => setFunMenuOpen(true)}
-                  onMouseLeave={() => setFunMenuOpen(false)}
+                  className="absolute top-full left-0 mt-1 rounded-xl glass-panel backdrop-blur-xl border border-slate-700/40 shadow-xl overflow-hidden z-50 animate-fade-in min-w-[120px]"
+                  onMouseEnter={() => {
+                    if (funMenuTimeout) {
+                      clearTimeout(funMenuTimeout);
+                      setFunMenuTimeout(null);
+                    }
+                    setFunMenuOpen(true);
+                  }}
+                  onMouseLeave={() => {
+                    const timeout = setTimeout(() => {
+                      setFunMenuOpen(false);
+                    }, 200);
+                    setFunMenuTimeout(timeout);
+                  }}
                 >
                   <Link
                     href="/spinner"
-                    onClick={() => setFunMenuOpen(false)}
+                    onClick={() => {
+                      setFunMenuOpen(false);
+                      if (funMenuTimeout) {
+                        clearTimeout(funMenuTimeout);
+                        setFunMenuTimeout(null);
+                      }
+                    }}
                     className={[
                       "block px-4 py-2 text-xs font-medium transition-all duration-200 cursor-pointer",
                       pathname === "/spinner"
@@ -164,7 +193,13 @@ export function Topbar() {
                   </Link>
                   <Link
                     href="/game"
-                    onClick={() => setFunMenuOpen(false)}
+                    onClick={() => {
+                      setFunMenuOpen(false);
+                      if (funMenuTimeout) {
+                        clearTimeout(funMenuTimeout);
+                        setFunMenuTimeout(null);
+                      }
+                    }}
                     className={[
                       "block px-4 py-2 text-xs font-medium transition-all duration-200 cursor-pointer",
                       pathname === "/game"
