@@ -245,6 +245,7 @@ export default function GamePage() {
         setGameState({
           gameEnded: false,
           winner: null,
+          rankings: [],
           lessonId: null,
           targetGrade: null,
         });
