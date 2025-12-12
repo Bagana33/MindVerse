@@ -257,7 +257,7 @@ export default function GamePage() {
             🖼️ Vote Game
           </h1>
           <p className="text-slate-400 text-sm">
-            Хичээлийн даалгаврын ажлуудыг like/dislike өгч хамгийн гоё ажлыг тодруулна.
+            Хичээлийн даалгаврын ажлуудыг like өгч хамгийн гоё ажлыг тодруулна.
           </p>
           {gameState.lessonId && selectedLesson && (
             <div className="mt-4 glass-panel p-4 rounded-2xl border border-violet-500/30">
@@ -363,14 +363,13 @@ export default function GamePage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {images.map((img) => {
                   const liked = myEmail && img.likedBy.includes(myEmail);
-                  const disliked = myEmail && img.dislikedBy.includes(myEmail);
                   return (
                     <div key={img.id} className="glass-panel p-4 rounded-2xl space-y-3 border border-slate-800 hover:border-violet-500/40 transition-colors">
                       <div className="rounded-xl overflow-hidden border border-slate-700 bg-slate-950">
                         <img src={img.imageUrl} alt="Game item" className="w-full h-64 object-cover" />
                       </div>
                       <div className="flex items-center justify-between text-sm text-slate-200">
-                        <span className="text-yellow-300 font-semibold">Оноо: {img.score}</span>
+                        <span className="text-yellow-300 font-semibold">Оноо: {img.likes}</span>
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => handleVote(img.id, "like")}
@@ -382,17 +381,6 @@ export default function GamePage() {
                             } ${gameState.gameEnded ? "opacity-50 cursor-not-allowed" : ""}`}
                           >
                             👍 {img.likes}
-                          </button>
-                          <button
-                            onClick={() => handleVote(img.id, "dislike")}
-                            disabled={votingId === img.id || gameState.gameEnded}
-                            className={`px-3 py-1 rounded-full text-xs border transition-all ${
-                              disliked
-                                ? "bg-red-500/20 border-red-500 text-red-300"
-                                : "border-slate-700 bg-slate-800/50 text-slate-200 hover:border-red-500/50"
-                            } ${gameState.gameEnded ? "opacity-50 cursor-not-allowed" : ""}`}
-                          >
-                            👎 {img.dislikes}
                           </button>
                         </div>
                       </div>
