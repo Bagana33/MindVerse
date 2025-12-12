@@ -8,6 +8,8 @@ type GameImage = {
   id: string;
   imageUrl: string;
   addedBy: string | null;
+  studentName?: string | null;
+  studentNickname?: string | null;
   likes: number;
   dislikes: number;
   score: number;
@@ -136,6 +138,7 @@ export default function GamePage() {
       return;
     }
     setVotingId(id);
+    setError(null);
     try {
       const res = await fetch("/api/game/images/vote", {
         method: "POST",
@@ -145,9 +148,14 @@ export default function GamePage() {
       const json = await res.json();
       if (json.ok) {
         setImages(json.images || []);
+      } else {
+        setError(json.error || "Санал өгөхөд алдаа гарлаа");
+        alert(json.error || "Санал өгөхөд алдаа гарлаа");
       }
     } catch (err) {
       console.error("Vote error:", err);
+      setError("Санал өгөхөд алдаа гарлаа");
+      alert("Санал өгөхөд алдаа гарлаа");
     } finally {
       setVotingId(null);
     }
@@ -192,6 +200,44 @@ export default function GamePage() {
     }
   }
 
+  async function handleResetGame() {
+    if (!session || session.role !== "teacher") {
+      alert("Зөвхөн багш тоглоом дахин эхлүүлэх эрхтэй");
+      return;
+    }
+    if (!confirm("Тоглоомыг дахин эхлүүлэх үү? Одоогийн тоглолтын мэдээлэл устах болно.")) {
+      return;
+    }
+    setSettingUp(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/game/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const json = await res.json();
+      if (json.ok) {
+        setGameState({
+          gameEnded: false,
+          winner: null,
+          lessonId: null,
+          targetGrade: null,
+        });
+        setImages([]);
+        setSelectedLessonId("");
+        setSelectedGrade("");
+        alert("Тоглоом амжилттай дахин эхлэв!");
+      } else {
+        setError(json.error || "Тоглоом дахин эхлүүлэхэд алдаа гарлаа");
+      }
+    } catch (err) {
+      console.error("Reset game error:", err);
+      setError("Алдаа гарлаа");
+    } finally {
+      setSettingUp(false);
+    }
+  }
+
   const myEmail = session?.email;
   const selectedLesson = lessons.find(l => l.id === gameState.lessonId);
 
@@ -221,14 +267,25 @@ export default function GamePage() {
               )}
             </div>
           )}
-          {session?.role === "teacher" && !gameState.gameEnded && gameState.lessonId && (
-            <button
-              onClick={handleEndGame}
-              disabled={ending || images.length === 0}
-              className="mt-4 px-6 py-2 rounded-lg bg-gradient-to-r from-red-500 to-pink-500 text-white text-sm font-medium shadow-[0_4px_16px_rgba(239,68,68,0.4)] hover:shadow-[0_6px_20px_rgba(239,68,68,0.6)] disabled:opacity-60 transition-all"
-            >
-              {ending ? "Дуусгаж байна..." : "🎯 Тоглоом дуусгах"}
-            </button>
+          {session?.role === "teacher" && gameState.lessonId && (
+            <div className="mt-4 flex items-center gap-3 justify-center">
+              {!gameState.gameEnded && (
+                <button
+                  onClick={handleEndGame}
+                  disabled={ending || images.length === 0}
+                  className="px-6 py-2 rounded-lg bg-gradient-to-r from-red-500 to-pink-500 text-white text-sm font-medium shadow-[0_4px_16px_rgba(239,68,68,0.4)] hover:shadow-[0_6px_20px_rgba(239,68,68,0.6)] disabled:opacity-60 transition-all"
+                >
+                  {ending ? "Дуусгаж байна..." : "🎯 Тоглоом дуусгах"}
+                </button>
+              )}
+              <button
+                onClick={handleResetGame}
+                disabled={settingUp}
+                className="px-6 py-2 rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 text-white text-sm font-medium shadow-[0_4px_16px_rgba(59,130,246,0.4)] hover:shadow-[0_6px_20px_rgba(59,130,246,0.6)] disabled:opacity-60 transition-all"
+              >
+                {settingUp ? "Дахин эхлүүлж байна..." : "🔄 Тоглоом дахин эхлүүлэх"}
+              </button>
+            </div>
           )}
           {gameState.gameEnded && gameState.winner && (
             <div className="mt-4 glass-panel p-4 rounded-2xl border-2 border-yellow-500/50 bg-gradient-to-r from-yellow-500/10 to-orange-500/10">
@@ -289,6 +346,12 @@ export default function GamePage() {
           </div>
         )}
 
+        {error && (
+          <div className="glass-panel p-4 rounded-2xl border border-red-500/50 bg-red-500/10">
+            <p className="text-red-400 text-sm">{error}</p>
+          </div>
+        )}
+
         {gameState.lessonId && (
           <div className="space-y-4">
             <h2 className="text-lg font-semibold text-slate-200">Ажлууд</h2>
@@ -304,7 +367,12 @@ export default function GamePage() {
                   return (
                     <div key={img.id} className="glass-panel p-4 rounded-2xl space-y-3 border border-slate-800 hover:border-violet-500/40 transition-colors">
                       <div className="flex items-center justify-between text-xs text-slate-400">
-                        <span>Оруулсан: {img.addedBy || "?"}</span>
+                        <span>
+                          Оруулсан: {img.studentNickname || img.studentName || img.addedBy || "?"}
+                          {img.addedBy && (img.studentNickname || img.studentName) && (
+                            <span className="text-slate-500 ml-1">({img.addedBy})</span>
+                          )}
+                        </span>
                         <span className="text-slate-500">{new Date(img.createdAt).toLocaleString("mn-MN")}</span>
                       </div>
                       <div className="rounded-xl overflow-hidden border border-slate-700 bg-slate-950">

@@ -11,19 +11,54 @@ type GameImage = {
   created_at: string;
 };
 
-function toClient(images: GameImage[]) {
+async function toClient(images: GameImage[]) {
+  // Get all unique user emails
+  const userEmails = new Set<string>();
+  images.forEach(img => {
+    if (img.added_by) userEmails.add(img.added_by);
+  });
+
+  // Fetch user info for all emails
+  const userInfoMap = new Map<string, { name?: string; nickname?: string }>();
+  if (userEmails.size > 0) {
+    try {
+      const { getUser } = await import("../../../../lib/users");
+      const userPromises = Array.from(userEmails).map(async (email) => {
+        try {
+          const user = await getUser(email);
+          if (user) {
+            userInfoMap.set(email, {
+              name: user.name,
+              nickname: user.nickname,
+            });
+          }
+        } catch (err) {
+          console.error(`Error fetching user ${email}:`, err);
+        }
+      });
+      await Promise.allSettled(userPromises);
+    } catch (err) {
+      console.error("Error fetching users:", err);
+    }
+  }
+
   return images
-    .map((img) => ({
-      id: img.id,
-      imageUrl: img.image_url,
-      addedBy: img.added_by,
-      likes: img.liked_by?.length || 0,
-      dislikes: img.disliked_by?.length || 0,
-      score: (img.liked_by?.length || 0) - (img.disliked_by?.length || 0),
-      likedBy: img.liked_by || [],
-      dislikedBy: img.disliked_by || [],
-      createdAt: img.created_at,
-    }))
+    .map((img) => {
+      const userInfo = img.added_by ? userInfoMap.get(img.added_by) : null;
+      return {
+        id: img.id,
+        imageUrl: img.image_url,
+        addedBy: img.added_by,
+        studentName: userInfo?.name || null,
+        studentNickname: userInfo?.nickname || null,
+        likes: img.liked_by?.length || 0,
+        dislikes: img.disliked_by?.length || 0,
+        score: (img.liked_by?.length || 0) - (img.disliked_by?.length || 0),
+        likedBy: img.liked_by || [],
+        dislikedBy: img.disliked_by || [],
+        createdAt: img.created_at,
+      };
+    })
     .sort((a, b) => b.score - a.score || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
@@ -95,7 +130,7 @@ export async function GET() {
 
   return NextResponse.json({ 
     ok: true, 
-    images: toClient(data || []),
+    images: await toClient(data || []),
     gameEnded: gameState?.ended || false,
     winner,
     lessonId: gameState?.lesson_id || null,
