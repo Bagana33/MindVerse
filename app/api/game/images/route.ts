@@ -7,7 +7,6 @@ type GameImage = {
   image_url: string;
   added_by: string | null;
   liked_by: string[];
-  disliked_by: string[];
   created_at: string;
 };
 
