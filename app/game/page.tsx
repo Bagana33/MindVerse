@@ -83,7 +83,8 @@ export default function GamePage() {
           }
           return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
         });
-        setImages(sortedImages);
+        // Force React to re-render by creating a new array reference
+        setImages([...sortedImages]);
         setGameState({
           gameEnded: json.gameEnded || false,
           winner: json.winner || null,
@@ -161,7 +162,8 @@ export default function GamePage() {
           }
           return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
         });
-        setImages(sortedImages);
+        // Force React to re-render by creating a new array reference
+        setImages([...sortedImages]);
       } else {
         setError(json.error || "Санал өгөхөд алдаа гарлаа");
         alert(json.error || "Санал өгөхөд алдаа гарлаа");
