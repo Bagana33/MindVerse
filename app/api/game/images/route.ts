@@ -107,8 +107,10 @@ export async function GET() {
     return NextResponse.json({ ok: false, error: "Алдаа гарлаа" }, { status: 500 });
   }
 
-  // Get winner info
+  // Get winner and rankings info
   let winner = null;
+  let rankings: Array<{ email: string; name: string; likes: number; xp: number; rank: number }> = [];
+  
   if (gameState?.ended && gameState.winner_email) {
     try {
       const { getUser } = await import("../../../../lib/users");
@@ -118,6 +120,36 @@ export async function GET() {
           email: gameState.winner_email,
           name: winnerUser.nickname || winnerUser.name || gameState.winner_email,
         };
+      }
+      
+      // Get rankings from game_state if available (stored as JSON)
+      // For now, we'll calculate from images
+      const sortedImages = (data || []).sort((a: any, b: any) => {
+        const likesA = a.liked_by?.length || 0;
+        const likesB = b.liked_by?.length || 0;
+        return likesB - likesA;
+      });
+      
+      // Award XP based on rank
+      const xpAwards = [5, 3, 2]; // 1st, 2nd, 3rd
+      for (let i = 0; i < Math.min(3, sortedImages.length); i++) {
+        const img = sortedImages[i];
+        if (img.added_by) {
+          try {
+            const user = await getUser(img.added_by);
+            if (user) {
+              rankings.push({
+                email: img.added_by,
+                name: user.nickname || user.name || img.added_by,
+                likes: img.liked_by?.length || 0,
+                xp: xpAwards[i],
+                rank: i + 1,
+              });
+            }
+          } catch (err) {
+            console.error(`Error fetching user ${img.added_by}:`, err);
+          }
+        }
       }
     } catch (err) {
       console.error("Error fetching winner:", err);
@@ -129,6 +161,7 @@ export async function GET() {
     images: await toClient(data || []),
     gameEnded: gameState?.ended || false,
     winner,
+    rankings,
     lessonId: gameState?.lesson_id || null,
     targetGrade: gameState?.target_grade || null,
   });

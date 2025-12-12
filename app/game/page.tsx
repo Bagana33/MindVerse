@@ -15,9 +15,18 @@ type GameImage = {
   createdAt: string;
 };
 
+type Ranking = {
+  email: string;
+  name: string;
+  likes: number;
+  xp: number;
+  rank: number;
+};
+
 type GameState = {
   gameEnded: boolean;
   winner: { email: string; name: string } | null;
+  rankings: Ranking[];
   lessonId: string | null;
   targetGrade: string | null;
 };
@@ -38,6 +47,7 @@ export default function GamePage() {
   const [gameState, setGameState] = useState<GameState>({ 
     gameEnded: false, 
     winner: null,
+    rankings: [],
     lessonId: null,
     targetGrade: null,
   });
@@ -85,6 +95,7 @@ export default function GamePage() {
         setGameState({
           gameEnded: json.gameEnded || false,
           winner: json.winner || null,
+          rankings: json.rankings || [],
           lessonId: json.lessonId || null,
           targetGrade: json.targetGrade || null,
         });
@@ -199,6 +210,7 @@ export default function GamePage() {
           ...gameState,
           gameEnded: true,
           winner: json.winner,
+          rankings: json.rankings || [],
         });
         await fetchImages(); // Refresh to get updated state
         alert(json.message || "Тоглоом амжилттай дууссан!");

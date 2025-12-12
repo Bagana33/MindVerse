@@ -46,6 +46,46 @@ export async function POST(
       return NextResponse.json({ error: "Илгээхэд алдаа гарлаа" }, { status: 500 });
     }
 
+    // Automatically add to game if there's an active game for this lesson
+    try {
+      const { supabase } = await import("../../../../../lib/supabase");
+      const { data: gameState } = await supabase
+        .from("game_state")
+        .select("*")
+        .eq("id", "game-state")
+        .eq("lesson_id", lessonId)
+        .eq("ended", false)
+        .single();
+
+      if (gameState && submission.fileUrls && submission.fileUrls.length > 0) {
+        // Check if submission already exists in game
+        const { data: existing } = await supabase
+          .from("game_images")
+          .select("*")
+          .eq("submission_id", submission.id)
+          .single();
+
+        if (!existing) {
+          // Add to game
+          const gameImageId = `game-img-${submission.id}`;
+          await supabase
+            .from("game_images")
+            .upsert({
+              id: gameImageId,
+              image_url: submission.fileUrls[0], // Use first file
+              added_by: session.email,
+              submission_id: submission.id,
+              liked_by: [],
+            }, {
+              onConflict: "id"
+            });
+        }
+      }
+    } catch (err) {
+      // Ignore errors - game might not be set up yet
+      console.log("Auto-add to game error (non-critical):", err);
+    }
+
     return NextResponse.json({ 
       success: true, 
       submission,
