@@ -314,11 +314,30 @@ export default function GamePage() {
               </button>
             </div>
           )}
-          {gameState.gameEnded && gameState.winner && (
+          {gameState.gameEnded && gameState.rankings.length > 0 && (
+            <div className="mt-4 glass-panel p-4 rounded-2xl border-2 border-yellow-500/50 bg-gradient-to-r from-yellow-500/10 to-orange-500/10">
+              <div className="text-2xl mb-3">🎉 Тоглоом дууссан!</div>
+              <div className="space-y-2">
+                {gameState.rankings.map((ranking) => (
+                  <div key={ranking.email} className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="text-yellow-300 font-bold text-lg">{ranking.rank}.</span>
+                      <span className="text-slate-200">{ranking.name}</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-slate-300">
+                      <span>{ranking.likes} 👍</span>
+                      <span className="text-green-400 font-semibold">+{ranking.xp} XP</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {gameState.gameEnded && gameState.rankings.length === 0 && gameState.winner && (
             <div className="mt-4 glass-panel p-4 rounded-2xl border-2 border-yellow-500/50 bg-gradient-to-r from-yellow-500/10 to-orange-500/10">
               <div className="text-2xl mb-2">🎉 Баяр хүргэе!</div>
               <div className="text-lg font-semibold text-yellow-300">
-                {gameState.winner.name} хамгийн их like авсан тул +2 XP хүртлээ!
+                {gameState.winner.name} хамгийн их like авсан!
               </div>
             </div>
           )}
