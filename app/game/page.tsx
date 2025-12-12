@@ -76,7 +76,14 @@ export default function GamePage() {
       const res = await fetch("/api/game/images");
       const json = await res.json();
       if (json.ok) {
-        setImages(json.images || []);
+        // Sort by likes (highest first), then by creation date (newest first)
+        const sortedImages = (json.images || []).sort((a: GameImage, b: GameImage) => {
+          if (b.likes !== a.likes) {
+            return b.likes - a.likes;
+          }
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        });
+        setImages(sortedImages);
         setGameState({
           gameEnded: json.gameEnded || false,
           winner: json.winner || null,
@@ -147,7 +154,14 @@ export default function GamePage() {
       });
       const json = await res.json();
       if (json.ok) {
-        setImages(json.images || []);
+        // Sort by likes (highest first), then by creation date (newest first)
+        const sortedImages = (json.images || []).sort((a: GameImage, b: GameImage) => {
+          if (b.likes !== a.likes) {
+            return b.likes - a.likes;
+          }
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        });
+        setImages(sortedImages);
       } else {
         setError(json.error || "Санал өгөхөд алдаа гарлаа");
         alert(json.error || "Санал өгөхөд алдаа гарлаа");
