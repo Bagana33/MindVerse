@@ -366,15 +366,6 @@ export default function GamePage() {
                   const disliked = myEmail && img.dislikedBy.includes(myEmail);
                   return (
                     <div key={img.id} className="glass-panel p-4 rounded-2xl space-y-3 border border-slate-800 hover:border-violet-500/40 transition-colors">
-                      <div className="flex items-center justify-between text-xs text-slate-400">
-                        <span>
-                          Оруулсан: {img.studentNickname || img.studentName || img.addedBy || "?"}
-                          {img.addedBy && (img.studentNickname || img.studentName) && (
-                            <span className="text-slate-500 ml-1">({img.addedBy})</span>
-                          )}
-                        </span>
-                        <span className="text-slate-500">{new Date(img.createdAt).toLocaleString("mn-MN")}</span>
-                      </div>
                       <div className="rounded-xl overflow-hidden border border-slate-700 bg-slate-950">
                         <img src={img.imageUrl} alt="Game item" className="w-full h-64 object-cover" />
                       </div>
