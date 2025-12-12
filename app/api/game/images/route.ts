@@ -59,7 +59,7 @@ async function toClient(images: GameImage[]) {
         createdAt: img.created_at,
       };
     })
-    .sort((a, b) => b.score - a.score || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    .sort((a, b) => b.likes - a.likes || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
 export async function GET() {
