@@ -52,10 +52,7 @@ async function toClient(images: GameImage[]) {
         studentName: userInfo?.name || null,
         studentNickname: userInfo?.nickname || null,
         likes: img.liked_by?.length || 0,
-        dislikes: img.disliked_by?.length || 0,
-        score: (img.liked_by?.length || 0) - (img.disliked_by?.length || 0),
         likedBy: img.liked_by || [],
-        dislikedBy: img.disliked_by || [],
         createdAt: img.created_at,
       };
     })

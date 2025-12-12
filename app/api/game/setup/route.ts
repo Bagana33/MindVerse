@@ -85,7 +85,6 @@ export async function POST(req: Request) {
             added_by: submission.student_email,
             submission_id: submission.id,
             liked_by: [],
-            disliked_by: [],
           }, {
             onConflict: "id"
           });

@@ -11,10 +11,7 @@ type GameImage = {
   studentName?: string | null;
   studentNickname?: string | null;
   likes: number;
-  dislikes: number;
-  score: number;
   likedBy: string[];
-  dislikedBy: string[];
   createdAt: string;
 };
 
@@ -136,7 +133,7 @@ export default function GamePage() {
     }
   }
 
-  async function handleVote(id: string, vote: "like" | "dislike") {
+  async function handleVote(id: string) {
     if (!session) {
       alert("Нэвтэрнэ үү");
       return;
@@ -151,7 +148,7 @@ export default function GamePage() {
       const res = await fetch("/api/game/images/vote", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, vote }),
+        body: JSON.stringify({ id, vote: "like" }),
       });
       const json = await res.json();
       if (json.ok) {
@@ -388,7 +385,7 @@ export default function GamePage() {
                         <span className="text-yellow-300 font-semibold">Оноо: {img.likes}</span>
                         <div className="flex items-center gap-2">
                           <button
-                            onClick={() => handleVote(img.id, "like")}
+                            onClick={() => handleVote(img.id)}
                             disabled={votingId === img.id || gameState.gameEnded}
                             className={`px-3 py-1 rounded-full text-xs border transition-all ${
                               liked

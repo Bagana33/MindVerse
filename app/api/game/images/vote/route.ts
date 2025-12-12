@@ -43,10 +43,7 @@ async function toClient(images: any[]) {
         studentName: userInfo?.name || null,
         studentNickname: userInfo?.nickname || null,
         likes: img.liked_by?.length || 0,
-        dislikes: img.disliked_by?.length || 0,
-        score: (img.liked_by?.length || 0) - (img.disliked_by?.length || 0),
         likedBy: img.liked_by || [],
-        dislikedBy: img.disliked_by || [],
         createdAt: img.created_at,
       };
     })
@@ -61,8 +58,8 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-    const { id, vote } = body; // vote: "like" | "dislike"
-    if (!id || !["like", "dislike"].includes(vote)) {
+    const { id } = body;
+    if (!id) {
       return NextResponse.json({ ok: false, error: "Буруу өгөгдөл" }, { status: 400 });
     }
 
@@ -88,31 +85,19 @@ export async function POST(req: Request) {
     }
 
     const liked = new Set<string>(data.liked_by || []);
-    const disliked = new Set<string>(data.disliked_by || []);
-
     const user = session.email;
-    // Toggle logic
-    if (vote === "like") {
-      if (liked.has(user)) {
-        liked.delete(user);
-      } else {
-        liked.add(user);
-        disliked.delete(user);
-      }
+    
+    // Toggle like
+    if (liked.has(user)) {
+      liked.delete(user);
     } else {
-      if (disliked.has(user)) {
-        disliked.delete(user);
-      } else {
-        disliked.add(user);
-        liked.delete(user);
-      }
+      liked.add(user);
     }
 
     const { error: updateError } = await supabase
       .from("game_images")
       .update({
         liked_by: Array.from(liked),
-        disliked_by: Array.from(disliked),
       })
       .eq("id", id);
 
