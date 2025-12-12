@@ -52,12 +52,12 @@ export async function POST(req: Request) {
 
     // Find image with most likes
     let winnerImage = images[0];
-    let maxLikes = (images[0].liked_by?.length || 0) - (images[0].disliked_by?.length || 0);
+    let maxLikes = images[0].liked_by?.length || 0;
 
     for (const img of images) {
-      const score = (img.liked_by?.length || 0) - (img.disliked_by?.length || 0);
-      if (score > maxLikes) {
-        maxLikes = score;
+      const likes = img.liked_by?.length || 0;
+      if (likes > maxLikes) {
+        maxLikes = likes;
         winnerImage = img;
       }
     }
@@ -124,8 +124,7 @@ export async function POST(req: Request) {
         email: winnerEmail,
         name: winnerName,
         imageId: winnerImage.id,
-        likes: winnerImage.liked_by?.length || 0,
-        score: maxLikes,
+        likes: maxLikes,
       },
       message: `${winnerName} баяр хүргэе! +2 XP хүртлээ.`,
     });
