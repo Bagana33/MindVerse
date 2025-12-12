@@ -239,6 +239,8 @@ export default function GamePage() {
         setImages([]);
         setSelectedLessonId("");
         setSelectedGrade("");
+        // Refresh images to get updated scores
+        await fetchImages();
         alert("Тоглоом амжилттай дахин эхлэв!");
       } else {
         setError(json.error || "Тоглоом дахин эхлүүлэхэд алдаа гарлаа");
