@@ -375,10 +375,10 @@ export default function GamePage() {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {images.map((img) => {
+                {images.map((img, index) => {
                   const liked = myEmail && img.likedBy.includes(myEmail);
                   return (
-                    <div key={img.id} className="glass-panel p-4 rounded-2xl space-y-3 border border-slate-800 hover:border-violet-500/40 transition-colors">
+                    <div key={`${img.id}-${img.likes}-${index}`} className="glass-panel p-4 rounded-2xl space-y-3 border border-slate-800 hover:border-violet-500/40 transition-colors">
                       <div className="rounded-xl overflow-hidden border border-slate-700 bg-slate-950">
                         <img src={img.imageUrl} alt="Game item" className="w-full h-64 object-cover" />
                       </div>
