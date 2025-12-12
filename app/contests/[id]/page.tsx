@@ -136,12 +136,12 @@ export default function ContestDetailPage() {
         body: JSON.stringify({ fileUrl, description }),
       });
 
-      const json = await res.json();
+        const json = await res.json();
       if (json.ok) {
         setContest(json.contest);
         setShowSubmitForm(false);
         setFileUrl("");
-        setDescription("");
+      setDescription("");
         setFilePreview(null);
       } else {
         setSubmitError(json.error || "Илгээхэд алдаа гарлаа");
@@ -166,7 +166,7 @@ export default function ContestDetailPage() {
 
       const json = await res.json();
       if (json.ok) {
-        setContest(json.contest);
+      setContest(json.contest);
       }
     } catch (err) {
       console.error("Vote error:", err);
@@ -198,8 +198,8 @@ export default function ContestDetailPage() {
 
         <div className="glass-panel p-6 rounded-2xl space-y-4">
           <div>
-            <h1 className="text-2xl font-bold mb-2">{contest.title}</h1>
-            <p className="text-slate-400 mb-4">{contest.description}</p>
+              <h1 className="text-2xl font-bold mb-2">{contest.title}</h1>
+              <p className="text-slate-400 mb-4">{contest.description}</p>
 
             <div className="flex items-center gap-4 mb-4">
               {contest.status === "active" && (
@@ -217,30 +217,30 @@ export default function ContestDetailPage() {
                   Дууссан
                 </span>
               )}
-            </div>
+          </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
               <div>
                 <div className="text-slate-500 mb-1">Эхлэх огноо</div>
-                <div className="font-medium">{new Date(contest.startDate).toLocaleDateString("mn-MN")}</div>
-              </div>
+              <div className="font-medium">{new Date(contest.startDate).toLocaleDateString("mn-MN")}</div>
+            </div>
               <div>
                 <div className="text-slate-500 mb-1">Дуусах огноо</div>
-                <div className="font-medium">{new Date(contest.endDate).toLocaleDateString("mn-MN")}</div>
-              </div>
+              <div className="font-medium">{new Date(contest.endDate).toLocaleDateString("mn-MN")}</div>
+            </div>
               <div>
                 <div className="text-slate-500 mb-1">Оролцогч</div>
-                <div className="font-medium">{contest.participants.length}</div>
-              </div>
+              <div className="font-medium">{contest.participants.length}</div>
+            </div>
               <div>
                 <div className="text-slate-500 mb-1">Шагнал</div>
-                <div className="font-medium text-violet-400">{contest.prize} XP</div>
+              <div className="font-medium text-violet-400">{contest.prize} XP</div>
               </div>
             </div>
+            </div>
           </div>
-        </div>
 
-        {canSubmit && (
+          {canSubmit && (
           <div className="glass-panel p-6 rounded-2xl space-y-4">
             <h2 className="text-xl font-semibold text-slate-200">Бүтээл илгээх</h2>
             {!showSubmitForm ? (
@@ -254,13 +254,13 @@ export default function ContestDetailPage() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-300 mb-2">Файл</label>
-                  <input
-                    type="file"
-                    accept="image/*"
+                    <input
+                      type="file"
+                      accept="image/*"
                     onChange={handleFileUpload}
                     disabled={uploadingFile}
                     className="w-full px-4 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-slate-100"
-                  />
+                    />
                   {uploadingFile && <p className="text-xs text-slate-400 mt-1">Upload хийж байна...</p>}
                   {filePreview && (
                     <div className="mt-4 relative">
@@ -286,7 +286,7 @@ export default function ContestDetailPage() {
                     className="w-full px-4 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-slate-100"
                     placeholder="Бүтээлийн тайлбар..."
                   />
-                </div>
+              </div>
                 {submitError && <p className="text-sm text-red-400">{submitError}</p>}
                 <div className="flex gap-2">
                   <button
@@ -296,18 +296,18 @@ export default function ContestDetailPage() {
                   >
                     {submitting ? "Илгээж байна..." : "Илгээх"}
                   </button>
-                  <button
-                    onClick={() => {
-                      setShowSubmitForm(false);
+                <button
+                  onClick={() => {
+                    setShowSubmitForm(false);
                       setFileUrl("");
-                      setDescription("");
+                    setDescription("");
                       setFilePreview(null);
                       setSubmitError(null);
-                    }}
+                  }}
                     className="px-6 py-2 rounded-full bg-slate-700/50 text-slate-300 hover:bg-slate-700 transition-all"
-                  >
+                >
                     Цуцлах
-                  </button>
+                </button>
                 </div>
               </div>
             )}
@@ -324,7 +324,7 @@ export default function ContestDetailPage() {
           <div className="glass-panel p-6 rounded-2xl bg-yellow-500/10 border border-yellow-500/30">
             <div className="flex items-center gap-2 mb-2">
               <span className="text-2xl">🏆</span>
-              <div>
+        <div>
                 <div className="font-semibold text-yellow-400">
                   Ялагч: {sortedSubmissions[0].userName}
                 </div>
@@ -348,7 +348,7 @@ export default function ContestDetailPage() {
                 const isWinner = contest.status === "ended" && index === 0;
                 const isOwnSubmission = submission.userEmail === session?.email;
                 const hasVoted = session && submission.votes.includes(session.email);
-                
+
                 return (
                   <div
                     key={submission.id}
@@ -362,7 +362,7 @@ export default function ContestDetailPage() {
                       <div>
                         <div className="flex items-center gap-2 mb-1">
                           <span className="font-semibold text-slate-200">{submission.userName}</span>
-                          {isWinner && (
+                    {isWinner && (
                             <span className="px-2 py-1 rounded-full bg-yellow-500/20 text-yellow-400 text-xs border border-yellow-500/40">
                               🏆 Ялагч! +{contest.prize} XP
                             </span>
@@ -395,7 +395,7 @@ export default function ContestDetailPage() {
                       </div>
                     </div>
                     <div className="mt-3">
-                      <img
+                      <img 
                         src={submission.fileUrl}
                         alt={`${submission.userName}-н бүтээл`}
                         className="w-full rounded-lg max-h-96 object-contain bg-slate-900/50"

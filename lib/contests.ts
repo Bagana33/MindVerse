@@ -116,16 +116,16 @@ export function getContest(id: string): Contest | undefined {
     // Award winner asynchronously (don't await to avoid blocking)
     (async () => {
       const user = await getUser(winner.userEmail);
-      if (user) {
+    if (user) {
         await addExperience(winner.userEmail, contest.prize);
-      }
+    }
       await addNotification(
-        winner.userEmail,
-        contest.authorEmail,
-        "CONTEST_WIN",
+      winner.userEmail,
+      contest.authorEmail,
+      "CONTEST_WIN",
         `Та "${contest.title}" уралдаанд яллаа! +${contest.prize} XP 🎉`
-      );
-      awardedContestWinners.add(contest.id);
+    );
+    awardedContestWinners.add(contest.id);
     })();
   }
   return contest;
@@ -134,16 +134,16 @@ export function getContest(id: string): Contest | undefined {
 export function submitToContest(contestId: string, submission: Omit<ContestSubmission, "id" | "contestId" | "votes" | "submittedAt">): ContestSubmission | null {
   const contest = contests.get(contestId);
   if (!contest) return null;
-  
+
   // Check if contest is active
   const now = new Date();
   const startDate = new Date(contest.startDate);
   const endDate = new Date(contest.endDate);
   if (now < startDate || now > endDate) return null;
-  
+
   // Check if user already submitted
   if (contest.submissions.some(s => s.userEmail === submission.userEmail)) return null;
-  
+
   const newSubmission: ContestSubmission = {
     ...submission,
     id: `sub-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -151,25 +151,25 @@ export function submitToContest(contestId: string, submission: Omit<ContestSubmi
     votes: [],
     submittedAt: new Date().toISOString(),
   };
-  
+
   contest.submissions.push(newSubmission);
   if (!contest.participants.includes(submission.userEmail)) {
     contest.participants.push(submission.userEmail);
   }
-  
+
   return newSubmission;
 }
 
 export function voteSubmission(contestId: string, submissionId: string, userEmail: string): ContestSubmission | null {
   const contest = contests.get(contestId);
   if (!contest) return null;
-  
+
   const submission = contest.submissions.find(s => s.id === submissionId);
   if (!submission) return null;
-  
+
   // Can't vote on own submission
   if (submission.userEmail === userEmail) return null;
-  
+
   // Check if already voted
   if (submission.votes.includes(userEmail)) {
     // Remove vote
@@ -178,18 +178,18 @@ export function voteSubmission(contestId: string, submissionId: string, userEmai
     // Add vote
     submission.votes.push(userEmail);
   }
-  
+
   return submission;
 }
 
 export function getWinner(contestId: string): ContestSubmission | null {
   const contest = contests.get(contestId);
   if (!contest || contest.status !== "ended" || contest.submissions.length === 0) return null;
-  
+
   const winner = contest.submissions.reduce((prev, current) => 
     current.votes.length > prev.votes.length ? current : prev
   );
-  
+
   return winner;
 }
 

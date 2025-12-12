@@ -66,7 +66,7 @@ export default function ContestsPage() {
     try {
       const endpoint = editingId ? `/api/contests/${editingId}` : "/api/contests";
       const method = editingId ? "PUT" : "POST";
-      
+
       const res = await fetch(endpoint, {
         method,
         headers: { "Content-Type": "application/json" },
@@ -82,11 +82,11 @@ export default function ContestsPage() {
 
       const json = await res.json();
       if (json.ok) {
-        if (editingId) {
-          setContests(contests.map(c => c.id === editingId ? json.contest : c));
-        } else {
-          setContests([json.contest, ...contests]);
-        }
+      if (editingId) {
+        setContests(contests.map(c => c.id === editingId ? json.contest : c));
+      } else {
+        setContests([json.contest, ...contests]);
+      }
         resetForm();
       } else {
         alert(json.error || "Алдаа гарлаа");
@@ -125,9 +125,9 @@ export default function ContestsPage() {
     if (!confirm("Устгахдаа итгэлтэй байна уу?")) return;
     try {
       const res = await fetch(`/api/contests/${id}`, { method: "DELETE" });
-      const json = await res.json();
+        const json = await res.json();
       if (json.ok) {
-        setContests(contests.filter(c => c.id !== id));
+      setContests(contests.filter(c => c.id !== id));
       } else {
         alert(json.error || "Устгах боломжгүй");
       }
@@ -318,35 +318,35 @@ export default function ContestsPage() {
                             <h3 className="text-lg font-semibold text-slate-200 mb-1">{contest.title}</h3>
                             <p className="text-sm text-slate-400 mb-2">{contest.description}</p>
                             <div className="flex items-center gap-4 mb-3">
-                              {getStatusBadge(contest.status)}
-                              {isAuthor && (
-                                <div className="flex gap-2">
-                                  <button
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      startEdit(contest);
-                                    }}
+                            {getStatusBadge(contest.status)}
+                            {isAuthor && (
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    startEdit(contest);
+                                  }}
                                     className="px-3 py-1 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 text-xs"
-                                  >
-                                    Засах
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      handleDelete(contest.id);
-                                    }}
+                                >
+                                  Засах
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    handleDelete(contest.id);
+                                  }}
                                     className="px-3 py-1 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 text-xs"
-                                  >
-                                    Устгах
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-4 text-xs text-slate-500">
-                              <span>👤 {contest.authorName}</span>
-                              <span>🎯 {contest.participants.length} оролцогч</span>
-                              <span>🏆 {contest.prize} XP</span>
-                              <span>📅 {new Date(contest.endDate).toLocaleDateString("mn-MN")}-н дуустай</span>
+                                >
+                                  Устгах
+                                </button>
+                              </div>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-4 text-xs text-slate-500">
+                          <span>👤 {contest.authorName}</span>
+                          <span>🎯 {contest.participants.length} оролцогч</span>
+                          <span>🏆 {contest.prize} XP</span>
+                          <span>📅 {new Date(contest.endDate).toLocaleDateString("mn-MN")}-н дуустай</span>
                             </div>
                           </div>
                         </div>
@@ -374,34 +374,34 @@ export default function ContestsPage() {
                             <h3 className="text-lg font-semibold text-slate-200 mb-1">{contest.title}</h3>
                             <p className="text-sm text-slate-400 mb-2">{contest.description}</p>
                             <div className="flex items-center gap-4 mb-3">
-                              {getStatusBadge(contest.status)}
-                              {isAuthor && (
-                                <div className="flex gap-2">
-                                  <button
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      startEdit(contest);
-                                    }}
+                            {getStatusBadge(contest.status)}
+                            {isAuthor && (
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    startEdit(contest);
+                                  }}
                                     className="px-3 py-1 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 text-xs"
-                                  >
-                                    Засах
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      handleDelete(contest.id);
-                                    }}
+                                >
+                                  Засах
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    handleDelete(contest.id);
+                                  }}
                                     className="px-3 py-1 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 text-xs"
-                                  >
-                                    Устгах
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-4 text-xs text-slate-500">
-                              <span>👤 {contest.authorName}</span>
-                              <span>🏆 {contest.prize} XP</span>
-                              <span>📅 {new Date(contest.startDate).toLocaleDateString("mn-MN")}-с эхэлнэ</span>
+                                >
+                                  Устгах
+                                </button>
+                              </div>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-4 text-xs text-slate-500">
+                          <span>👤 {contest.authorName}</span>
+                          <span>🏆 {contest.prize} XP</span>
+                          <span>📅 {new Date(contest.startDate).toLocaleDateString("mn-MN")}-с эхэлнэ</span>
                             </div>
                           </div>
                         </div>
@@ -437,34 +437,34 @@ export default function ContestsPage() {
                               </div>
                             )}
                             <div className="flex items-center gap-4 mb-3">
-                              {getStatusBadge(contest.status)}
-                              {isAuthor && (
-                                <div className="flex gap-2">
-                                  <button
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      startEdit(contest);
-                                    }}
+                            {getStatusBadge(contest.status)}
+                            {isAuthor && (
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    startEdit(contest);
+                                  }}
                                     className="px-3 py-1 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 text-xs"
-                                  >
-                                    Засах
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      handleDelete(contest.id);
-                                    }}
+                                >
+                                  Засах
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    handleDelete(contest.id);
+                                  }}
                                     className="px-3 py-1 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 text-xs"
-                                  >
-                                    Устгах
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-4 text-xs text-slate-500">
-                              <span>👤 {contest.authorName}</span>
-                              <span>🎯 {contest.participants.length} оролцогч</span>
-                              <span>🏆 {contest.prize} XP</span>
+                                >
+                                  Устгах
+                                </button>
+                              </div>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-4 text-xs text-slate-500">
+                          <span>👤 {contest.authorName}</span>
+                          <span>🎯 {contest.participants.length} оролцогч</span>
+                          <span>🏆 {contest.prize} XP</span>
                             </div>
                           </div>
                         </div>

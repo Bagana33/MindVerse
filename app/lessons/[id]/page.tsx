@@ -150,11 +150,11 @@ export default function LessonDetailPage() {
 
     // Validate file sizes
     for (const file of files) {
-      if (file.size > 50 * 1024 * 1024) {
-        const mb = (file.size / (1024 * 1024)).toFixed(1);
+    if (file.size > 50 * 1024 * 1024) {
+      const mb = (file.size / (1024 * 1024)).toFixed(1);
         setSubmitError(`Файлын хэмжээ 50MB-аас бага байх ёстой: ${file.name} (${mb}MB)`);
         e.target.value = "";
-        return;
+      return;
       }
     }
 
@@ -166,39 +166,39 @@ export default function LessonDetailPage() {
       const file = files[i];
       setUploadingFileIndex(i);
       
-      try {
-        const signRes = await fetch("/api/uploads/sign", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ folder: "neoncanvas/submissions" }),
-        });
-        if (!signRes.ok) throw new Error("sign failed");
-        const signJson = await signRes.json();
-        if (!signJson?.ok || !signJson.cloudName || !signJson.apiKey || !signJson.signature) {
-          throw new Error("sign response invalid");
-        }
+    try {
+      const signRes = await fetch("/api/uploads/sign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folder: "neoncanvas/submissions" }),
+      });
+      if (!signRes.ok) throw new Error("sign failed");
+      const signJson = await signRes.json();
+      if (!signJson?.ok || !signJson.cloudName || !signJson.apiKey || !signJson.signature) {
+        throw new Error("sign response invalid");
+      }
 
-        const form = new FormData();
-        form.append("file", file);
-        form.append("api_key", signJson.apiKey);
-        form.append("timestamp", String(signJson.timestamp));
-        form.append("signature", signJson.signature);
-        form.append("folder", signJson.folder || "neoncanvas/submissions");
+      const form = new FormData();
+      form.append("file", file);
+      form.append("api_key", signJson.apiKey);
+      form.append("timestamp", String(signJson.timestamp));
+      form.append("signature", signJson.signature);
+      form.append("folder", signJson.folder || "neoncanvas/submissions");
 
-        const uploadRes = await fetch(
-          `https://api.cloudinary.com/v1_1/${signJson.cloudName}/auto/upload`,
-          { method: "POST", body: form }
-        );
-        if (!uploadRes.ok) throw new Error(`upload failed: ${uploadRes.status}`);
-        const uploadJson = await uploadRes.json();
-        if (!uploadJson?.secure_url) throw new Error("no secure_url");
+      const uploadRes = await fetch(
+        `https://api.cloudinary.com/v1_1/${signJson.cloudName}/auto/upload`,
+        { method: "POST", body: form }
+      );
+      if (!uploadRes.ok) throw new Error(`upload failed: ${uploadRes.status}`);
+      const uploadJson = await uploadRes.json();
+      if (!uploadJson?.secure_url) throw new Error("no secure_url");
 
         uploadedUrls.push(uploadJson.secure_url);
-      } catch (err) {
+    } catch (err) {
         console.error(`Submission upload failed for file ${i + 1}:`, err);
         setSubmitError(`Файл байршуулахад алдаа гарлаа: ${file.name}`);
         e.target.value = "";
-        setUploadingSubmission(false);
+      setUploadingSubmission(false);
         setUploadingFileIndex(null);
         return;
       }
@@ -209,8 +209,8 @@ export default function LessonDetailPage() {
     setFilePreviews([...filePreviews, ...uploadedUrls]);
     setUploadingSubmission(false);
     setUploadingFileIndex(null);
-    e.target.value = "";
-  }
+      e.target.value = "";
+    }
 
   function removeFile(index: number) {
     const newFiles = filesToUpload.filter((_, i) => i !== index);
@@ -580,7 +580,7 @@ export default function LessonDetailPage() {
                       Файл байршиж байна... ({uploadingFileIndex !== null ? uploadingFileIndex + 1 : ''})
                     </p>
                   )}
-                </div>
+                    </div>
                 
                 {/* Show uploaded files */}
                 {filePreviews.length > 0 && (
@@ -595,8 +595,8 @@ export default function LessonDetailPage() {
                           </span>
                           {url.startsWith('data:image/') && (
                             <span className="text-xs text-slate-500">(Зураг)</span>
-                          )}
-                        </div>
+                  )}
+                </div>
                         <button
                           onClick={() => removeFile(index)}
                           className="px-2 py-1 rounded text-xs bg-red-500/20 hover:bg-red-500/30 text-red-400 transition-colors"
@@ -755,7 +755,7 @@ export default function LessonDetailPage() {
                           {sub.fileUrls && sub.fileUrls.length > 1 && (
                             <p className="text-xs text-slate-400 mb-1">Файл {fileIndex + 1}:</p>
                           )}
-                          {/* File Preview */}
+                      {/* File Preview */}
                           {fileUrl.startsWith('data:image/') || (fileUrl.startsWith('http') && fileUrl.match(/\.(jpg|jpeg|png|gif|webp)$/i)) ? (
                         <div className="border border-slate-700 rounded-lg overflow-hidden">
                           <img 
@@ -775,7 +775,7 @@ export default function LessonDetailPage() {
                           <p className="text-xs text-slate-400 mt-2">Файл хавсаргасан</p>
                         </div>
                       )}
-                          <a 
+                      <a 
                             href={fileUrl} 
                             download={`submission-${sub.studentName}-${fileIndex + 1}.file`}
                             target="_blank"
@@ -783,8 +783,8 @@ export default function LessonDetailPage() {
                             className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 hover:text-blue-300 text-xs transition-colors mt-2"
                       >
                         � Татаж авах
-                          </a>
-                        </div>
+                      </a>
+                    </div>
                       ))}
                     </div>
                   ) : null}

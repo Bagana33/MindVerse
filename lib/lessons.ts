@@ -354,17 +354,17 @@ export async function submitToLesson(
     // Create new submission
     submissionId = `sub-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const { data: inserted, error: insertError } = await supabase
-      .from('lesson_submissions')
-      .insert([{
-        id: submissionId,
-        lesson_id: lessonId,
-        student_email: studentEmail,
-        student_name: studentName,
+    .from('lesson_submissions')
+    .insert([{
+      id: submissionId,
+      lesson_id: lessonId,
+      student_email: studentEmail,
+      student_name: studentName,
         file_url: fileUrl, // Keep for backward compatibility
         file_urls: fileUrlsJson, // New array format
-      }])
-      .select()
-      .single();
+    }])
+    .select()
+    .single();
     
     data = inserted;
     error = insertError;
