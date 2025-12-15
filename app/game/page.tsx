@@ -7,6 +7,7 @@ import { useSession } from "../../components/auth/useSession";
 type GameImage = {
   id: string;
   imageUrl: string;
+  imageUrls?: string[]; // Array of all images for this submission
   addedBy: string | null;
   studentName?: string | null;
   studentNickname?: string | null;
@@ -56,6 +57,7 @@ export default function GamePage() {
   const [selectedLessonId, setSelectedLessonId] = useState<string>("");
   const [selectedGrade, setSelectedGrade] = useState<string>("");
   const [settingUp, setSettingUp] = useState(false);
+  const [currentImageIndex, setCurrentImageIndex] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (session?.role === "teacher") {
@@ -410,10 +412,52 @@ export default function GamePage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {images.map((img, index) => {
                   const liked = myEmail && img.likedBy.includes(myEmail);
+                  const imageUrls = img.imageUrls && img.imageUrls.length > 0 ? img.imageUrls : [img.imageUrl];
+                  const currentIndex = currentImageIndex[img.id] || 0;
+                  const hasMultipleImages = imageUrls.length > 1;
+                  
                   return (
                     <div key={`${img.id}-${img.likes}`} className="glass-panel p-4 rounded-2xl space-y-3 border border-slate-800 hover:border-violet-500/40 transition-all duration-300">
-                      <div className="rounded-xl overflow-hidden border border-slate-700 bg-slate-950">
-                        <img src={img.imageUrl} alt="Game item" className="w-full h-64 object-cover" />
+                      <div className="rounded-xl overflow-hidden border border-slate-700 bg-slate-950 relative">
+                        <img 
+                          src={imageUrls[currentIndex]} 
+                          alt="Game item" 
+                          className="w-full h-64 object-cover" 
+                        />
+                        {hasMultipleImages && (
+                          <>
+                            {/* Left arrow */}
+                            {currentIndex > 0 && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCurrentImageIndex(prev => ({ ...prev, [img.id]: currentIndex - 1 }));
+                                }}
+                                className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition-all"
+                                aria-label="Previous image"
+                              >
+                                ←
+                              </button>
+                            )}
+                            {/* Right arrow */}
+                            {currentIndex < imageUrls.length - 1 && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setCurrentImageIndex(prev => ({ ...prev, [img.id]: currentIndex + 1 }));
+                                }}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition-all"
+                                aria-label="Next image"
+                              >
+                                →
+                              </button>
+                            )}
+                            {/* Image counter */}
+                            <div className="absolute bottom-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
+                              {currentIndex + 1} / {imageUrls.length}
+                            </div>
+                          </>
+                        )}
                       </div>
                       <div className="flex items-center justify-between text-sm text-slate-200">
                         <span className="text-yellow-300 font-semibold">Оноо: {img.likes}</span>

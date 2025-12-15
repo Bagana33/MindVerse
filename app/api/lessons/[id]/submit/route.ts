@@ -66,13 +66,14 @@ export async function POST(
           .single();
 
         if (!existing) {
-          // Add to game
+          // Add to game with all file URLs
           const gameImageId = `game-img-${submission.id}`;
           await supabase
             .from("game_images")
             .upsert({
               id: gameImageId,
-              image_url: submission.fileUrls[0], // Use first file
+              image_url: submission.fileUrls[0], // Keep for backward compatibility
+              image_urls: submission.fileUrls, // Store all file URLs
               added_by: session.email,
               submission_id: submission.id,
               liked_by: [],

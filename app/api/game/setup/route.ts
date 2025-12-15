@@ -81,7 +81,8 @@ export async function POST(req: Request) {
           .from("game_images")
           .upsert({
             id: gameImageId,
-            image_url: fileUrls[0], // Use first file
+            image_url: fileUrls[0], // Keep for backward compatibility
+            image_urls: fileUrls, // Store all file URLs
             added_by: submission.student_email,
             submission_id: submission.id,
             liked_by: [],
@@ -93,6 +94,7 @@ export async function POST(req: Request) {
           gameImages.push({
             id: gameImageId,
             image_url: fileUrls[0],
+            image_urls: fileUrls,
             added_by: submission.student_email,
             submission_id: submission.id,
           });

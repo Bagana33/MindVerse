@@ -5,6 +5,7 @@ import { supabase } from "../../../../lib/supabase";
 type GameImage = {
   id: string;
   image_url: string;
+  image_urls?: string[] | null;
   added_by: string | null;
   liked_by: string[];
   created_at: string;
@@ -44,9 +45,14 @@ async function toClient(images: GameImage[]) {
   return images
     .map((img) => {
       const userInfo = img.added_by ? userInfoMap.get(img.added_by) : null;
+      // Use image_urls if available, otherwise fall back to single image_url
+      const imageUrls = img.image_urls && img.image_urls.length > 0 
+        ? img.image_urls 
+        : (img.image_url ? [img.image_url] : []);
       return {
         id: img.id,
-        imageUrl: img.image_url,
+        imageUrl: imageUrls[0] || img.image_url, // Keep for backward compatibility
+        imageUrls: imageUrls, // Array of all images
         addedBy: img.added_by,
         studentName: userInfo?.name || null,
         studentNickname: userInfo?.nickname || null,
