@@ -59,17 +59,22 @@ export async function POST(req: Request) {
     // Create game_images entries for each submission
     const gameImages = [];
     for (const submission of filteredSubmissions) {
-      // Get first image URL from submission
+      // Get all file URLs from submission
       let fileUrls: string[] = [];
       if (submission.file_urls) {
+        // Handle JSONB array from Supabase
         if (Array.isArray(submission.file_urls)) {
           fileUrls = submission.file_urls;
         } else if (typeof submission.file_urls === 'string') {
           try {
-            fileUrls = JSON.parse(submission.file_urls);
+            const parsed = JSON.parse(submission.file_urls);
+            fileUrls = Array.isArray(parsed) ? parsed : [parsed];
           } catch {
             fileUrls = [];
           }
+        } else if (typeof submission.file_urls === 'object') {
+          // Handle JSONB object (Supabase might return it as object)
+          fileUrls = Array.isArray(submission.file_urls) ? submission.file_urls : [];
         }
       } else if (submission.file_url) {
         fileUrls = [submission.file_url];
@@ -77,20 +82,47 @@ export async function POST(req: Request) {
       
       if (fileUrls.length > 0) {
         const gameImageId = `game-img-${submission.id}`;
+        
+        // Prepare upsert data - only include image_urls if column exists
+        const upsertData: any = {
+          id: gameImageId,
+          image_url: fileUrls[0], // Keep for backward compatibility
+          added_by: submission.student_email,
+          submission_id: submission.id,
+          liked_by: [],
+        };
+        
+        // Add image_urls if we have multiple files
+        if (fileUrls.length > 0) {
+          upsertData.image_urls = fileUrls;
+        }
+        
         const { error: insertError } = await supabase
           .from("game_images")
-          .upsert({
-            id: gameImageId,
-            image_url: fileUrls[0], // Keep for backward compatibility
-            image_urls: fileUrls, // Store all file URLs
-            added_by: submission.student_email,
-            submission_id: submission.id,
-            liked_by: [],
-          }, {
+          .upsert(upsertData, {
             onConflict: "id"
           });
 
-        if (!insertError) {
+        if (insertError) {
+          console.error(`Error upserting game image ${gameImageId}:`, insertError);
+          // If image_urls column doesn't exist, try without it
+          if (insertError.message?.includes('image_urls') || insertError.code === '42703') {
+            const { error: retryError } = await supabase
+              .from("game_images")
+              .upsert({
+                id: gameImageId,
+                image_url: fileUrls[0],
+                added_by: submission.student_email,
+                submission_id: submission.id,
+                liked_by: [],
+              }, {
+                onConflict: "id"
+              });
+            if (!retryError) {
+              console.log(`Game image ${gameImageId} added without image_urls (migration may not be run)`);
+            }
+          }
+        } else {
           gameImages.push({
             id: gameImageId,
             image_url: fileUrls[0],

@@ -126,6 +126,77 @@ export async function GET() {
     return NextResponse.json({ ok: false, error: "Алдаа гарлаа" }, { status: 500 });
   }
 
+  // Update game_images that don't have image_urls populated
+  // Fetch from submissions if image_urls is missing
+  if (data && data.length > 0) {
+    const imagesNeedingUpdate = data.filter((img: any) => 
+      !img.image_urls || 
+      (Array.isArray(img.image_urls) && img.image_urls.length === 0) ||
+      (img.submission_id && (!img.image_urls || img.image_urls.length === 0))
+    );
+
+    if (imagesNeedingUpdate.length > 0) {
+      // Fetch submissions to get file_urls
+      const submissionIds = imagesNeedingUpdate
+        .map((img: any) => img.submission_id)
+        .filter((id: string) => id);
+      
+      if (submissionIds.length > 0) {
+        const { data: submissions } = await supabase
+          .from("lesson_submissions")
+          .select("id, file_urls, file_url")
+          .in("id", submissionIds);
+
+        if (submissions) {
+          const submissionMap = new Map(submissions.map((s: any) => [s.id, s]));
+          
+          // Update each game_image that needs image_urls
+          for (const img of imagesNeedingUpdate) {
+            if (img.submission_id) {
+              const submission = submissionMap.get(img.submission_id);
+              if (submission) {
+                let fileUrls: string[] = [];
+                if (submission.file_urls) {
+                  if (Array.isArray(submission.file_urls)) {
+                    fileUrls = submission.file_urls;
+                  } else if (typeof submission.file_urls === 'string') {
+                    try {
+                      fileUrls = JSON.parse(submission.file_urls);
+                    } catch {
+                      fileUrls = submission.file_url ? [submission.file_url] : [];
+                    }
+                  }
+                } else if (submission.file_url) {
+                  fileUrls = [submission.file_url];
+                } else if (img.image_url) {
+                  fileUrls = [img.image_url];
+                }
+
+                if (fileUrls.length > 0) {
+                  // Update the game_image record
+                  await supabase
+                    .from("game_images")
+                    .update({ image_urls: fileUrls })
+                    .eq("id", img.id);
+                  
+                  // Update the data array for immediate use
+                  img.image_urls = fileUrls;
+                }
+              }
+            } else if (img.image_url) {
+              // If no submission_id, just use the single image_url
+              await supabase
+                .from("game_images")
+                .update({ image_urls: [img.image_url] })
+                .eq("id", img.id);
+              img.image_urls = [img.image_url];
+            }
+          }
+        }
+      }
+    }
+  }
+
   // Get winner and rankings info
   let winner = null;
   let rankings: Array<{ email: string; name: string; likes: number; xp: number; rank: number }> = [];
