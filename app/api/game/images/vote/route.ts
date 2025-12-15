@@ -36,9 +36,27 @@ async function toClient(images: any[]) {
   return images
     .map((img) => {
       const userInfo = img.added_by ? userInfoMap.get(img.added_by) : null;
+      // Use image_urls if available, otherwise fall back to single image_url
+      // Handle both array format and string format from database
+      let imageUrls: string[] = [];
+      if (img.image_urls) {
+        if (Array.isArray(img.image_urls)) {
+          imageUrls = img.image_urls;
+        } else if (typeof img.image_urls === 'string') {
+          try {
+            imageUrls = JSON.parse(img.image_urls);
+          } catch {
+            imageUrls = [img.image_url];
+          }
+        }
+      } else if (img.image_url) {
+        imageUrls = [img.image_url];
+      }
+      
       return {
         id: img.id,
-        imageUrl: img.image_url,
+        imageUrl: imageUrls[0] || img.image_url || '', // Keep for backward compatibility
+        imageUrls: imageUrls, // Array of all images
         addedBy: img.added_by,
         studentName: userInfo?.name || null,
         studentNickname: userInfo?.nickname || null,

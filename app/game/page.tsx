@@ -412,7 +412,10 @@ export default function GamePage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {images.map((img, index) => {
                   const liked = myEmail && img.likedBy.includes(myEmail);
-                  const imageUrls = img.imageUrls && img.imageUrls.length > 0 ? img.imageUrls : [img.imageUrl];
+                  // Ensure we have an array of image URLs
+                  const imageUrls = (img.imageUrls && Array.isArray(img.imageUrls) && img.imageUrls.length > 0) 
+                    ? img.imageUrls 
+                    : (img.imageUrl ? [img.imageUrl] : []);
                   const currentIndex = currentImageIndex[img.id] || 0;
                   const hasMultipleImages = imageUrls.length > 1;
                   
