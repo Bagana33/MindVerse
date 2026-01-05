@@ -209,10 +209,11 @@ export default function GamePage() {
       const json = await res.json();
       if (json.ok) {
         setGameState({
-          ...gameState,
           gameEnded: true,
-          winner: json.winner,
+          winner: json.winner || null,
           rankings: json.rankings || [],
+          lessonId: gameState.lessonId,
+          targetGrade: gameState.targetGrade,
         });
         await fetchImages(); // Refresh to get updated state
         alert(json.message || "Тоглоом амжилттай дууссан!");

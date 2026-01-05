@@ -22,7 +22,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Invalid JSON format" }, { status: 400 });
     }
 
-    const email = (body?.email ?? "").toString().trim();
+    const email = (body?.email ?? "").toString().trim().toLowerCase();
     const password = (body?.password ?? "").toString().trim();
     const name = (body?.name ?? "").toString().trim() || undefined;
     const mode = (body?.mode ?? "signin").toString().trim();

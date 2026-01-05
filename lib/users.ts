@@ -63,8 +63,10 @@ function userToDb(user: Partial<User>, opts: { includeGrade?: boolean } = {}): a
 
 // Create a new user (signup)
 export async function createUser(email: string, password: string, name?: string, role: "student" | "teacher" = "student", grade?: string): Promise<User> {
+  // Normalize email to lowercase for case-insensitive storage
+  const normalizedEmail = email.toLowerCase().trim();
   // Check if user already exists
-  const existing = await getUser(email);
+  const existing = await getUser(normalizedEmail);
   const hashedPassword = await bcrypt.hash(password, 10);
   const includeGrade = await supportsGradeColumn();
 
@@ -74,7 +76,7 @@ export async function createUser(email: string, password: string, name?: string,
       const { data, error } = await supabase
         .from('users')
         .update(userToDb({ password: hashedPassword, name: name ?? existing.name, role: role ?? existing.role, grade: grade ?? existing.grade }, { includeGrade }))
-        .eq('email', email)
+        .eq('email', normalizedEmail)
         .select()
         .single();
       if (error || !data) {
@@ -88,7 +90,7 @@ export async function createUser(email: string, password: string, name?: string,
 
   // Create new user
   const newUser: User = {
-    email,
+    email: normalizedEmail,
     password: hashedPassword,
     name,
     role,
@@ -133,10 +135,12 @@ export async function verifyUser(email: string, password: string): Promise<User 
 }
 
 export async function getUser(email: string): Promise<User | null> {
+  // Normalize email to lowercase for case-insensitive comparison
+  const normalizedEmail = email.toLowerCase().trim();
   const { data, error } = await supabase
     .from('users')
     .select('*')
-    .eq('email', email)
+    .eq('email', normalizedEmail)
     .single();
 
   if (error || !data) return null;
