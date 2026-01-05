@@ -2,9 +2,8 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { NeonLayout } from "../components/layout/NeonLayout";
-import { HomeFeed } from "../components/home/HomeFeed";
-import { LeaderboardSidebar } from "../components/leaderboard/LeaderboardTable";
+import { DashboardLayout } from "../components/layout/DashboardLayout";
+import { HomeDashboard } from "../components/home/HomeDashboard";
 import { useSession } from "../components/auth/useSession";
 
 export default function HomePage() {
@@ -21,7 +20,7 @@ export default function HomePage() {
   // Show loading state while checking session
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-dark-950">
         <div className="text-slate-400">Уншиж байна...</div>
       </div>
     );
@@ -33,13 +32,8 @@ export default function HomePage() {
   }
 
   return (
-    <NeonLayout>
-      <div>
-        <HomeFeed />
-      </div>
-      <aside className="space-y-4">
-        <LeaderboardSidebar compact />
-      </aside>
-    </NeonLayout>
+    <DashboardLayout>
+      <HomeDashboard />
+    </DashboardLayout>
   );
 }
