@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { OpenRouter } from "@openrouter/sdk";
 import { getSessionFromCookies } from "../../../../lib/session";
 
 // Use Groq (free, fast, OpenAI-compatible API)
@@ -7,6 +8,13 @@ const client = new OpenAI({
   apiKey: process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY || "",
   baseURL: process.env.GROQ_API_KEY ? "https://api.groq.com/openai/v1" : undefined,
 });
+
+// OpenRouter client for image generation
+const openrouter = process.env.OPENROUTER_API_KEY
+  ? new OpenRouter({
+      apiKey: process.env.OPENROUTER_API_KEY.trim().replace(/^<|>$/g, ""), // Remove angle brackets if present
+    })
+  : null;
 
 function fallbackDesignTips(q: string): string {
   const s = q.toLowerCase();
@@ -63,9 +71,6 @@ export async function POST(req: Request) {
   if (!session) {
     return NextResponse.json({ ok: false, error: "Нэвтэрнэ үү" }, { status: 401 });
   }
-  if (session.role !== "student") {
-    return NextResponse.json({ ok: false, error: "Зөвхөн сурагчдад нээлттэй" }, { status: 403 });
-  }
 
   let body: any = {};
   try {
@@ -77,17 +82,60 @@ export async function POST(req: Request) {
   const message = (body?.message ?? "").toString().trim();
   const history = Array.isArray(body?.history) ? body.history.slice(-6) : [];
 
-  // Basic runtime checks for clearer errors (after parsing message so we can fallback usefully)
-  if (!process.env.GROQ_API_KEY && !process.env.OPENAI_API_KEY) {
-    // Offline fallback tips (still return ok=true so UI shows something useful)
-    const offline = fallbackDesignTips(message);
-    return NextResponse.json({ ok: true, answer: offline, offline: true });
-  }
   if (!message) {
     return NextResponse.json({ ok: false, error: "Асуултаа бичнэ үү" }, { status: 400 });
   }
   if (message.length > 500) {
     return NextResponse.json({ ok: false, error: "Мессеж хэт урт байна (≤500)" }, { status: 400 });
+  }
+
+  // Check if user wants to generate an image (design-related prompts)
+  const wantsImage = /(зураг|image|generate|үүсгэх|бүтээх|create|хэрэгтэй|хэрэгтэй байна|хэрэгтэй байгаа|poster|logo|banner|design|дизайн|visual|график)/i.test(message) &&
+    /(үүсгэ|бүтээ|generate|create|make|хэрэгтэй|show|харуул|өг)/i.test(message);
+  
+  // If image generation requested and OpenRouter is available
+  if (wantsImage && openrouter) {
+    try {
+      const result = await openrouter.chat.send({
+        model: "bytedance-seed/seedream-4.5",
+        messages: [
+          {
+            role: "user",
+            content: message,
+          },
+        ],
+        modalities: ["image", "text"],
+      });
+
+      const responseMessage = result.choices[0]?.message;
+      const images: string[] = [];
+      
+      if (responseMessage?.images) {
+        responseMessage.images.forEach((img: any) => {
+          if (img.image_url?.url) {
+            images.push(img.image_url.url);
+          }
+        });
+      }
+
+      const textResponse = responseMessage?.content || "Зураг үүсгэлээ!";
+
+      return NextResponse.json({
+        ok: true,
+        answer: textResponse,
+        images: images.length > 0 ? images : undefined,
+      });
+    } catch (e: any) {
+      console.error("OpenRouter image generation error:", e);
+      // Fall through to text response
+    }
+  }
+
+  // Basic runtime checks for clearer errors (after parsing message so we can fallback usefully)
+  if (!process.env.GROQ_API_KEY && !process.env.OPENAI_API_KEY) {
+    // Offline fallback tips (still return ok=true so UI shows something useful)
+    const offline = fallbackDesignTips(message);
+    return NextResponse.json({ ok: true, answer: offline, offline: true });
   }
 
   const systemPrompt = `Та график дизайны туслах багш AI. Зөвхөн дараах сэдвүүдээр тусална:

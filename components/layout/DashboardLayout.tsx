@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "../auth/useSession";
 import { ReactNode, useState } from "react";
+import StudentAssistant from "../assistant/StudentAssistant";
 
 export function DashboardLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -200,6 +201,9 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
           {children}
         </div>
       </main>
+      
+      {/* AI Design Assistant */}
+      <StudentAssistant />
     </div>
   );
 }

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useSession } from "../auth/useSession";
 
-type ChatMsg = { role: "user" | "assistant"; content: string };
+type ChatMsg = { role: "user" | "assistant"; content: string; images?: string[] };
 
 export default function StudentAssistant() {
   const { session } = useSession();
@@ -23,7 +23,7 @@ export default function StudentAssistant() {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, open]);
 
-  if (!session || session.role !== "student") return null;
+  if (!session) return null;
 
   async function send() {
     const text = input.trim();
@@ -44,7 +44,11 @@ export default function StudentAssistant() {
       const answerText = json.offline
         ? `ℹ️ AI одоогоор ашиглах боломжгүй (API key эсвэл config). Доорх зөвлөгөөг ашиглана уу:\n\n${json.answer}`
         : json.answer;
-      setMessages((m) => [...m, { role: "assistant", content: answerText }]);
+      setMessages((m) => [...m, { 
+        role: "assistant", 
+        content: answerText,
+        images: json.images || undefined
+      }]);
     } catch (e: any) {
       console.error("Chat error:", e); // Debug log
       const msg = typeof e?.message === 'string' ? e.message : "Одоогоор хариулах боломжгүй байна.";
@@ -55,37 +59,77 @@ export default function StudentAssistant() {
   }
 
   return (
-    <div className="fixed bottom-4 right-4 z-40">
+    <div className="fixed bottom-4 right-4 lg:bottom-6 lg:right-6 z-[100]">
       {open && (
-        <div className="mb-3 w-[320px] max-w-[90vw] rounded-2xl border border-slate-700 bg-slate-900/90 backdrop-blur px-3 py-3 shadow-2xl">
-          <div className="flex items-center justify-between pb-2">
-            <div className="flex items-center gap-2 text-sm text-slate-200">
-              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br from-cyan-500 to-blue-500">🤖</span>
-              <span className="font-semibold">Design Assistant</span>
+        <div className="mb-3 w-[340px] sm:w-[380px] max-w-[90vw] glass-card rounded-3xl p-5 shadow-2xl border-white/10">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/5">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-primary-500/30">
+                <span className="material-symbols-outlined text-xl">smart_toy</span>
+              </div>
+              <div>
+                <h3 className="font-bold text-white text-sm">Design Assistant</h3>
+                <p className="text-[10px] text-slate-500 font-medium">AI Design Helper</p>
+              </div>
             </div>
             <button
-              className="text-slate-400 hover:text-slate-200"
+              className="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-white/5"
               onClick={() => setOpen(false)}
               aria-label="Close"
             >
-              ✕
+              <span className="material-symbols-outlined text-xl">close</span>
             </button>
           </div>
-          <div className="text-[11px] text-slate-400 pb-2">Зөвхөн график дизайны сэдвүүдэд тусална.</div>
-          <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
+
+          {/* Info badge */}
+          <div className="mb-3 px-3 py-1.5 rounded-lg bg-primary-500/10 border border-primary-500/20">
+            <p className="text-[11px] text-primary-400 font-medium">Зөвхөн график дизайны сэдвүүдэд тусална</p>
+          </div>
+
+          {/* Messages */}
+          <div className="max-h-[320px] overflow-y-auto space-y-3 pr-2 mb-4 hide-scrollbar">
             {messages.map((m, i) => (
-              <div key={i} className={m.role === "assistant" ? "text-slate-200" : "text-slate-300"}>
-                <div className={`whitespace-pre-line rounded-xl px-3 py-2 text-[13px] leading-relaxed ${
+              <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                <div className={`max-w-[85%] whitespace-pre-line rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed ${
                   m.role === "assistant"
-                    ? "bg-slate-800/70 border border-slate-700"
-                    : "bg-violet-600/20 border border-violet-500/30"
-                }`}>{m.content}</div>
+                    ? "bg-dark-800 border border-white/5 text-slate-200"
+                    : "bg-gradient-to-r from-primary-500/20 to-indigo-500/20 border border-primary-500/30 text-white"
+                }`}>
+                  {m.content}
+                  {m.images && m.images.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      {m.images.map((imgUrl, idx) => (
+                        <div key={idx} className="rounded-lg overflow-hidden border border-white/10">
+                          <img 
+                            src={imgUrl} 
+                            alt={`Generated image ${idx + 1}`}
+                            className="w-full h-auto max-h-64 object-cover"
+                            loading="lazy"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
+            {busy && (
+              <div className="flex justify-start">
+                <div className="bg-dark-800 border border-white/5 rounded-2xl px-4 py-2.5">
+                  <div className="flex gap-1">
+                    <div className="w-2 h-2 rounded-full bg-primary-500 animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                    <div className="w-2 h-2 rounded-full bg-primary-500 animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                    <div className="w-2 h-2 rounded-full bg-primary-500 animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                  </div>
+                </div>
+              </div>
+            )}
             <div ref={endRef} />
           </div>
 
-          <div className="pt-2 flex items-center gap-2">
+          {/* Input */}
+          <div className="flex items-center gap-2 pt-3 border-t border-white/5">
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -95,27 +139,44 @@ export default function StudentAssistant() {
                   send();
                 }
               }}
-              placeholder="Таны асуулт…"
-              className="flex-1 rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 focus:border-violet-500/40 focus:outline-none"
+              placeholder="Асуултаа бичнэ үү..."
+              className="flex-1 rounded-xl border border-white/10 bg-dark-800 px-4 py-2.5 text-sm text-white placeholder:text-slate-500 focus:border-primary-500/50 focus:outline-none focus:ring-2 focus:ring-primary-500/20 transition-all"
             />
             <button
               onClick={send}
               disabled={busy || !input.trim()}
-              className="rounded-xl bg-gradient-to-r from-violet-500 to-purple-500 px-3 py-2 text-sm text-white disabled:opacity-60"
+              className="rounded-xl bg-gradient-to-r from-primary-500 to-indigo-600 px-4 py-2.5 text-sm text-white font-medium shadow-[0_4px_16px_rgba(139,92,246,0.4)] hover:shadow-[0_6px_20px_rgba(139,92,246,0.6)] disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2"
             >
-              {busy ? "…" : "Send"}
+              {busy ? (
+                <>
+                  <span className="material-symbols-outlined text-lg animate-spin">sync</span>
+                  <span>...</span>
+                </>
+              ) : (
+                <>
+                  <span>Илгээх</span>
+                  <span className="material-symbols-outlined text-lg">send</span>
+                </>
+              )}
             </button>
           </div>
         </div>
       )}
 
+      {/* Floating Button */}
       <button
         onClick={() => setOpen((v) => !v)}
-        className="h-12 w-12 rounded-full bg-gradient-to-br from-cyan-500 to-blue-500 text-white shadow-[0_8px_24px_rgba(34,197,235,0.45)] hover:shadow-[0_10px_28px_rgba(34,197,235,0.6)]"
+        className={`h-14 w-14 rounded-2xl bg-gradient-to-br from-primary-500 to-indigo-600 text-white shadow-[0_8px_24px_rgba(139,92,246,0.45)] hover:shadow-[0_12px_32px_rgba(139,92,246,0.6)] transition-all flex items-center justify-center group ${
+          open ? "rotate-90" : ""
+        }`}
         aria-label="Open design assistant"
-        title="Design assistant"
+        title="Design Assistant"
       >
-        💬
+        {open ? (
+          <span className="material-symbols-outlined text-2xl">close</span>
+        ) : (
+          <span className="material-symbols-outlined text-2xl">smart_toy</span>
+        )}
       </button>
     </div>
   );
