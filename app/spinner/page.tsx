@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { NeonLayout } from "../../components/layout/NeonLayout";
+import { DashboardLayout } from "../../components/layout/DashboardLayout";
 import { useSession } from "../../components/auth/useSession";
 
 export default function SpinnerPage() {
@@ -219,18 +219,18 @@ export default function SpinnerPage() {
 
   if (loading) {
     return (
-      <NeonLayout>
+      <DashboardLayout>
         <div className="max-w-4xl mx-auto space-y-6">
           <div className="text-center py-12">
             <div className="text-slate-400">Ачаалж байна...</div>
           </div>
         </div>
-      </NeonLayout>
+      </DashboardLayout>
     );
   }
 
   return (
-    <NeonLayout>
+    <DashboardLayout>
       <div className="max-w-4xl mx-auto space-y-6">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold bg-gradient-to-r from-violet-300 via-purple-300 to-pink-300 bg-clip-text text-transparent mb-2">
@@ -409,7 +409,7 @@ export default function SpinnerPage() {
           </p>
         </div>
       </div>
-    </NeonLayout>
+    </DashboardLayout>
   );
 }
 

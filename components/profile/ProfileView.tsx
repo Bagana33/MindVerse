@@ -320,7 +320,7 @@ export function ProfileView() {
                       {/* XP Badge - Next to name (Students only) */}
                       {userData && userData.role === "student" && (
                         <span className="inline-flex items-center gap-1 rounded-full border border-nc-accent/40 bg-nc-accent/10 px-2.5 py-1 text-xs font-semibold">
-                          ⚡ {userData.experience.toFixed(1)} XP
+                          ⚡ {Math.round(userData.experience)} XP
                         </span>
                       )}
                       {/* Grade Badge */}

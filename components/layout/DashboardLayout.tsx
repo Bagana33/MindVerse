@@ -3,11 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "../auth/useSession";
-import { ReactNode } from "react";
+import { ReactNode, useState } from "react";
 
 export function DashboardLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { session } = useSession();
+  const [funMenuOpen, setFunMenuOpen] = useState(false);
+  const [funMenuTimeout, setFunMenuTimeout] = useState<NodeJS.Timeout | null>(null);
 
   const sidebarItems = [
     { href: "/", label: "Home", icon: "dashboard" },
@@ -63,6 +65,89 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
                 </Link>
               );
             })}
+
+            {/* Fun Menu */}
+            <div 
+              className="relative"
+              onMouseEnter={() => {
+                if (funMenuTimeout) {
+                  clearTimeout(funMenuTimeout);
+                  setFunMenuTimeout(null);
+                }
+                setFunMenuOpen(true);
+              }}
+              onMouseLeave={() => {
+                const timeout = setTimeout(() => {
+                  setFunMenuOpen(false);
+                }, 200);
+                setFunMenuTimeout(timeout);
+              }}
+            >
+              <button
+                className={`sidebar-item flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all hover:bg-white/5 hover:text-white group w-full ${
+                  pathname === "/spinner" || pathname === "/game"
+                    ? "active bg-primary-500/10 text-primary-500 border-r-[3px] border-primary-500"
+                    : "text-slate-400"
+                }`}
+              >
+                <span className="material-symbols-outlined text-[22px]">casino</span>
+                <span>Fun</span>
+                <span className="ml-auto material-symbols-outlined text-[18px]">chevron_right</span>
+              </button>
+              {funMenuOpen && (
+                <div 
+                  className="absolute left-full top-0 ml-1 rounded-xl bg-dark-800 border border-white/10 shadow-xl overflow-hidden z-50 min-w-[140px]"
+                  onMouseEnter={() => {
+                    if (funMenuTimeout) {
+                      clearTimeout(funMenuTimeout);
+                      setFunMenuTimeout(null);
+                    }
+                    setFunMenuOpen(true);
+                  }}
+                  onMouseLeave={() => {
+                    const timeout = setTimeout(() => {
+                      setFunMenuOpen(false);
+                    }, 200);
+                    setFunMenuTimeout(timeout);
+                  }}
+                >
+                  <Link
+                    href="/spinner"
+                    onClick={() => {
+                      setFunMenuOpen(false);
+                      if (funMenuTimeout) {
+                        clearTimeout(funMenuTimeout);
+                        setFunMenuTimeout(null);
+                      }
+                    }}
+                    className={`block px-4 py-2.5 text-sm font-medium transition-all ${
+                      pathname === "/spinner"
+                        ? "bg-primary-500/20 text-primary-400"
+                        : "text-slate-300 hover:bg-white/5 hover:text-white"
+                    }`}
+                  >
+                    🎰 Spinner
+                  </Link>
+                  <Link
+                    href="/game"
+                    onClick={() => {
+                      setFunMenuOpen(false);
+                      if (funMenuTimeout) {
+                        clearTimeout(funMenuTimeout);
+                        setFunMenuTimeout(null);
+                      }
+                    }}
+                    className={`block px-4 py-2.5 text-sm font-medium transition-all ${
+                      pathname === "/game"
+                        ? "bg-primary-500/20 text-primary-400"
+                        : "text-slate-300 hover:bg-white/5 hover:text-white"
+                    }`}
+                  >
+                    🖼️ Vote
+                  </Link>
+                </div>
+              )}
+            </div>
 
             {/* Communities */}
             <div className="mt-8 px-4">

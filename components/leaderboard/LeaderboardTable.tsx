@@ -41,14 +41,14 @@ export function LeaderboardSidebar({ compact = false }: { compact?: boolean }) {
 
   if (loading) {
     return (
-      <div className="glass-panel rounded-3xl border-slate-700/50 px-5 py-5 shadow-[0_12px_40px_rgba(139,92,246,0.2)]">
+      <div className="bg-dark-900 border border-white/5 rounded-3xl px-5 py-5">
         <h2 className="text-base font-bold bg-gradient-to-r from-violet-300 to-purple-300 bg-clip-text text-transparent mb-4">
           {compact ? "🏆 Top Students" : "🏆 Leaderboard"}
         </h2>
         <div className="space-y-2.5">
           {[...Array(compact ? 5 : 10)].map((_, i) => (
-            <div key={i} className="glass-panel border-slate-800/50 px-3 py-3 rounded-xl animate-pulse">
-              <div className="h-8 bg-slate-800/50 rounded-lg"></div>
+            <div key={i} className="bg-dark-800 border border-white/5 px-3 py-3 rounded-xl animate-pulse">
+              <div className="h-8 bg-dark-700 rounded-lg"></div>
             </div>
           ))}
         </div>
@@ -58,7 +58,7 @@ export function LeaderboardSidebar({ compact = false }: { compact?: boolean }) {
 
   if (users.length === 0) {
     return (
-      <div className="glass-panel rounded-3xl border-slate-700/50 px-5 py-5 shadow-[0_12px_40px_rgba(139,92,246,0.2)]">
+      <div className="bg-dark-900 border border-white/5 rounded-3xl px-5 py-5">
         <h2 className="text-base font-bold bg-gradient-to-r from-violet-300 to-purple-300 bg-clip-text text-transparent mb-4">
           {compact ? "🏆 Top Students" : "🏆 Leaderboard"}
         </h2>
@@ -71,7 +71,7 @@ export function LeaderboardSidebar({ compact = false }: { compact?: boolean }) {
   }
 
   return (
-    <div className="glass-panel rounded-3xl border-slate-700/50 px-5 py-5 shadow-[0_12px_40px_rgba(139,92,246,0.2)]">
+    <div className="bg-dark-900 border border-white/5 rounded-3xl px-5 py-5">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-base font-bold bg-gradient-to-r from-violet-300 to-purple-300 bg-clip-text text-transparent">
           {compact ? "🏆 Top Students" : "🏆 Leaderboard"}
@@ -119,7 +119,7 @@ export function LeaderboardSidebar({ compact = false }: { compact?: boolean }) {
               className={`flex items-center justify-between gap-3 px-3 py-3 rounded-xl transition-all duration-300 ${
                 frame
                   ? `${frame.container}`
-                  : `glass-panel border-slate-800/50 hover:border-slate-700/70 ${isMe ? 'border-violet-500/50 shadow-[0_0_18px_rgba(139,92,246,0.3)]' : ''}`
+                  : `bg-dark-800 border border-white/5 hover:border-white/10 ${isMe ? 'border-primary-500/50 shadow-[0_0_18px_rgba(139,92,246,0.3)]' : ''}`
               }`}
             >
               {frame && (
@@ -168,7 +168,7 @@ export function LeaderboardSidebar({ compact = false }: { compact?: boolean }) {
                   ? frame.xp
                   : "text-slate-400"
               }`}>
-                {u.experience.toFixed(1)}
+                {Math.round(u.experience)}
                 <span className="text-[10px] ml-0.5">XP</span>
               </div>
             </li>
@@ -244,7 +244,7 @@ export function LeaderboardFull() {
 
   if (loading) {
     return (
-      <section className="bg-nc-panel/90 border border-nc-border rounded-2xl px-4 py-4 shadow-nc-soft">
+      <section className="bg-dark-900 border border-white/5 rounded-2xl px-4 py-4">
         <h2 className="text-sm font-semibold mb-2">Top Students</h2>
         <p className="text-xs text-nc-muted">Loading...</p>
       </section>
@@ -253,7 +253,7 @@ export function LeaderboardFull() {
 
   if (users.length === 0) {
     return (
-      <section className="bg-nc-panel/90 border border-nc-border rounded-2xl px-4 py-4 shadow-nc-soft">
+      <section className="bg-dark-900 border border-white/5 rounded-2xl px-4 py-4">
         <h2 className="text-sm font-semibold mb-2">Top Students</h2>
         <p className="text-xs text-nc-muted">No students yet. Start creating posts and getting reactions!</p>
       </section>
@@ -284,7 +284,7 @@ export function LeaderboardFull() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Нэрээр хайх..."
-            className="w-full pl-10 pr-4 py-2 rounded-lg bg-slate-900/60 border border-slate-700 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+            className="w-full pl-10 pr-4 py-2 rounded-lg bg-dark-800 border border-white/5 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500/50"
           />
           {searchQuery && (
             <button
@@ -313,7 +313,7 @@ export function LeaderboardFull() {
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                 rankFilter === rank.id
                   ? "bg-gradient-to-r from-violet-500 to-purple-500 text-white shadow-[0_4px_12px_rgba(139,92,246,0.4)]"
-                  : "bg-slate-900/60 border border-slate-700 text-slate-300 hover:border-violet-500/40 hover:text-slate-100"
+                  : "bg-dark-800 border border-white/5 text-slate-300 hover:border-primary-500/40 hover:text-slate-100"
               }`}
             >
               {rank.label}
@@ -337,7 +337,7 @@ export function LeaderboardFull() {
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                   gradeFilter === grade.id
                     ? "bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-[0_4px_12px_rgba(34,197,94,0.4)]"
-                    : "bg-slate-900/60 border border-slate-700 text-slate-300 hover:border-green-500/40 hover:text-slate-100"
+                    : "bg-dark-800 border border-white/5 text-slate-300 hover:border-green-500/40 hover:text-slate-100"
                 }`}
               >
                 {grade.label}
@@ -402,7 +402,7 @@ export function LeaderboardFull() {
               className={`grid grid-cols-[40px,1fr,110px,120px] gap-3 items-center px-3 py-3 rounded-xl transition-all ${
                 frame
                   ? `${frame.container}`
-                  : `border bg-white/5 hover:bg-nc-accent/5 hover:translate-x-0.5 ${isMe ? 'border-violet-500/50 shadow-[0_0_18px_rgba(139,92,246,0.3)]' : 'border-slate-800/80'}`
+                  : `border bg-dark-800 hover:bg-dark-700 hover:translate-x-0.5 ${isMe ? 'border-primary-500/50 shadow-[0_0_18px_rgba(139,92,246,0.3)]' : 'border-white/5'}`
               }`}
             >
               {frame && (
@@ -461,14 +461,14 @@ export function LeaderboardFull() {
                 </div>
               </div>
               <div className="text-[11px]">
-                <span className="inline-flex items-center gap-1 rounded-full border border-slate-700 bg-slate-900/60 px-2 py-1">
+                <span className="inline-flex items-center gap-1 rounded-full border border-white/5 bg-dark-800 px-2 py-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-violet-400" />
                   {rankTitle}
                 </span>
               </div>
                 <div className="text-[11px] flex flex-col items-end gap-1">
                   <span className={`font-semibold ${frame ? frame.xp : 'bg-gradient-to-r from-nc-accentC to-nc-accent bg-clip-text text-transparent'}`}>
-                    {u.experience.toFixed(1)} XP
+                    {Math.round(u.experience)} XP
                   </span>
                   <span className="text-[10px] text-nc-muted">
                     {u.experience >= 1000 ? "🏵️ 🎖️ ✨" : u.experience >= 500 ? "🎖️ ✨" : u.experience >= 100 ? "✨" : "🌱"}

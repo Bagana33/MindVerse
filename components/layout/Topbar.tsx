@@ -294,7 +294,7 @@ export function Topbar() {
                   </span>
                   {session.role === "student" && typeof xp === 'number' && (
                     <span className="ml-1 inline-flex items-center gap-1 rounded-full border border-violet-500/40 bg-violet-500/10 px-2 py-0.5 text-[10px] text-violet-200 font-semibold">
-                      ⚡ {xp.toFixed(1)} XP
+                      ⚡ {Math.round(xp)} XP
                     </span>
                   )}
                 </div>

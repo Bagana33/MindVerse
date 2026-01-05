@@ -1,14 +1,12 @@
-import { NeonLayout } from "../../components/layout/NeonLayout";
+"use client";
+
+import { DashboardLayout } from "../../components/layout/DashboardLayout";
 import { ProfileView } from "../../components/profile/ProfileView";
-import { LeaderboardSidebar } from "../../components/leaderboard/LeaderboardTable";
 
 export default function ProfilePage() {
   return (
-    <NeonLayout>
+    <DashboardLayout>
       <ProfileView />
-      <aside>
-        <LeaderboardSidebar compact />
-      </aside>
-    </NeonLayout>
+    </DashboardLayout>
   );
 }

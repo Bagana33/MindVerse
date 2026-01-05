@@ -19,13 +19,15 @@ export type UserPost = {
 
 // Helper to convert DB format to UserPost
 function dbToPost(dbRow: any, reactions: any[], authorName?: string): UserPost {
+  // Calculate points based on reactions count (each reaction = 1 point)
+  const reactionCount = reactions?.length || 0;
   return {
     id: dbRow.id,
     title: dbRow.title || dbRow.text, // Fallback to text for backward compatibility
     description: dbRow.description || dbRow.text,
     author: authorName || dbRow.author_email, // Use provided name or fallback to email
     authorEmail: dbRow.author_email,
-    points: 100, // Default points
+    points: reactionCount, // Points = number of reactions
     createdAt: dbRow.created_at,
     imageUrl: dbRow.image_data,
     reactions: reactions.map(r => ({ userEmail: r.user_email, type: r.type.toUpperCase() })),

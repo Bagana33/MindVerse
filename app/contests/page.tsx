@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useSession } from "../../components/auth/useSession";
-import { NeonLayout } from "../../components/layout/NeonLayout";
+import { DashboardLayout } from "../../components/layout/DashboardLayout";
 import Link from "next/link";
 
 type Contest = {
@@ -165,11 +165,11 @@ export default function ContestsPage() {
 
   if (loading) {
     return (
-      <NeonLayout>
+      <DashboardLayout>
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="text-slate-400">Ачаалж байна...</div>
         </div>
-      </NeonLayout>
+      </DashboardLayout>
     );
   }
 
@@ -178,7 +178,7 @@ export default function ContestsPage() {
   const endedContests = contests.filter(c => c.status === "ended");
 
   return (
-    <NeonLayout>
+    <DashboardLayout>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold bg-gradient-to-r from-violet-300 via-purple-300 to-pink-300 bg-clip-text text-transparent">
@@ -477,6 +477,6 @@ export default function ContestsPage() {
           </div>
         )}
       </div>
-    </NeonLayout>
+    </DashboardLayout>
   );
 }

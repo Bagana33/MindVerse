@@ -52,8 +52,15 @@ export function HomeDashboard() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedGrade, setSelectedGrade] = useState("all");
   const [activeTab, setActiveTab] = useState<"feed" | "following" | "classroom">("feed");
-  const [weeklyXp, setWeeklyXp] = useState({ current: 1240, goal: 2000 });
   const [userXp, setUserXp] = useState<number | null>(null);
+  const [xpMap, setXpMap] = useState<Record<string, number>>({});
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [imageUrl, setImageUrl] = useState("");
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   // Fetch user XP
   useEffect(() => {
@@ -69,6 +76,11 @@ export function HomeDashboard() {
     }
     fetchUserXp();
   }, [session]);
+
+  // Calculate weekly XP goal (user's current XP as current, goal is current + 100)
+  const weeklyXp = userXp !== null 
+    ? { current: userXp, goal: Math.max(userXp + 100, 100) }
+    : { current: 0, goal: 100 };
 
   // Fetch posts
   useEffect(() => {
@@ -89,13 +101,23 @@ export function HomeDashboard() {
     fetchPosts();
   }, [selectedGrade]);
 
-  // Fetch top students
+  // Fetch top students and create XP map
   useEffect(() => {
     async function fetchTopStudents() {
       try {
         const res = await cachedFetch("/api/leaderboard");
         const json = await res.json();
-        setTopStudents((json.leaderboard || []).slice(0, 5));
+        const leaderboard = json.leaderboard || [];
+        setTopStudents(leaderboard.slice(0, 5));
+        
+        // Create XP map for post authors
+        const map: Record<string, number> = {};
+        leaderboard.forEach((u: LeaderboardUser) => {
+          if (u.email) {
+            map[u.email] = u.experience ?? 0;
+          }
+        });
+        setXpMap(map);
       } catch (err) {
         console.error("Failed to fetch leaderboard:", err);
       }
@@ -117,6 +139,113 @@ export function HomeDashboard() {
     love: post.reactions.filter((r) => r.type === "LOVE").length,
     cool: post.reactions.filter((r) => r.type === "COOL").length,
   });
+
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setCreateError(null);
+
+    if (!file.type.startsWith("image/")) {
+      setCreateError("Зураг файл сонгоно уу");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setCreateError("Зургийн хэмжээ 5MB-аас бага байх ёстой");
+      return;
+    }
+
+    try {
+      const localUrl = URL.createObjectURL(file);
+      setImagePreview(localUrl);
+    } catch {}
+
+    try {
+      const signRes = await fetch('/api/uploads/sign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folder: 'neoncanvas/posts' })
+      });
+      if (!signRes.ok) throw new Error('sign failed');
+      const signJson = await signRes.json();
+      if (!signJson?.ok) throw new Error('sign error');
+
+      const { cloudName, apiKey, folder, timestamp, signature } = signJson;
+      const form = new FormData();
+      form.append('file', file);
+      form.append('api_key', apiKey);
+      form.append('timestamp', String(timestamp));
+      form.append('signature', signature);
+      form.append('folder', folder);
+
+      const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/image/upload`, {
+        method: 'POST',
+        body: form
+      });
+      if (!uploadRes.ok) throw new Error('upload failed');
+      const uploadJson = await uploadRes.json();
+      if (!uploadJson?.secure_url) throw new Error('no secure_url');
+
+      setImageUrl(uploadJson.secure_url as string);
+      setImagePreview(uploadJson.secure_url as string);
+    } catch (err) {
+      try {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const result = event.target?.result as string;
+          setImagePreview(result);
+          setImageUrl(result);
+        };
+        reader.readAsDataURL(file);
+      } catch (e) {
+        setCreateError("Зураг байршуулж чадсангүй");
+      }
+    }
+  }
+
+  async function handleCreatePost(e: React.FormEvent) {
+    e.preventDefault();
+    setCreateError(null);
+
+    if (title.trim().length < 3) {
+      setCreateError("Гарчиг хамгийн багадаа 3 тэмдэгт байх ёстой");
+      return;
+    }
+
+    if (description.trim().length < 10) {
+      setCreateError("Тайлбар хамгийн багадаа 10 тэмдэгт байх ёстой");
+      return;
+    }
+
+    setCreating(true);
+
+    try {
+      const res = await fetch("/api/posts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: title.trim(), description: description.trim(), imageUrl, visibility: 'PUBLIC' }),
+      });
+
+      if (!res.ok) {
+        const json = await res.json();
+        setCreateError(json.error || "Алдаа гарлаа");
+        return;
+      }
+
+      const json = await res.json();
+      setPosts([json.post, ...posts]);
+      setTitle("");
+      setDescription("");
+      setImageUrl("");
+      setImagePreview(null);
+      setShowCreateForm(false);
+    } catch (err: any) {
+      setCreateError(err.message || "Сүлжээний алдаа гарлаа");
+    } finally {
+      setCreating(false);
+    }
+  }
 
   return (
     <>
@@ -161,7 +290,7 @@ export function HomeDashboard() {
       </header>
 
       {/* Hero Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-10">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-10 items-start">
         <div className="lg:col-span-8 relative rounded-3xl overflow-hidden group">
           <div className="absolute inset-0 bg-gradient-to-r from-indigo-950 to-violet-950"></div>
           <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20"></div>
@@ -200,45 +329,161 @@ export function HomeDashboard() {
         </div>
 
         {/* Weekly Goal & Share Progress */}
-        <div className="lg:col-span-4 flex flex-col gap-6">
-          <div className="flex-1 glass-card rounded-3xl p-6 relative overflow-hidden group hover:border-primary-500/30 transition-all">
-            <div className="flex justify-between items-start mb-2">
-              <div>
-                <h3 className="font-bold text-white text-lg">Weekly Goal</h3>
-                <p className="text-xs text-slate-400">3 days streak</p>
+        <div className="lg:col-span-4">
+          <div className="sticky top-8 flex flex-col gap-6 w-full">
+            <div className="glass-card rounded-3xl p-6 relative overflow-hidden group hover:border-primary-500/30 transition-all">
+              <div className="flex justify-between items-start mb-2">
+                <div>
+                  <h3 className="font-bold text-white text-lg">Weekly Goal</h3>
+                  <p className="text-xs text-slate-400">3 days streak</p>
+                </div>
+                <div className="w-10 h-10 rounded-full bg-gradient-to-b from-primary-500 to-indigo-600 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-white text-xl">local_fire_department</span>
+                </div>
               </div>
-              <div className="w-10 h-10 rounded-full bg-gradient-to-b from-primary-500 to-indigo-600 flex items-center justify-center">
-                <span className="material-symbols-outlined text-white text-xl">local_fire_department</span>
+              <div className="mt-4">
+                <div className="flex justify-between text-xs font-bold text-slate-300 mb-1">
+                  <span>Your XP</span>
+                  <span>
+                    {userXp !== null ? Math.round(userXp).toLocaleString() : "0"} XP
+                  </span>
+                </div>
+                {userXp !== null && (
+                  <div className="w-full bg-dark-700 rounded-full h-2 overflow-hidden">
+                    <div
+                      className="bg-gradient-to-r from-primary-500 to-pink-500 h-full rounded-full transition-all"
+                      style={{ width: `${Math.min((userXp / weeklyXp.goal) * 100, 100)}%` }}
+                    ></div>
+                  </div>
+                )}
               </div>
             </div>
-            <div className="mt-4">
-              <div className="flex justify-between text-xs font-bold text-slate-300 mb-1">
-                <span>XP Gained</span>
-                <span>
-                  {weeklyXp.current.toLocaleString()} / {weeklyXp.goal.toLocaleString()}
-                </span>
-              </div>
-              <div className="w-full bg-dark-700 rounded-full h-2 overflow-hidden">
-                <div
-                  className="bg-gradient-to-r from-primary-500 to-pink-500 h-full rounded-full transition-all"
-                  style={{ width: `${(weeklyXp.current / weeklyXp.goal) * 100}%` }}
-                ></div>
-              </div>
-            </div>
-          </div>
 
-          <div
-            onClick={() => router.push("/lessons")}
-            className="flex-1 glass-card rounded-3xl p-6 flex flex-col justify-center items-center text-center hover:bg-dark-800 transition-all cursor-pointer border-dashed border-2 border-dark-700 hover:border-primary-500/50"
-          >
-            <div className="w-12 h-12 rounded-full bg-dark-700 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-              <span className="material-symbols-outlined text-primary-400 text-2xl">add_photo_alternate</span>
+            <div
+              onClick={() => setShowCreateForm(true)}
+              className="glass-card rounded-3xl p-6 flex flex-col justify-center items-center text-center hover:bg-dark-800 transition-all cursor-pointer border-dashed border-2 border-dark-700 hover:border-primary-500/50"
+            >
+              <div className="w-12 h-12 rounded-full bg-dark-700 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                <span className="material-symbols-outlined text-primary-400 text-2xl">add_photo_alternate</span>
+              </div>
+              <h3 className="font-bold text-white text-sm">Share Progress Drop</h3>
+              <p className="text-xs text-slate-500 mt-1">Drag & drop or click to upload</p>
             </div>
-            <h3 className="font-bold text-white text-sm">Share Progress Drop</h3>
-            <p className="text-xs text-slate-500 mt-1">Drag & drop or click to upload</p>
           </div>
         </div>
       </div>
+
+      {/* Create Post Modal */}
+      {showCreateForm && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-dark-900 border border-white/5 rounded-3xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-2xl font-bold text-white">Create Post</h2>
+              <button
+                onClick={() => {
+                  setShowCreateForm(false);
+                  setTitle("");
+                  setDescription("");
+                  setImageUrl("");
+                  setImagePreview(null);
+                  setCreateError(null);
+                }}
+                className="text-slate-400 hover:text-white transition-colors"
+              >
+                <span className="material-symbols-outlined text-2xl">close</span>
+              </button>
+            </div>
+
+            <form onSubmit={handleCreatePost} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Title</label>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="w-full px-4 py-2 rounded-lg bg-dark-800 border border-white/5 text-white focus:outline-none focus:ring-2 focus:ring-primary-500/50"
+                  placeholder="Post title..."
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Description</label>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  rows={4}
+                  className="w-full px-4 py-2 rounded-lg bg-dark-800 border border-white/5 text-white focus:outline-none focus:ring-2 focus:ring-primary-500/50 resize-none"
+                  placeholder="Describe your work..."
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Image</label>
+                {imagePreview ? (
+                  <div className="relative">
+                    <img src={imagePreview} alt="Preview" className="w-full rounded-lg max-h-64 object-cover" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setImagePreview(null);
+                        setImageUrl("");
+                      }}
+                      className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-2 hover:bg-red-600 transition-colors"
+                    >
+                      <span className="material-symbols-outlined text-lg">close</span>
+                    </button>
+                  </div>
+                ) : (
+                  <label className="cursor-pointer flex items-center justify-center w-full h-32 border-2 border-dashed border-white/10 rounded-lg hover:border-primary-500/50 transition-colors">
+                    <div className="text-center">
+                      <span className="material-symbols-outlined text-4xl text-slate-400 mb-2">add_photo_alternate</span>
+                      <p className="text-sm text-slate-400">Click to upload image</p>
+                    </div>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                      className="hidden"
+                    />
+                  </label>
+                )}
+              </div>
+
+              {createError && (
+                <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+                  <p className="text-sm text-red-400">{createError}</p>
+                </div>
+              )}
+
+              <div className="flex gap-3 justify-end">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCreateForm(false);
+                    setTitle("");
+                    setDescription("");
+                    setImageUrl("");
+                    setImagePreview(null);
+                    setCreateError(null);
+                  }}
+                  className="px-6 py-2 rounded-lg bg-dark-800 border border-white/5 text-slate-300 hover:bg-dark-700 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creating}
+                  className="px-6 py-2 rounded-lg bg-gradient-to-r from-primary-500 to-purple-500 text-white font-medium hover:shadow-lg transition-all disabled:opacity-60"
+                >
+                  {creating ? "Publishing..." : "Publish"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
@@ -304,11 +549,11 @@ export function HomeDashboard() {
               return (
                 <article
                   key={post.id}
-                  className="p-6 rounded-[32px] bg-[#0F111A] border border-white/[0.08] shadow-sm hover:border-primary-500/30 transition-all duration-300"
+                  className="p-6 rounded-[32px] bg-dark-900 border border-white/5 shadow-sm hover:border-primary-500/30 transition-all duration-300"
                 >
                   <div className="flex items-center justify-between mb-5">
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full bg-slate-800 flex items-center justify-center text-slate-300 font-bold text-lg border border-white/10 relative overflow-hidden">
+                      <div className="w-12 h-12 rounded-full bg-dark-800 flex items-center justify-center text-slate-300 font-bold text-lg border border-white/10 relative overflow-hidden">
                         {post.authorEmail && (
                           <img
                             alt="User Avatar"
@@ -322,8 +567,8 @@ export function HomeDashboard() {
                         <p className="text-xs text-slate-500 font-medium mt-0.5">{formatRelativeTime(post.createdAt)}</p>
                       </div>
                     </div>
-                    <div className="px-3 py-1 rounded-full border border-teal-500/20 bg-teal-500/10 text-teal-400 text-[11px] font-bold tracking-wide">
-                      XP {post.points}
+                    <div className="px-3 py-1 rounded-full border border-primary-500/20 bg-primary-500/10 text-primary-400 text-[11px] font-bold tracking-wide">
+                      XP {xpMap[post.authorEmail] !== undefined ? Math.round(xpMap[post.authorEmail]) : 0}
                     </div>
                   </div>
 
@@ -346,35 +591,35 @@ export function HomeDashboard() {
                   )}
 
                   <div className="flex items-center gap-3 flex-wrap">
-                    <button className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/[0.03] border border-white/[0.05] hover:bg-white/[0.08] hover:border-primary-500/30 transition-all group">
+                    <button className="flex items-center gap-2 px-4 py-2 rounded-full bg-dark-800/50 border border-white/5 hover:bg-dark-700 hover:border-primary-500/30 transition-all group">
                       <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
                       <span className="text-xs font-semibold text-slate-300 group-hover:text-white">0 comments</span>
                     </button>
-                    <button className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/[0.03] border border-white/[0.05] hover:bg-white/[0.08] hover:border-primary-500/30 transition-all group">
+                    <button className="flex items-center gap-2 px-4 py-2 rounded-full bg-dark-800/50 border border-white/5 hover:bg-dark-700 hover:border-primary-500/30 transition-all group">
                       <span className="material-symbols-outlined text-[16px] text-blue-400">ios_share</span>
                       <span className="text-xs font-semibold text-slate-300 group-hover:text-white">Share</span>
                     </button>
                     <div className="flex items-center gap-2 ml-auto sm:ml-0">
-                      <button className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-white/[0.03] border border-white/[0.05] hover:bg-white/[0.08] hover:border-orange-500/30 transition-all group">
+                      <button className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-dark-800/50 border border-white/5 hover:bg-dark-700 hover:border-orange-500/30 transition-all group">
                         <span className="text-sm">🔥</span>
                         <span className="text-xs font-bold text-slate-400 group-hover:text-orange-400">{reactions.fire}</span>
                       </button>
-                      <button className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-white/[0.03] border border-white/[0.05] hover:bg-white/[0.08] hover:border-yellow-500/30 transition-all group">
+                      <button className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-dark-800/50 border border-white/5 hover:bg-dark-700 hover:border-yellow-500/30 transition-all group">
                         <span className="text-sm">😯</span>
                         <span className="text-xs font-bold text-slate-400 group-hover:text-yellow-400">{reactions.wow}</span>
                       </button>
-                      <button className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-white/[0.03] border border-white/[0.05] hover:bg-white/[0.08] hover:border-pink-500/30 transition-all group">
+                      <button className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-dark-800/50 border border-white/5 hover:bg-dark-700 hover:border-pink-500/30 transition-all group">
                         <span className="text-sm">💖</span>
                         <span className="text-xs font-bold text-slate-400 group-hover:text-pink-400">{reactions.love}</span>
                       </button>
-                      <button className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-white/[0.03] border border-white/[0.05] hover:bg-white/[0.08] hover:border-emerald-500/30 transition-all group">
+                      <button className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-dark-800/50 border border-white/5 hover:bg-dark-700 hover:border-emerald-500/30 transition-all group">
                         <span className="text-sm">😎</span>
                         <span className="text-xs font-bold text-slate-400 group-hover:text-emerald-400">{reactions.cool}</span>
                       </button>
                     </div>
                   </div>
 
-                  <div className="mt-5 pt-4 border-t border-white/[0.05]">
+                  <div className="mt-5 pt-4 border-t border-white/5">
                     <button className="flex items-center gap-3 w-full text-left group">
                       <span className="material-symbols-outlined text-slate-500 group-hover:text-slate-300 text-[20px] transition-colors">
                         chat_bubble_outline
@@ -397,10 +642,11 @@ export function HomeDashboard() {
 
         {/* Sidebar */}
         <div className="xl:col-span-4 space-y-6">
-          <LeaderboardSidebar compact />
-          
-          {/* Upcoming Deadlines */}
-          <div className="bg-dark-900 border border-white/5 rounded-3xl p-6">
+          <div className="sticky top-4 space-y-6">
+            <LeaderboardSidebar compact />
+            
+            {/* Upcoming Deadlines */}
+            <div className="bg-dark-900 border border-white/5 rounded-3xl p-6">
             <h3 className="font-bold text-white mb-4 text-sm">Upcoming Deadlines</h3>
             <div className="space-y-4">
               <div className="flex gap-3">
@@ -424,6 +670,7 @@ export function HomeDashboard() {
                 </div>
               </div>
             </div>
+          </div>
           </div>
         </div>
       </div>

@@ -45,6 +45,16 @@ export async function POST(req: Request) {
     await addExperience(session.email, 0.3);
   }
 
+  // Award 1 XP to post author when reaction is added (not when removed or updated)
+  if (result.added && post.authorEmail && post.authorEmail !== session.email) {
+    try {
+      await addExperience(post.authorEmail, 1);
+    } catch (e) {
+      console.error('Failed to award XP to post author:', e);
+      // Continue even if XP award fails
+    }
+  }
+
   // If reaction newly added (not removed/updated), send notification to post author
   if (result.added && post.authorEmail !== session.email) {
     try {

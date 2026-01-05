@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { NeonLayout } from "../../components/layout/NeonLayout";
+import { DashboardLayout } from "../../components/layout/DashboardLayout";
 import { useSession } from "../../components/auth/useSession";
 
 type GameImage = {
@@ -274,14 +274,14 @@ export default function GamePage() {
 
   if (loading) {
     return (
-      <NeonLayout>
+      <DashboardLayout>
         <div className="min-h-[300px] flex items-center justify-center text-slate-400">Ачаалж байна...</div>
-      </NeonLayout>
+      </DashboardLayout>
     );
   }
 
   return (
-    <NeonLayout>
+    <DashboardLayout>
       <div className="max-w-5xl mx-auto space-y-6">
         <div className="text-center space-y-2">
           <h1 className="text-3xl font-bold bg-gradient-to-r from-violet-300 via-purple-300 to-pink-300 bg-clip-text text-transparent">
@@ -487,6 +487,6 @@ export default function GamePage() {
           </div>
         )}
       </div>
-    </NeonLayout>
+    </DashboardLayout>
   );
 }

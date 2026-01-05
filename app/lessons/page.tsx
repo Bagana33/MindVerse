@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useSession } from "../../components/auth/useSession";
-import { NeonLayout } from "../../components/layout/NeonLayout";
+import { DashboardLayout } from "../../components/layout/DashboardLayout";
 import Link from "next/link";
 
 type Lesson = {
@@ -309,7 +309,7 @@ newFiles.push({
   }
 
   return (
-    <NeonLayout>
+    <DashboardLayout>
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Хичээлүүд</h1>
@@ -585,6 +585,6 @@ newFiles.push({
           </div>
         )}
       </div>
-    </NeonLayout>
+    </DashboardLayout>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { NeonLayout } from "../../../components/layout/NeonLayout";
+import { DashboardLayout } from "../../../components/layout/DashboardLayout";
 import { useSession } from "../../../components/auth/useSession";
 import Link from "next/link";
 
@@ -321,11 +321,11 @@ export default function LessonDetailPage() {
 
   if (loading) {
     return (
-      <NeonLayout>
+      <DashboardLayout>
         <div className="text-center py-8">
           <p className="text-slate-400">Loading...</p>
         </div>
-      </NeonLayout>
+      </DashboardLayout>
     );
   }
 
@@ -344,7 +344,7 @@ export default function LessonDetailPage() {
   if (showResults) {
     const percentage = Math.round((score / lesson.questions.length) * 100);
     return (
-      <NeonLayout>
+      <DashboardLayout>
         <div className="max-w-3xl mx-auto space-y-6">
           <Link href="/lessons" className="text-sm text-violet-400 hover:text-violet-300">
             ← Буцах
@@ -407,12 +407,12 @@ export default function LessonDetailPage() {
             })}
           </div>
         </div>
-      </NeonLayout>
+      </DashboardLayout>
     );
   }
 
   return (
-    <NeonLayout>
+    <DashboardLayout>
       <div className="max-w-3xl mx-auto space-y-6">
         <Link href="/lessons" className="text-sm text-violet-400 hover:text-violet-300">
           ← Буцах
@@ -907,6 +907,6 @@ export default function LessonDetailPage() {
           </div>
         )}
       </div>
-    </NeonLayout>
+    </DashboardLayout>
   );
 }

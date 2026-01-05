@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { NeonLayout } from "../../../components/layout/NeonLayout";
+import { DashboardLayout } from "../../../components/layout/DashboardLayout";
 import { useSession } from "../../../components/auth/useSession";
 import Link from "next/link";
 
@@ -177,11 +177,11 @@ export default function ContestDetailPage() {
 
   if (loading || !contest) {
     return (
-      <NeonLayout>
+      <DashboardLayout>
         <div className="flex items-center justify-center min-h-[400px]">
           <div className="text-slate-400">Ачаалж байна...</div>
         </div>
-      </NeonLayout>
+      </DashboardLayout>
     );
   }
 
@@ -190,7 +190,7 @@ export default function ContestDetailPage() {
   const sortedSubmissions = [...contest.submissions].sort((a, b) => b.votes.length - a.votes.length);
 
   return (
-    <NeonLayout>
+    <DashboardLayout>
       <div className="space-y-6">
         <Link href="/contests" className="text-sm text-violet-400 hover:text-violet-300">
           ← Буцах
@@ -408,6 +408,6 @@ export default function ContestDetailPage() {
           )}
         </div>
       </div>
-    </NeonLayout>
+    </DashboardLayout>
   );
 }
