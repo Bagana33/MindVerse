@@ -81,17 +81,9 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
           {/* Profile Footer */}
           <div className="mt-auto p-4 border-t border-white/5">
             <button className="w-full flex items-center gap-3 p-2 rounded-xl hover:bg-white/5 transition-colors text-left">
-              {session?.avatarUrl ? (
-                <img
-                  alt="Profile"
-                  className="w-10 h-10 rounded-full border border-white/10"
-                  src={session.avatarUrl}
-                />
-              ) : (
-                <div className="w-10 h-10 rounded-full border border-white/10 bg-gradient-to-br from-primary-500 to-indigo-600 flex items-center justify-center text-white font-bold">
-                  {(session?.nickname || session?.name || session?.email || "U")[0]?.toUpperCase()}
-                </div>
-              )}
+              <div className="w-10 h-10 rounded-full border border-white/10 bg-gradient-to-br from-primary-500 to-indigo-600 flex items-center justify-center text-white font-bold">
+                {(session?.nickname || session?.name || session?.email || "U")[0]?.toUpperCase()}
+              </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <h4 className="text-sm font-bold text-white truncate">
