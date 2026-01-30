@@ -3,11 +3,13 @@ import { NextResponse } from "next/server";
 // Vercel Cron Job - 24 цаг тутамд ажиллана
 export async function GET(req: Request) {
   try {
-    // Authorization check - Vercel Cron эсвэл local development
-    const authHeader = req.headers.get("authorization");
+    // Authorization check - Vercel Cron эсвэл local development.
+    // In Vercel: set CRON_SECRET with no leading/trailing spaces (else "whitespace in HTTP header" error).
+    const secret = (process.env.CRON_SECRET || "").trim();
+    const authHeader = (req.headers.get("authorization") || "").trim();
     if (
       process.env.NODE_ENV === "production" &&
-      authHeader !== `Bearer ${process.env.CRON_SECRET}`
+      (!secret || authHeader !== `Bearer ${secret}`)
     ) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

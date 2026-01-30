@@ -166,11 +166,12 @@ export async function POST(req: Request) {
 
   if (wantsImage && openrouter) {
     try {
+      // OpenRouter supports modalities ["image","text"]; OpenAI SDK types only allow ["text","audio"]
       const result = await openrouter.chat.completions.create({
         model: "bytedance-seed/seedream-4.5",
         messages: [{ role: "user", content: message }],
         modalities: ["image", "text"],
-      });
+      } as any);
 
       const msg: any = result.choices?.[0]?.message;
       const images = extractImages(msg);
