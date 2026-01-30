@@ -1,17 +1,33 @@
 import "../styles/globals.css";
 import type { ReactNode } from "react";
+import type { Metadata } from "next";
 
-export const metadata = {
+export const metadata: Metadata = {
   title: "Mind Verse",
   description: "Graphic design lab · Creative challenges · Gamified learning",
+  other: {
+    "google": "notranslate",
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="mn" translate="no" suppressHydrationWarning className="dark">
-      <head>
+      <head suppressHydrationWarning>
         {/* Prevent browser/translate extensions from altering HTML before hydration */}
         <meta name="google" content="notranslate" />
+        <meta name="format-detection" content="telephone=no" />
+        <meta httpEquiv="Content-Language" content="mn" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              // Prevent translate extensions from modifying DOM
+              if (typeof window !== 'undefined') {
+                Object.defineProperty(window, 'translate', { value: false, writable: false });
+              }
+            `,
+          }}
+        />
         <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
         <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
       </head>

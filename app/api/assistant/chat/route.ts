@@ -1,20 +1,52 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
-import { OpenRouter } from "@openrouter/sdk";
 import { getSessionFromCookies } from "../../../../lib/session";
 
-// Use Groq (free, fast, OpenAI-compatible API)
-const client = new OpenAI({
-  apiKey: process.env.GROQ_API_KEY || process.env.OPENAI_API_KEY || "",
-  baseURL: process.env.GROQ_API_KEY ? "https://api.groq.com/openai/v1" : undefined,
-});
+export const runtime = "nodejs";
 
-// OpenRouter client for image generation
-const openrouter = process.env.OPENROUTER_API_KEY
-  ? new OpenRouter({
-      apiKey: process.env.OPENROUTER_API_KEY.trim().replace(/^<|>$/g, ""), // Remove angle brackets if present
-    })
-  : null;
+type ChatClient = { client: OpenAI; model: string; provider: "openrouter" };
+
+const systemPrompt = `Та график дизайны туслах багш AI. Зөвхөн дараах сэдвүүдээр тусална:
+— Typography, layout, color, contrast, spacing
+— Branding, posters, social media visuals, UI basics
+— Composition, visual hierarchy, accessibility
+— Tools: Figma, Photoshop, Illustrator (үндсэн зөвлөмж)
+
+Хэрвээ график дизайнтай холбоогүй асуулт асуувал: найрсаг байдлаар татгалзаад, тухайн сэдвийг дизайны өнцгөөс нь хэрхэн авч үзэж болох тухай богино санал болго.
+Хариултаа богино, тод, 3–6 мөр байлга.`;
+
+const MAX_MESSAGE_LENGTH = 500;
+
+const openRouterHeaders = {
+  "HTTP-Referer": process.env.OPENROUTER_SITE_URL || process.env.APP_URL || "http://localhost:3000",
+  "X-Title": process.env.OPENROUTER_APP_NAME || process.env.APP_NAME || "Mind Verse",
+};
+
+function getOpenRouterClient(): OpenAI | null {
+  const apiKeyRaw = process.env.OPENROUTER_API_KEY;
+  const apiKey = apiKeyRaw?.trim().replace(/^<|>$/g, "");
+  if (!apiKey) return null;
+
+  return new OpenAI({
+    apiKey,
+    baseURL: "https://openrouter.ai/api/v1",
+    defaultHeaders: openRouterHeaders,
+  });
+}
+
+function getTextClient(): ChatClient | null {
+  const openrouter = getOpenRouterClient();
+
+  if (openrouter) {
+    return {
+      client: openrouter,
+      model: "google/gemma-3-27b-it:free",
+      provider: "openrouter",
+    };
+  }
+
+  return null;
+}
 
 function fallbackDesignTips(q: string): string {
   const s = q.toLowerCase();
@@ -66,11 +98,51 @@ function fallbackDesignTips(q: string): string {
   return "\n• " + tips.join("\n• ");
 }
 
+function isImageRequest(message: string) {
+  const msg = message.toLowerCase();
+  const wantsVisual = /(зураг|image|poster|logo|banner|visual|арт|art)/i.test(msg);
+  const hasAction = /(үүсгэ|бүтээ|generate|create|make|гарга|харуул|өг)/i.test(msg);
+  return wantsVisual && hasAction;
+}
+
+function extractText(msg: any): string {
+  if (!msg) return "";
+  if (typeof msg?.content === "string") return msg.content.trim();
+  if (Array.isArray(msg?.content)) {
+    return msg.content
+      .filter((p: any) => p?.type === "text" && typeof p?.text === "string")
+      .map((p: any) => p.text.trim())
+      .join(" ")
+      .trim();
+  }
+  return "";
+}
+
+function extractImages(msg: any): string[] {
+  const urls: string[] = [];
+
+  if (Array.isArray(msg?.images)) {
+    for (const im of msg.images) {
+      const url = im?.image_url?.url || im?.imageUrl?.url || im?.url;
+      if (url) urls.push(url);
+    }
+  }
+
+  if (Array.isArray(msg?.content)) {
+    for (const part of msg.content) {
+      const url = part?.image_url?.url || part?.imageUrl?.url || part?.url;
+      if (part?.type === "image_url" && url) {
+        urls.push(url);
+      }
+    }
+  }
+
+  return Array.from(new Set(urls.filter(Boolean)));
+}
+
 export async function POST(req: Request) {
   const session = await getSessionFromCookies();
-  if (!session) {
-    return NextResponse.json({ ok: false, error: "Нэвтэрнэ үү" }, { status: 401 });
-  }
+  if (!session) return NextResponse.json({ ok: false, error: "Нэвтэрнэ үү" }, { status: 401 });
 
   let body: any = {};
   try {
@@ -79,100 +151,68 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
   }
 
-  const message = (body?.message ?? "").toString().trim();
+  const message = String(body?.message ?? "").trim();
   const history = Array.isArray(body?.history) ? body.history.slice(-6) : [];
 
   if (!message) {
     return NextResponse.json({ ok: false, error: "Асуултаа бичнэ үү" }, { status: 400 });
   }
-  if (message.length > 500) {
+  if (message.length > MAX_MESSAGE_LENGTH) {
     return NextResponse.json({ ok: false, error: "Мессеж хэт урт байна (≤500)" }, { status: 400 });
   }
 
-  // Check if user wants to generate an image (design-related prompts)
-  const wantsImage = /(зураг|image|generate|үүсгэх|бүтээх|create|хэрэгтэй|хэрэгтэй байна|хэрэгтэй байгаа|poster|logo|banner|design|дизайн|visual|график)/i.test(message) &&
-    /(үүсгэ|бүтээ|generate|create|make|хэрэгтэй|show|харуул|өг)/i.test(message);
-  
-  // If image generation requested and OpenRouter is available
+  const wantsImage = isImageRequest(message);
+  const openrouter = getOpenRouterClient();
+
   if (wantsImage && openrouter) {
     try {
-      const result = await openrouter.chat.send({
+      const result = await openrouter.chat.completions.create({
         model: "bytedance-seed/seedream-4.5",
-        messages: [
-          {
-            role: "user",
-            content: message,
-          },
-        ],
+        messages: [{ role: "user", content: message }],
         modalities: ["image", "text"],
       });
 
-      const responseMessage = result.choices[0]?.message;
-      const images: string[] = [];
-      
-      if (responseMessage?.images) {
-        responseMessage.images.forEach((img: any) => {
-          if (img.image_url?.url) {
-            images.push(img.image_url.url);
-          }
-        });
+      const msg: any = result.choices?.[0]?.message;
+      const images = extractImages(msg);
+      const text = extractText(msg) || "Зураг үүсгэлээ!";
+
+      if (images.length) {
+        return NextResponse.json({ ok: true, answer: text, images });
       }
-
-      const textResponse = responseMessage?.content || "Зураг үүсгэлээ!";
-
-      return NextResponse.json({
-        ok: true,
-        answer: textResponse,
-        images: images.length > 0 ? images : undefined,
-      });
-    } catch (e: any) {
+    } catch (e) {
       console.error("OpenRouter image generation error:", e);
-      // Fall through to text response
     }
   }
 
-  // Basic runtime checks for clearer errors (after parsing message so we can fallback usefully)
-  if (!process.env.GROQ_API_KEY && !process.env.OPENAI_API_KEY) {
-    // Offline fallback tips (still return ok=true so UI shows something useful)
+  const textClient = getTextClient();
+  if (!textClient) {
     const offline = fallbackDesignTips(message);
     return NextResponse.json({ ok: true, answer: offline, offline: true });
   }
 
-  const systemPrompt = `Та график дизайны туслах багш AI. Зөвхөн дараах сэдвүүдээр тусална:
-— Typography, layout, color, contrast, spacing
-— Branding, posters, social media visuals, UI basics
-— Composition, visual hierarchy, accessibility
-— Tools: Figma, Photoshop, Illustrator (үндсэн зөвлөмж)
-
-Хэрвээ график дизайнтай холбоогүй асуулт асуувал: найрсаг байдлаар татгалзаад, тухайн сэдвийг дизайны өнцгөөс нь хэрхэн авч үзэж болох тухай богино санал болго.
-Хариултаа богино, тод, 3–6 мөр байлга.`;
+  const messages = [
+    { role: "system", content: systemPrompt },
+    ...history
+      .filter((m: any) => (m?.role === "user" || m?.role === "assistant") && typeof m?.content === "string")
+      .map((m: any) => ({ role: m.role, content: m.content })),
+    { role: "user", content: message },
+  ];
 
   try {
-    // Build OpenAI-style messages
-    const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
-      { role: "system", content: systemPrompt },
-      ...history
-        .filter((m: any) => typeof m?.role === "string" && typeof m?.content === "string")
-        .map((m: any) => ({ role: m.role as "user" | "assistant", content: m.content })),
-      { role: "user", content: message },
-    ];
-
-    const completion = await client.chat.completions.create({
-      model: process.env.GROQ_API_KEY ? "llama-3.3-70b-versatile" : "gpt-3.5-turbo",
+    const completion = await textClient.client.chat.completions.create({
+      model: textClient.model,
       messages,
       temperature: 0.5,
       max_tokens: 350,
     });
 
-    const answer = (completion.choices?.[0]?.message?.content || "").trim() ||
+    const answer =
+      extractText(completion.choices?.[0]?.message) ||
       "Сайн асуулт байна. Илүү тодорхой тайлбар өгвөл би илүү нарийн зөвлөмж өгч чадна.";
 
     return NextResponse.json({ ok: true, answer });
-  } catch (e: any) {
-    const code = e?.status ?? e?.code ?? e?.response?.status;
-    const msg = e?.message || "Assistant error";
-    console.error("Assistant error:", code, msg);
-    // Fallback to curated tips on failure, so students still get value
+  } catch (e) {
+    console.error("Assistant text error:", e);
     const tips = fallbackDesignTips(message);
     return NextResponse.json({ ok: true, answer: tips, offline: true });
   }

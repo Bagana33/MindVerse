@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "../auth/useSession";
 
 type UserPost = {
@@ -40,17 +41,9 @@ export function ProfileView() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editGrade, setEditGrade] = useState<string>("");
-  const [viewingUserEmail, setViewingUserEmail] = useState<string | null>(null);
-
-  useEffect(() => {
-    // Check if viewing another user's profile via query param
-    const params = new URLSearchParams(window.location.search);
-    const userParam = params.get('user');
-    if (userParam) {
-      setViewingUserEmail(userParam);
-    }
-  }, []);
-
+  const searchParams = useSearchParams();
+  const userParam = searchParams.get("user");
+  const viewingUserEmail = userParam ? userParam.trim() || null : null;
   const isOwnProfile = !viewingUserEmail || (session && viewingUserEmail === session.email);
 
   useEffect(() => {
@@ -60,7 +53,7 @@ export function ProfileView() {
         setLoading(false);
         return;
       }
-
+      setLoading(true);
       try {
         // Fetch user data (with XP)
         const userRes = await fetch(`/api/user?email=${encodeURIComponent(targetEmail)}`);
@@ -241,8 +234,20 @@ export function ProfileView() {
   if (!session && !viewingUserEmail) {
     return (
       <div className="space-y-4">
-        <section className="bg-nc-panel/90 border border-nc-border rounded-2xl px-4 py-4 shadow-nc-soft">
-          <p className="text-xs text-nc-muted">Please log in to view profiles.</p>
+        <section className="bg-dark-900/80 border border-white/10 rounded-2xl px-6 py-8 shadow-lg text-center">
+          <p className="text-slate-300 mb-4">Өөрийн профайлыг харахын тулд нэвтэрнэ үү.</p>
+          <p className="text-sm text-slate-500 mb-6">Хүмүүсийн профайлыг Feed эсвэл Leaderboard-оос нээж харна уу.</p>
+          <div className="flex flex-wrap gap-3 justify-center">
+            <Link href="/" className="px-4 py-2 rounded-xl bg-primary-600/20 border border-primary-500/40 text-primary-300 hover:bg-primary-600/30 transition-colors text-sm font-medium">
+              Feed
+            </Link>
+            <Link href="/leaderboard" className="px-4 py-2 rounded-xl bg-dark-700 border border-white/10 text-slate-300 hover:bg-dark-600 transition-colors text-sm font-medium">
+              Leaderboard
+            </Link>
+            <Link href="/login" className="px-4 py-2 rounded-xl bg-primary-500 text-white hover:bg-primary-600 transition-colors text-sm font-medium">
+              Нэвтрэх
+            </Link>
+          </div>
         </section>
       </div>
     );

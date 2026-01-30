@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "../auth/useSession";
 import { LeaderboardSidebar } from "../leaderboard/LeaderboardTable";
 import { cachedFetch } from "../../lib/fetchCache";
@@ -43,13 +43,52 @@ function formatRelativeTime(dateString: string) {
   });
 }
 
+/** Subsequence: query-ийн үсгүүд text дотор дарааллаар гарч байна уу (дутуу бичих зөвшөөрнө) */
+function isSubsequence(text: string, query: string): boolean {
+  let j = 0;
+  for (let i = 0; i < query.length; i++) {
+    const pos = text.indexOf(query[i], j);
+    if (pos === -1) return false;
+    j = pos + 1;
+  }
+  return true;
+}
+
+/** Fuzzy match: яг таарна, дэд мөр, үгний эх, subsequence, нэг үсэг алдаа зөвшөөрнө */
+function fuzzyMatch(text: string | undefined, query: string): boolean {
+  if (!text || !query) return false;
+  const t = text.toLowerCase();
+  const q = query.toLowerCase().trim();
+  if (!q) return false;
+  if (t.includes(q)) return true;
+  const words = t.split(/\s+/);
+  for (const w of words) {
+    if (w.startsWith(q) || (q.length >= 2 && w.length >= 2 && q.startsWith(w.slice(0, 2)))) return true;
+  }
+  if (isSubsequence(t, q)) return true;
+  if (q.length >= 3) {
+    for (let skip = 0; skip < q.length; skip++) {
+      const sub = q.slice(0, skip) + q.slice(skip + 1);
+      if (isSubsequence(t, sub)) return true;
+    }
+  }
+  return false;
+}
+
 export function HomeDashboard() {
   const { session } = useSession();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [posts, setPosts] = useState<UserPost[]>([]);
   const [topStudents, setTopStudents] = useState<LeaderboardUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Sync search from URL (e.g. from Topbar or shared link)
+  useEffect(() => {
+    const q = searchParams.get("search");
+    if (q != null) setSearchQuery(q);
+  }, [searchParams]);
   const [selectedGrade, setSelectedGrade] = useState("all");
   const [activeTab, setActiveTab] = useState<"feed" | "following" | "classroom">("feed");
   const [userXp, setUserXp] = useState<number | null>(null);
@@ -61,6 +100,70 @@ export function HomeDashboard() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [notifications, setNotifications] = useState<Array<{ id: string; type: string; message: string; createdAt: string; read: boolean }>>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [loadingNotifs, setLoadingNotifs] = useState(false);
+  const notifRef = useRef<HTMLDivElement>(null);
+
+  const fetchNotifications = useCallback(async () => {
+    if (!session?.email) return;
+    try {
+      setLoadingNotifs(true);
+      const res = await fetch("/api/notifications");
+      const data = await res.json();
+      if (data.ok) {
+        setNotifications(data.notifications || []);
+        setUnreadCount(data.unreadCount ?? 0);
+      }
+    } catch {
+      // silent
+    } finally {
+      setLoadingNotifs(false);
+    }
+  }, [session?.email]);
+
+  useEffect(() => {
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 30000);
+    return () => clearInterval(interval);
+  }, [fetchNotifications]);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false);
+    }
+    if (notifOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [notifOpen]);
+
+  const markAllNotifsRead = useCallback(async () => {
+    try {
+      const res = await fetch("/api/notifications/mark-read", { method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        setUnreadCount(0);
+        setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+      }
+    } catch {}
+  }, []);
+
+  const clearAllNotifs = useCallback(async () => {
+    if (!confirm("Бүх мэдэгдлийг устгах уу?")) return;
+    try {
+      const res = await fetch("/api/notifications/clear", { method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        setNotifications([]);
+        setUnreadCount(0);
+      }
+    } catch {}
+  }, []);
 
   // Fetch user XP
   useEffect(() => {
@@ -82,15 +185,18 @@ export function HomeDashboard() {
     ? { current: userXp, goal: Math.max(userXp + 100, 100) }
     : { current: 0, goal: 100 };
 
-  // Fetch posts
+  // Fetch posts (first page)
   useEffect(() => {
+    setHasMore(true);
     async function fetchPosts() {
       try {
         const gradeParam = selectedGrade !== "all" ? `&grade=${encodeURIComponent(selectedGrade)}` : "";
         const res = await fetch(`/api/posts?limit=10${gradeParam}`);
         if (res.ok) {
           const json = await res.json();
-          setPosts(json.posts || []);
+          const list = json.posts || [];
+          setPosts(list);
+          setHasMore(list.length >= 10);
         }
       } catch (err) {
         console.error("Failed to fetch posts:", err);
@@ -100,6 +206,28 @@ export function HomeDashboard() {
     }
     fetchPosts();
   }, [selectedGrade]);
+
+  async function loadOlderPosts() {
+    if (loadingOlder || !hasMore || posts.length === 0) return;
+    const lastPost = posts[posts.length - 1];
+    const before = lastPost?.createdAt;
+    if (!before) return;
+    setLoadingOlder(true);
+    try {
+      const gradeParam = selectedGrade !== "all" ? `&grade=${encodeURIComponent(selectedGrade)}` : "";
+      const res = await fetch(`/api/posts?limit=10&before=${encodeURIComponent(before)}${gradeParam}`);
+      if (res.ok) {
+        const json = await res.json();
+        const list = json.posts || [];
+        setPosts((prev) => [...prev, ...list]);
+        setHasMore(list.length >= 10);
+      }
+    } catch (err) {
+      console.error("Failed to load older posts:", err);
+    } finally {
+      setLoadingOlder(false);
+    }
+  }
 
   // Fetch top students and create XP map
   useEffect(() => {
@@ -125,13 +253,28 @@ export function HomeDashboard() {
     fetchTopStudents();
   }, []);
 
-  const handleSearch = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && searchQuery.trim()) {
-      const params = new URLSearchParams();
-      params.set("search", searchQuery.trim());
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      const q = searchQuery.trim();
+      const params = new URLSearchParams(searchParams.toString());
+      if (q) params.set("search", q);
+      else params.delete("search");
       router.push(`/?${params.toString()}`);
     }
   };
+
+  // Filter posts by fuzzy search (гарчиг, тайлбар, зохиогч — дутуу/алдаатай бичихэд ч гарна)
+  const filteredPosts = (() => {
+    const q = searchQuery.trim();
+    if (!q) return posts;
+    return posts.filter(
+      (p) =>
+        fuzzyMatch(p.title, q) ||
+        fuzzyMatch(p.description, q) ||
+        fuzzyMatch(p.author, q) ||
+        fuzzyMatch(p.authorEmail, q)
+    );
+  })();
 
   const reactionCounts = (post: UserPost) => ({
     fire: post.reactions.filter((r) => r.type === "FIRE").length,
@@ -267,18 +410,91 @@ export function HomeDashboard() {
               search
             </span>
             <input
-              className="bg-dark-800 border border-white/10 text-sm rounded-full pl-10 pr-4 py-2.5 w-64 focus:w-80 transition-all outline-none text-white focus:border-primary-500/50 focus:ring-1 focus:ring-primary-500/50 placeholder-slate-600"
-              placeholder="Search challenges, users..."
+              className={`bg-dark-800 border border-white/10 text-sm rounded-full pl-10 py-2.5 w-64 focus:w-80 transition-all outline-none text-white focus:border-primary-500/50 focus:ring-1 focus:ring-primary-500/50 placeholder-slate-600 ${searchQuery.trim() ? "pr-10" : "pr-4"}`}
+              placeholder="Гарчиг, зохиогчоор хайх..."
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={handleSearch}
+              onKeyDown={handleSearchKeyDown}
             />
+            {searchQuery.trim() && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery("");
+                  const params = new URLSearchParams(searchParams.toString());
+                  params.delete("search");
+                  router.push(params.toString() ? `/?${params.toString()}` : "/");
+                }}
+                className="absolute right-3 top-2.5 text-slate-400 hover:text-white transition-colors"
+                aria-label="Хайлт цэвэрлэх"
+              >
+                <span className="material-symbols-outlined text-[18px]">close</span>
+              </button>
+            )}
           </div>
-          <button className="relative p-2.5 rounded-full bg-dark-800 border border-white/5 hover:bg-dark-700 transition-colors text-slate-400 hover:text-white">
-            <span className="material-symbols-outlined text-[20px]">notifications</span>
-            <span className="absolute top-2 right-2.5 w-2 h-2 bg-rose-500 rounded-full border-2 border-dark-800"></span>
-          </button>
+          <div className="relative" ref={notifRef}>
+            <button
+              type="button"
+              onClick={() => session && setNotifOpen((o) => !o)}
+              className="relative p-2.5 rounded-full bg-dark-800 border border-white/5 hover:bg-dark-700 transition-colors text-slate-400 hover:text-white"
+              aria-label="Мэдэгдэл"
+            >
+              <span className="material-symbols-outlined text-[20px]">notifications</span>
+              {session && unreadCount > 0 && (
+                <span className="absolute top-1.5 right-1.5 min-w-[18px] h-[18px] flex items-center justify-center px-1 bg-rose-500 text-white text-[10px] font-bold rounded-full border-2 border-dark-800">
+                  {unreadCount > 99 ? "99+" : unreadCount}
+                </span>
+              )}
+            </button>
+            {notifOpen && session && (
+              <div className="absolute right-0 mt-2 w-72 max-h-96 overflow-auto rounded-2xl bg-dark-900 border border-white/10 shadow-xl p-3 z-50">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-semibold text-slate-300">Мэдэгдэл</span>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={fetchNotifications} className="text-[10px] px-2 py-1 rounded-full bg-dark-700 hover:bg-dark-600 text-slate-300">
+                      ↻
+                    </button>
+                    <button type="button" onClick={markAllNotifsRead} className="text-[10px] px-2 py-1 rounded-full bg-primary-600/40 hover:bg-primary-600 text-primary-200">
+                      Уншсан
+                    </button>
+                    <button type="button" onClick={clearAllNotifs} className="text-[10px] px-2 py-1 rounded-full bg-red-600/40 hover:bg-red-600 text-red-100">
+                      Устгах
+                    </button>
+                  </div>
+                </div>
+                {loadingNotifs && notifications.length === 0 && (
+                  <div className="text-xs text-slate-500 py-4 text-center">Ачаалж байна...</div>
+                )}
+                {notifications.length === 0 && !loadingNotifs && (
+                  <div className="text-xs text-slate-500 py-4 text-center">Мэдэгдэл алга</div>
+                )}
+                <ul className="space-y-2">
+                  {notifications.map((n) => (
+                    <li
+                      key={n.id}
+                      className={`rounded-xl px-3 py-2 text-xs flex flex-col gap-1 border transition-all ${
+                        n.read ? "border-white/5 bg-dark-800/60" : "border-primary-500/40 bg-primary-950/40"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-slate-200">
+                          {n.type === "LIKE" && "👍 Like"}
+                          {n.type === "GRADE" && "📝 Grade"}
+                          {n.type === "CONTEST_WIN" && "🏆 Winner"}
+                          {!["LIKE", "GRADE", "CONTEST_WIN"].includes(n.type) && "🔔"}
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          {new Date(n.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-slate-300 leading-snug">{n.message}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
           <button
             onClick={() => router.push("/contests")}
             className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-gradient-to-r from-primary-600/20 to-indigo-600/20 border border-primary-500/30 text-primary-300 text-xs font-bold hover:bg-primary-600/30 transition-all"
@@ -360,14 +576,16 @@ export function HomeDashboard() {
             </div>
 
             <div
-              onClick={() => setShowCreateForm(true)}
+              onClick={() => (session ? setShowCreateForm(true) : router.push("/login"))}
               className="glass-card rounded-3xl p-6 flex flex-col justify-center items-center text-center hover:bg-dark-800 transition-all cursor-pointer border-dashed border-2 border-dark-700 hover:border-primary-500/50"
             >
               <div className="w-12 h-12 rounded-full bg-dark-700 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
                 <span className="material-symbols-outlined text-primary-400 text-2xl">add_photo_alternate</span>
               </div>
               <h3 className="font-bold text-white text-sm">Share Progress Drop</h3>
-              <p className="text-xs text-slate-500 mt-1">Drag & drop or click to upload</p>
+              <p className="text-xs text-slate-500 mt-1">
+                {session ? "Drag & drop or click to upload" : "Нэвтэрч бүтээлээ хуваалцана уу"}
+              </p>
             </div>
           </div>
         </div>
@@ -485,6 +703,32 @@ export function HomeDashboard() {
         </div>
       )}
 
+      {/* Image Lightbox — зураг дарж томоор харах */}
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4"
+          onClick={() => setLightbox(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Зургийг томоор харах"
+        >
+          <button
+            type="button"
+            onClick={() => setLightbox(null)}
+            className="absolute top-4 right-4 z-10 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+            aria-label="Хаах"
+          >
+            <span className="material-symbols-outlined text-2xl">close</span>
+          </button>
+          <img
+            src={lightbox.src}
+            alt={lightbox.alt}
+            className="max-w-full max-h-[90vh] w-auto h-auto object-contain rounded-lg shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
+
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
         {/* Feed Section */}
@@ -541,10 +785,14 @@ export function HomeDashboard() {
           {/* Posts */}
           {loading ? (
             <div className="text-center py-12 text-slate-500">Loading posts...</div>
-          ) : posts.length === 0 ? (
-            <div className="text-center py-12 text-slate-500">No posts yet. Be the first to share!</div>
+          ) : filteredPosts.length === 0 ? (
+            <div className="text-center py-12 text-slate-500">
+              {searchQuery.trim()
+                ? `"${searchQuery}" хайлтаар олдсон пост байхгүй.`
+                : "No posts yet. Be the first to share!"}
+            </div>
           ) : (
-            posts.map((post) => {
+            filteredPosts.map((post) => {
               const reactions = reactionCounts(post);
               return (
                 <article
@@ -553,19 +801,34 @@ export function HomeDashboard() {
                 >
                   <div className="flex items-center justify-between mb-5">
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-full bg-dark-800 flex items-center justify-center text-slate-300 font-bold text-lg border border-white/10 relative overflow-hidden">
-                        {post.authorEmail && (
-                          <img
-                            alt="User Avatar"
-                            className="w-full h-full object-cover"
-                            src={`https://ui-avatars.com/api/?name=${encodeURIComponent(post.author)}&background=8b5cf6&color=fff`}
-                          />
-                        )}
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-white text-base">{post.author}</h3>
-                        <p className="text-xs text-slate-500 font-medium mt-0.5">{formatRelativeTime(post.createdAt)}</p>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (post.authorEmail && post.authorEmail !== "news-bot" && post.authorEmail !== "ai-assistant") {
+                            router.push(`/profile?user=${encodeURIComponent(post.authorEmail)}`);
+                          }
+                        }}
+                        className={`flex items-center gap-3 text-left rounded-xl transition-colors ${
+                          post.authorEmail && post.authorEmail !== "news-bot" && post.authorEmail !== "ai-assistant"
+                            ? "hover:bg-white/5 cursor-pointer"
+                            : "cursor-default"
+                        }`}
+                        title={post.authorEmail && post.authorEmail !== "news-bot" && post.authorEmail !== "ai-assistant" ? `${post.author}-н profile харах` : undefined}
+                      >
+                        <div className="w-12 h-12 rounded-full bg-dark-800 flex items-center justify-center text-slate-300 font-bold text-lg border border-white/10 relative overflow-hidden shrink-0">
+                          {post.authorEmail && (
+                            <img
+                              alt="User Avatar"
+                              className="w-full h-full object-cover"
+                              src={`https://ui-avatars.com/api/?name=${encodeURIComponent(post.author)}&background=8b5cf6&color=fff`}
+                            />
+                          )}
+                        </div>
+                        <div>
+                          <h3 className="font-bold text-white text-base">{post.author}</h3>
+                          <p className="text-xs text-slate-500 font-medium mt-0.5">{formatRelativeTime(post.createdAt)}</p>
+                        </div>
+                      </button>
                     </div>
                     <div className="px-3 py-1 rounded-full border border-primary-500/20 bg-primary-500/10 text-primary-400 text-[11px] font-bold tracking-wide">
                       XP {xpMap[post.authorEmail] !== undefined ? Math.round(xpMap[post.authorEmail]) : 0}
@@ -578,8 +841,12 @@ export function HomeDashboard() {
                   </div>
 
                   {post.imageUrl && (
-                    <div className="relative w-full rounded-2xl overflow-hidden mb-5 bg-dark-800 border border-white/5 group">
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10"></div>
+                    <button
+                      type="button"
+                      onClick={() => setLightbox({ src: post.imageUrl!, alt: post.title })}
+                      className="relative w-full rounded-2xl overflow-hidden mb-5 bg-dark-800 border border-white/5 group text-left cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-500/50"
+                    >
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10 pointer-events-none" />
                       <div className="aspect-[16/10] bg-gradient-to-br from-indigo-500/20 to-purple-500/20 relative">
                         <img
                           alt="Post Content"
@@ -587,7 +854,11 @@ export function HomeDashboard() {
                           src={post.imageUrl}
                         />
                       </div>
-                    </div>
+                      <span className="absolute bottom-3 right-3 z-20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5 px-2 py-1 rounded-lg bg-black/50 text-white text-xs font-medium">
+                        <span className="material-symbols-outlined text-[16px]">fullscreen</span>
+                        Томоор харах
+                      </span>
+                    </button>
                   )}
 
                   <div className="flex items-center gap-3 flex-wrap">
@@ -633,10 +904,21 @@ export function HomeDashboard() {
           )}
 
           <div className="py-8 text-center">
-            <button className="text-sm font-bold text-slate-500 hover:text-primary-400 transition-colors flex items-center justify-center gap-2 mx-auto">
-              <span className="material-symbols-outlined animate-spin text-lg">refresh</span>
-              Load older posts
-            </button>
+            {hasMore ? (
+              <button
+                type="button"
+                onClick={loadOlderPosts}
+                disabled={loadingOlder}
+                className="text-sm font-bold text-slate-500 hover:text-primary-400 transition-colors flex items-center justify-center gap-2 mx-auto disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                <span className={`material-symbols-outlined text-lg ${loadingOlder ? "animate-spin" : ""}`}>
+                  {loadingOlder ? "refresh" : "expand_more"}
+                </span>
+                {loadingOlder ? "Уншиж байна..." : "Хуучин постууд"}
+              </button>
+            ) : (
+              <p className="text-sm text-slate-500">Илүү пост байхгүй</p>
+            )}
           </div>
         </div>
 

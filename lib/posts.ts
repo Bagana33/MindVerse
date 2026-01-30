@@ -97,45 +97,60 @@ export async function getAllPosts(): Promise<UserPost[]> {
 
 // Paginated posts with optional cursor (created_at before) and grade filter
 export async function getPostsPage(limit = 20, beforeISO?: string, grade?: string): Promise<UserPost[]> {
-  let query = supabase
-    .from('posts')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(limit);
+  let posts: any[] = [];
 
-  if (beforeISO) {
-    query = query.lt('created_at', beforeISO);
+  if (grade && grade !== 'all') {
+    // Grade filter: first get author emails for this grade, then fetch only their posts (correct pagination)
+    const { data: usersWithGrade, error: usersError } = await supabase
+      .from('users')
+      .select('email')
+      .eq('grade', grade);
+    if (usersError || !usersWithGrade?.length) return [];
+    const authorEmails = usersWithGrade.map(u => u.email);
+
+    let query = supabase
+      .from('posts')
+      .select('*')
+      .in('author_email', authorEmails)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (beforeISO) {
+      query = query.lt('created_at', beforeISO);
+    }
+    const { data: gradePosts, error: postsError } = await query;
+    if (postsError || !gradePosts) return [];
+    posts = gradePosts;
+  } else {
+    // No grade filter: fetch all posts with limit and cursor
+    let query = supabase
+      .from('posts')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (beforeISO) {
+      query = query.lt('created_at', beforeISO);
+    }
+    const { data: allPosts, error: postsError } = await query;
+    if (postsError || !allPosts) return [];
+    posts = allPosts;
   }
 
-  const { data: posts, error: postsError } = await query;
-  if (postsError || !posts) return [];
-
-  // Get all author emails to fetch user info
   const authorEmails = [...new Set(posts.map(p => p.author_email))];
   const { data: users } = await supabase
     .from('users')
     .select('email, name, nickname, grade')
     .in('email', authorEmails);
-
-  // Create maps for quick lookup
   const userMap = new Map(users?.map(u => [u.email, u]) || []);
 
-  // If grade filter is provided, filter posts by author grade
-  let filteredPosts = posts;
-  if (grade && grade !== 'all') {
-    filteredPosts = posts.filter(p => userMap.get(p.author_email)?.grade === grade);
-  }
-
-  const postIds = filteredPosts.map(p => p.id);
+  const postIds = posts.map(p => p.id);
   const { data: reactions } = await supabase
     .from('reactions')
     .select('*')
     .in('post_id', postIds);
 
-  return filteredPosts.map(post => {
+  return posts.map(post => {
     const postReactions = reactions?.filter(r => r.post_id === post.id) || [];
     const user = userMap.get(post.author_email);
-    // Use nickname if available, otherwise name, otherwise email
     const authorName = user?.nickname || user?.name || post.author_email;
     return dbToPost(post, postReactions, authorName);
   });

@@ -14,35 +14,44 @@ export interface Notification {
 }
 
 function dbToNotification(dbRow: any): Notification {
+  const validTypes: NotificationType[] = ['LIKE', 'GRADE', 'CONTEST_WIN'];
+  const type = validTypes.includes(dbRow.type) ? dbRow.type : 'LIKE';
   return {
     id: dbRow.id,
     userEmail: dbRow.user_email,
-    actorEmail: dbRow.user_email, // we don't have actor in DB schema, use user_email
-    type: 'LIKE', // default type since schema doesn't have it
-    message: dbRow.message,
+    actorEmail: dbRow.actor_email ?? dbRow.user_email,
+    type,
+    message: dbRow.message ?? '',
     createdAt: dbRow.created_at,
-    read: dbRow.read,
+    read: Boolean(dbRow.read),
   };
 }
 
 export async function addNotification(userEmail: string, actorEmail: string, type: NotificationType, message: string): Promise<Notification> {
   const notifId = `notif-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
   
-  const { data, error } = await supabase
+  const rowWithType = {
+    id: notifId,
+    user_email: userEmail,
+    message,
+    read: false,
+    type,
+  };
+  let result = await supabase
     .from('notifications')
-    .insert([{
-      id: notifId,
-      user_email: userEmail,
-      message,
-      read: false,
-    }])
+    .insert([rowWithType])
     .select()
     .single();
 
-  if (error) {
-    console.error('Error creating notification:', error);
-    throw error;
+  if (result.error && /column.*type.*does not exist/i.test(String(result.error.message))) {
+    const { type: _t, ...rowWithoutType } = rowWithType;
+    result = await supabase.from('notifications').insert([rowWithoutType]).select().single();
   }
+  if (result.error) {
+    console.error('Error creating notification:', result.error);
+    throw result.error;
+  }
+  const data = result.data;
 
   return {
     id: data.id,
