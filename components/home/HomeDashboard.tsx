@@ -83,6 +83,7 @@ export function HomeDashboard() {
   const [topStudents, setTopStudents] = useState<LeaderboardUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [imageUploading, setImageUploading] = useState(false);
 
   // Sync search from URL (e.g. from Topbar or shared link)
   useEffect(() => {
@@ -288,6 +289,7 @@ export function HomeDashboard() {
     if (!file) return;
 
     setCreateError(null);
+    setImageUploading(true);
 
     if (!file.type.startsWith("image/")) {
       setCreateError("Зураг файл сонгоно уу");
@@ -332,6 +334,7 @@ export function HomeDashboard() {
 
       setImageUrl(uploadJson.secure_url as string);
       setImagePreview(uploadJson.secure_url as string);
+      setImageUploading(false);
     } catch (err) {
       try {
         const reader = new FileReader();
@@ -339,9 +342,15 @@ export function HomeDashboard() {
           const result = event.target?.result as string;
           setImagePreview(result);
           setImageUrl(result);
+          setImageUploading(false);
+        };
+        reader.onerror = () => {
+          setImageUploading(false);
+          setCreateError("Зураг уншихад алдаа гарлаа");
         };
         reader.readAsDataURL(file);
       } catch (e) {
+        setImageUploading(false);
         setCreateError("Зураг байршуулж чадсангүй");
       }
     }
@@ -350,6 +359,11 @@ export function HomeDashboard() {
   async function handleCreatePost(e: React.FormEvent) {
     e.preventDefault();
     setCreateError(null);
+
+    if (imageUploading) {
+      setCreateError("Зураг байршуулж дуусахаас өмнө түр хүлээнэ үү.");
+      return;
+    }
 
     if (title.trim().length < 3) {
       setCreateError("Гарчиг хамгийн багадаа 3 тэмдэгт байх ёстой");
@@ -692,10 +706,10 @@ export function HomeDashboard() {
                 </button>
                 <button
                   type="submit"
-                  disabled={creating}
-                  className="px-6 py-2 rounded-lg bg-gradient-to-r from-primary-500 to-purple-500 text-white font-medium hover:shadow-lg transition-all disabled:opacity-60"
+                  disabled={creating || imageUploading}
+                  className="px-6 py-2 rounded-lg bg-gradient-to-r from-primary-500 to-purple-500 text-white font-medium hover:shadow-lg transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {creating ? "Publishing..." : "Publish"}
+                  {creating || imageUploading ? "Publishing..." : "Publish"}
                 </button>
               </div>
             </form>
