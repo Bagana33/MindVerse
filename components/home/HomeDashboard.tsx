@@ -104,6 +104,7 @@ export function HomeDashboard() {
   const [lightbox, setLightbox] = useState<{ src: string; alt: string } | null>(null);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  const [reactingPostId, setReactingPostId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<Array<{ id: string; type: string; message: string; createdAt: string; read: boolean }>>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -283,6 +284,57 @@ export function HomeDashboard() {
     love: post.reactions.filter((r) => r.type === "LOVE").length,
     cool: post.reactions.filter((r) => r.type === "COOL").length,
   });
+
+  const handleReaction = useCallback(
+    async (postId: string, type: "FIRE" | "WOW" | "LOVE" | "COOL") => {
+      if (!session?.email) {
+        router.push("/login");
+        return;
+      }
+      const post = posts.find((p) => p.id === postId);
+      if (!post) return;
+
+      const reactions = [...post.reactions];
+      const idx = reactions.findIndex((r) => r.userEmail === session.email);
+      const currentType = idx >= 0 ? reactions[idx].type : null;
+
+      const nextReactions =
+        currentType === type
+          ? reactions.filter((_, i) => i !== idx)
+          : idx >= 0
+            ? reactions.map((r, i) => (i === idx ? { ...r, type } : r))
+            : [...reactions, { userEmail: session.email, type }];
+
+      setPosts((prev) =>
+        prev.map((p) => (p.id === postId ? { ...p, reactions: nextReactions } : p))
+      );
+      setReactingPostId(postId);
+      try {
+        const res = await fetch(`/api/posts/react?id=${encodeURIComponent(postId)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setPosts((prev) =>
+            prev.map((p) => (p.id === postId ? { ...p, reactions: post.reactions } : p))
+          );
+          alert(json.error || "Реакц хийхэд алдаа гарлаа");
+          return;
+        }
+        // Optimistic state is already correct; server confirmed success
+      } catch (err: any) {
+        setPosts((prev) =>
+          prev.map((p) => (p.id === postId ? { ...p, reactions: post.reactions } : p))
+        );
+        alert(err?.message || "Сүлжээний алдаа");
+      } finally {
+        setReactingPostId(null);
+      }
+    },
+    [session?.email, posts, router]
+  );
 
   async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -808,6 +860,8 @@ export function HomeDashboard() {
           ) : (
             filteredPosts.map((post) => {
               const reactions = reactionCounts(post);
+              const myReaction = post.reactions.find((r) => r.userEmail === session?.email)?.type ?? null;
+              const isReacting = reactingPostId === post.id;
               return (
                 <article
                   key={post.id}
@@ -885,21 +939,49 @@ export function HomeDashboard() {
                       <span className="text-xs font-semibold text-slate-300 group-hover:text-white">Share</span>
                     </button>
                     <div className="flex items-center gap-2 ml-auto sm:ml-0">
-                      <button className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-dark-800/50 border border-white/5 hover:bg-dark-700 hover:border-orange-500/30 transition-all group">
+                      <button
+                        type="button"
+                        disabled={!session || isReacting}
+                        onClick={() => handleReaction(post.id, "FIRE")}
+                        className={`flex items-center gap-1.5 px-3 py-2 rounded-full bg-dark-800/50 border transition-all group disabled:opacity-60 disabled:pointer-events-none ${
+                          myReaction === "FIRE" ? "border-orange-500/50 bg-orange-500/10" : "border-white/5 hover:bg-dark-700 hover:border-orange-500/30"
+                        }`}
+                      >
                         <span className="text-sm">🔥</span>
-                        <span className="text-xs font-bold text-slate-400 group-hover:text-orange-400">{reactions.fire}</span>
+                        <span className={`text-xs font-bold ${myReaction === "FIRE" ? "text-orange-400" : "text-slate-400 group-hover:text-orange-400"}`}>{reactions.fire}</span>
                       </button>
-                      <button className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-dark-800/50 border border-white/5 hover:bg-dark-700 hover:border-yellow-500/30 transition-all group">
+                      <button
+                        type="button"
+                        disabled={!session || isReacting}
+                        onClick={() => handleReaction(post.id, "WOW")}
+                        className={`flex items-center gap-1.5 px-3 py-2 rounded-full bg-dark-800/50 border transition-all group disabled:opacity-60 disabled:pointer-events-none ${
+                          myReaction === "WOW" ? "border-yellow-500/50 bg-yellow-500/10" : "border-white/5 hover:bg-dark-700 hover:border-yellow-500/30"
+                        }`}
+                      >
                         <span className="text-sm">😯</span>
-                        <span className="text-xs font-bold text-slate-400 group-hover:text-yellow-400">{reactions.wow}</span>
+                        <span className={`text-xs font-bold ${myReaction === "WOW" ? "text-yellow-400" : "text-slate-400 group-hover:text-yellow-400"}`}>{reactions.wow}</span>
                       </button>
-                      <button className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-dark-800/50 border border-white/5 hover:bg-dark-700 hover:border-pink-500/30 transition-all group">
+                      <button
+                        type="button"
+                        disabled={!session || isReacting}
+                        onClick={() => handleReaction(post.id, "LOVE")}
+                        className={`flex items-center gap-1.5 px-3 py-2 rounded-full bg-dark-800/50 border transition-all group disabled:opacity-60 disabled:pointer-events-none ${
+                          myReaction === "LOVE" ? "border-pink-500/50 bg-pink-500/10" : "border-white/5 hover:bg-dark-700 hover:border-pink-500/30"
+                        }`}
+                      >
                         <span className="text-sm">💖</span>
-                        <span className="text-xs font-bold text-slate-400 group-hover:text-pink-400">{reactions.love}</span>
+                        <span className={`text-xs font-bold ${myReaction === "LOVE" ? "text-pink-400" : "text-slate-400 group-hover:text-pink-400"}`}>{reactions.love}</span>
                       </button>
-                      <button className="flex items-center gap-1.5 px-3 py-2 rounded-full bg-dark-800/50 border border-white/5 hover:bg-dark-700 hover:border-emerald-500/30 transition-all group">
+                      <button
+                        type="button"
+                        disabled={!session || isReacting}
+                        onClick={() => handleReaction(post.id, "COOL")}
+                        className={`flex items-center gap-1.5 px-3 py-2 rounded-full bg-dark-800/50 border transition-all group disabled:opacity-60 disabled:pointer-events-none ${
+                          myReaction === "COOL" ? "border-emerald-500/50 bg-emerald-500/10" : "border-white/5 hover:bg-dark-700 hover:border-emerald-500/30"
+                        }`}
+                      >
                         <span className="text-sm">😎</span>
-                        <span className="text-xs font-bold text-slate-400 group-hover:text-emerald-400">{reactions.cool}</span>
+                        <span className={`text-xs font-bold ${myReaction === "COOL" ? "text-emerald-400" : "text-slate-400 group-hover:text-emerald-400"}`}>{reactions.cool}</span>
                       </button>
                     </div>
                   </div>

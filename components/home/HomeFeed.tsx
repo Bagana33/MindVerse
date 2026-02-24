@@ -510,6 +510,26 @@ export function HomeFeed() {
   const handleReaction = useCallback(async (postId: string, type: ReactionType) => {
     if (!session) return;
 
+    // Optimistic update – UI түрүүлж хурдан өөрчлөгдөнө
+    setUserPosts(prev => prev.map(p => {
+      if (p.id !== postId) return p;
+      const reactions = [...p.reactions];
+      const idx = reactions.findIndex(r => r.userEmail === session.email);
+      const currentType = idx > -1 ? reactions[idx].type : null;
+
+      if (currentType === type) {
+        // Ижил реакц байсан бол устгана (toggle off)
+        reactions.splice(idx, 1);
+      } else if (idx > -1) {
+        // Өөр төрлөөр сольж байна
+        reactions[idx] = { userEmail: session.email, type };
+      } else {
+        // Шинэ реакц
+        reactions.push({ userEmail: session.email, type });
+      }
+      return { ...p, reactions };
+    }));
+
     setReactingPostId(postId);
     try {
       const res = await fetch(`/api/posts/react?id=${postId}`, {
@@ -525,6 +545,7 @@ export function HomeFeed() {
         return;
       }
       const json = await res.json();
+      // Серверийн байдлаар нэг удаа sync хийх (XP/notification алдааны дараа)
       setUserPosts(prev => prev.map(p => {
         if (p.id !== postId) return p;
         const reactions = [...p.reactions];
@@ -533,12 +554,13 @@ export function HomeFeed() {
           if (idx > -1) reactions.splice(idx, 1);
         } else if (json.updated) {
           if (idx > -1) reactions[idx] = { userEmail: session.email, type };
-        } else if (json.added) {
+        } else if (json.added && idx === -1) {
           reactions.push({ userEmail: session.email, type });
         }
         return { ...p, reactions };
       }));
     } catch (err: any) {
+      // Алдаа гарсан ч UI аль хэдийн өөрчлөгдсөн байж болно – дараагийн refresh-д сервертэй sync хийнэ
       alert(err.message || "Сүлжээний алдаа гарлаа");
     } finally {
       setReactingPostId(null);

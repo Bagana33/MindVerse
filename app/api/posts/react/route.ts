@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionFromCookies } from "../../../../lib/session";
-import { toggleReactionWithType, getPost, ReactionType } from "../../../../lib/posts";
+import { toggleReactionWithType, getPostMeta, ReactionType } from "../../../../lib/posts";
 import { addExperience } from "../../../../lib/users";
 import { addNotification } from "../../../../lib/notifications";
 
@@ -17,8 +17,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Post ID шаардлагатай" }, { status: 400 });
   }
 
-  const post = await getPost(postId);
-  if (!post) {
+  const postMeta = await getPostMeta(postId);
+  if (!postMeta) {
     return NextResponse.json({ ok: false, error: "Post олдсонгүй" }, { status: 404 });
   }
 
@@ -40,52 +40,42 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Reaction хийхэд алдаа гарлаа" }, { status: 500 });
   }
 
-  // Award 0.3 XP to the user who reacted (if newly added)
+  // XP and notifications are executed in parallel to reduce response latency.
   if (result.added) {
-    await addExperience(session.email, 0.3);
-  }
+    const tasks: Promise<any>[] = [addExperience(session.email, 0.3)];
+    const isOtherAuthor = postMeta.authorEmail && postMeta.authorEmail !== session.email;
 
-  // Award 1 XP to post author when reaction is added (not when removed or updated)
-  if (result.added && post.authorEmail && post.authorEmail !== session.email) {
-    try {
-      await addExperience(post.authorEmail, 1);
-    } catch (e) {
-      console.error('Failed to award XP to post author:', e);
-      // Continue even if XP award fails
-    }
-  }
+    if (isOtherAuthor) {
+      tasks.push(addExperience(postMeta.authorEmail, 1));
+      const emoji =
+        type === "FIRE" ? "🔥" :
+        type === "WOW" ? "😮" :
+        type === "LOVE" ? "💖" :
+        type === "COOL" ? "😎" :
+        type === "STAR" ? "⭐" : "🔥";
 
-  // If reaction newly added (not removed/updated), send notification to post author
-  if (result.added && post.authorEmail !== session.email) {
-    try {
-      const emoji = 
-        type === 'FIRE' ? '🔥' : 
-        type === 'WOW' ? '😮' : 
-        type === 'LOVE' ? '💖' :
-        type === 'COOL' ? '😎' :
-        type === 'STAR' ? '⭐' : '🔥';
-      await addNotification(
-        post.authorEmail,
-        session.email,
-        "LIKE",
-        `${emoji} ${session.name || session.email} таны "${post.title}" пост дээр ${type.toLowerCase()} реакц өглөө`
+      tasks.push(
+        addNotification(
+          postMeta.authorEmail,
+          session.email,
+          "LIKE",
+          `${emoji} ${session.name || session.email} таны "${postMeta.title}" пост дээр ${type.toLowerCase()} реакц өглөө`
+        )
       );
-    } catch (e) {
-      console.error('Failed to send reaction notification:', e);
     }
-  }
 
-  // Aggregate counts per type
-  const counts = { FIRE: 0, WOW: 0, LOVE: 0, COOL: 0, STAR: 0 } as Record<ReactionType, number>;
-  result.post?.reactions.forEach(r => { counts[r.type] = (counts[r.type] || 0) + 1; });
+    const settled = await Promise.allSettled(tasks);
+    settled.forEach((r, i) => {
+      if (r.status === "rejected") {
+        console.error(`Reaction side-effect #${i + 1} failed:`, r.reason);
+      }
+    });
+  }
 
   return NextResponse.json({
     ok: true,
     added: result.added,
     removed: result.removed,
     updated: result.updated,
-    userReaction: result.post ? result.post.reactions.find(r => r.userEmail === session.email)?.type || null : null,
-    counts,
-    total: result.post?.reactions.length || 0,
   });
 }

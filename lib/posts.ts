@@ -170,11 +170,11 @@ export async function toggleReactionWithType(
   postId: string, 
   userEmail: string, 
   type: ReactionType
-): Promise<{ success: boolean; added: boolean; removed: boolean; updated: boolean; post?: UserPost }> {
+): Promise<{ success: boolean; added: boolean; removed: boolean; updated: boolean }> {
   // Check existing reaction
   const { data: existing } = await supabase
     .from('reactions')
-    .select('*')
+    .select('id, type')
     .eq('post_id', postId)
     .eq('user_email', userEmail)
     .maybeSingle();
@@ -188,9 +188,7 @@ export async function toggleReactionWithType(
         .eq('id', existing.id);
       
       if (error) return { success: false, added: false, removed: false, updated: false };
-      
-      const post = await getPost(postId);
-      return { success: true, added: false, removed: true, updated: false, post: post || undefined };
+      return { success: true, added: false, removed: true, updated: false };
     } else {
       // Update reaction type
       const { error } = await supabase
@@ -199,9 +197,7 @@ export async function toggleReactionWithType(
         .eq('id', existing.id);
       
       if (error) return { success: false, added: false, removed: false, updated: false };
-      
-      const post = await getPost(postId);
-      return { success: true, added: false, removed: false, updated: true, post: post || undefined };
+      return { success: true, added: false, removed: false, updated: true };
     }
   } else {
     // Add new reaction
@@ -214,10 +210,23 @@ export async function toggleReactionWithType(
       }]);
     
     if (error) return { success: false, added: false, removed: false, updated: false };
-    
-    const post = await getPost(postId);
-    return { success: true, added: true, removed: false, updated: false, post: post || undefined };
+    return { success: true, added: true, removed: false, updated: false };
   }
+}
+
+export async function getPostMeta(postId: string): Promise<{ title: string; authorEmail: string } | null> {
+  const { data: post, error } = await supabase
+    .from('posts')
+    .select('title, text, author_email')
+    .eq('id', postId)
+    .maybeSingle();
+
+  if (error || !post) return null;
+
+  return {
+    title: post.title || post.text || 'Пост',
+    authorEmail: post.author_email,
+  };
 }
 
 export function getReactionCounts(post: UserPost) {
