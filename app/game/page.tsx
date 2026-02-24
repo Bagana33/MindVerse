@@ -64,7 +64,8 @@ export default function GamePage() {
       fetchLessons();
     }
     fetchImages();
-    const interval = setInterval(fetchImages, 2000);
+    // Poll less frequently to бууруулах ачаалал
+    const interval = setInterval(fetchImages, 10000);
     return () => clearInterval(interval);
   }, [session]);
 

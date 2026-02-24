@@ -70,6 +70,22 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
           );
         })}
 
+        {/* Admin link – only teachers see it */}
+        {session?.role === "teacher" && (
+          <Link
+            href="/admin"
+            onClick={() => setMobileMenuOpen(false)}
+            className={`sidebar-item mt-2 flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all hover:bg-white/5 hover:text-white group ${
+              pathname.startsWith("/admin")
+                ? "active bg-primary-500/10 text-primary-500 border-r-[3px] border-primary-500"
+                : "text-slate-400"
+            }`}
+          >
+            <span className="material-symbols-outlined text-[22px]">admin_panel_settings</span>
+            <span>Admin</span>
+          </Link>
+        )}
+
         {/* Fun Menu */}
         <div
           className="relative"

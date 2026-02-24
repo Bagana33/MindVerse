@@ -42,8 +42,8 @@ export default function SpinnerPage() {
     }
 
     loadOptions();
-    // Poll for updates every 2 seconds
-    const interval = setInterval(loadOptions, 2000);
+    // Poll for updates every 10 seconds (бага ачаалал)
+    const interval = setInterval(loadOptions, 10000);
     return () => clearInterval(interval);
   }, []);
 
