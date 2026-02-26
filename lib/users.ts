@@ -15,6 +15,10 @@ export type User = {
   experience: number; // XP points
 };
 
+function normalizeEmail(email: string): string {
+  return email.toLowerCase().trim();
+}
+
 // Database column names use snake_case, convert to/from camelCase
 function dbToUser(dbRow: any): User {
   return {
@@ -64,7 +68,7 @@ function userToDb(user: Partial<User>, opts: { includeGrade?: boolean } = {}): a
 // Create a new user (signup)
 export async function createUser(email: string, password: string, name?: string, role: "student" | "teacher" = "student", grade?: string): Promise<User> {
   // Normalize email to lowercase for case-insensitive storage
-  const normalizedEmail = email.toLowerCase().trim();
+  const normalizedEmail = normalizeEmail(email);
   // Check if user already exists
   const existing = await getUser(normalizedEmail);
   const hashedPassword = await bcrypt.hash(password, 10);
@@ -136,23 +140,28 @@ export async function verifyUser(email: string, password: string): Promise<User 
 
 export async function getUser(email: string): Promise<User | null> {
   // Normalize email to lowercase for case-insensitive comparison
-  const normalizedEmail = email.toLowerCase().trim();
+  const normalizedEmail = normalizeEmail(email);
   const { data, error } = await supabase
     .from('users')
     .select('*')
-    .eq('email', normalizedEmail)
-    .single();
+    .ilike('email', normalizedEmail)
+    .limit(1);
 
-  if (error || !data) return null;
-  return dbToUser(data);
+  if (error || !data || data.length === 0) return null;
+  return dbToUser(data[0]);
 }
 
 export async function updateUser(email: string, updates: Partial<Omit<User, 'email' | 'role'>>): Promise<User | null> {
+  const existingUser = await getUser(email);
+  if (!existingUser) {
+    return null;
+  }
+
   const includeGrade = await supportsGradeColumn();
   const { data, error } = await supabase
     .from('users')
     .update(userToDb(updates as any, { includeGrade }))
-    .eq('email', email)
+    .eq('email', existingUser.email)
     .select()
     .single();
 
@@ -173,7 +182,7 @@ export async function addExperience(email: string, points: number): Promise<User
   const { data, error } = await supabase
     .from('users')
     .update({ experience: newExp })
-    .eq('email', email)
+    .eq('email', user.email)
     .select()
     .single();
 
@@ -187,10 +196,13 @@ export async function addExperience(email: string, points: number): Promise<User
 
 // Set exact XP amount (for teacher management)
 export async function setExperience(email: string, points: number): Promise<User | null> {
+  const user = await getUser(email);
+  if (!user) return null;
+
   const { data, error } = await supabase
     .from('users')
     .update({ experience: Math.max(0, points) })
-    .eq('email', email)
+    .eq('email', user.email)
     .select()
     .single();
 
