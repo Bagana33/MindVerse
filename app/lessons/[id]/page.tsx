@@ -431,7 +431,7 @@ export default function LessonDetailPage() {
               <h3 className="text-sm font-medium text-slate-300 mb-2">📎 Хавсаргасан файлууд</h3>
               <div className="space-y-2">
                 {lesson.files.map((file) => {
-                  const downloadHref = `/api/lessons/download?url=${encodeURIComponent(file.fileUrl)}`;
+                  const downloadHref = `/api/lessons/download?url=${encodeURIComponent(file.fileUrl)}&name=${encodeURIComponent(file.fileName)}`;
                   return (
                     <a
                       key={file.id}

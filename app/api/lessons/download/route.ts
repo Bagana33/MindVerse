@@ -5,8 +5,19 @@ import { getCloudinaryCreds } from "../../../../lib/cloudinary";
 
 type ParsedCloudinary = {
   resourceType: "image" | "video" | "raw" | "auto";
+  deliveryType: string;
   publicId: string;
+  attachmentUrl: string;
 };
+
+function isSafeHttpUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
 
 function parseCloudinaryUrl(url: string): ParsedCloudinary | null {
   try {
@@ -14,22 +25,46 @@ function parseCloudinaryUrl(url: string): ParsedCloudinary | null {
     if (!u.hostname.includes("res.cloudinary.com")) return null;
 
     const parts = u.pathname.split("/").filter(Boolean);
-    // Expected: /{cloud}/raw/upload/v12345/path/to/file.ext
+    // /{cloud}/{resource_type}/{type}/.../{version}/{public_id}
     if (parts.length < 5) return null;
-
-    const [cloud, resourceType, deliveryType, version, ...rest] = parts;
-    if (!cloud || deliveryType !== "upload" || !version?.startsWith("v") || rest.length === 0) {
-      return null;
-    }
-
+    const [cloudName, resourceType, deliveryType] = parts;
+    if (!cloudName || !resourceType || !deliveryType) return null;
     if (!["image", "video", "raw", "auto"].includes(resourceType)) return null;
 
-    const publicId = decodeURIComponent(rest.join("/"));
-    return { resourceType: resourceType as ParsedCloudinary["resourceType"], publicId };
+    const versionIndex = parts.findIndex((part, idx) => idx >= 3 && /^v\d+$/.test(part));
+    if (versionIndex < 0) return null;
+    if (versionIndex + 1 >= parts.length) return null;
+
+    const existingTransforms = parts.slice(3, versionIndex);
+    const hasAttachment = existingTransforms.some((segment) => segment.includes("fl_attachment"));
+    const transforms = hasAttachment
+      ? existingTransforms
+      : existingTransforms.length > 0
+        ? [`${existingTransforms[0]},fl_attachment`, ...existingTransforms.slice(1)]
+        : ["fl_attachment"];
+
+    const attachmentParts = [...parts.slice(0, 3), ...transforms, ...parts.slice(versionIndex)];
+    const publicId = decodeURIComponent(parts.slice(versionIndex + 1).join("/"));
+    if (!publicId) return null;
+
+    u.pathname = `/${attachmentParts.join("/")}`;
+    return {
+      resourceType: resourceType as ParsedCloudinary["resourceType"],
+      deliveryType,
+      publicId,
+      attachmentUrl: u.toString(),
+    };
   } catch (e) {
     console.error("Failed to parse Cloudinary URL:", e);
     return null;
   }
+}
+
+function sanitizeAttachmentName(name: string | null): string | undefined {
+  if (!name) return undefined;
+  const trimmed = name.trim();
+  if (!trimmed) return undefined;
+  return trimmed.replace(/[\\/:*?"<>|]/g, "_").slice(0, 200);
 }
 
 export async function GET(req: NextRequest) {
@@ -43,29 +78,36 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Файлын URL байхгүй байна" }, { status: 400 });
   }
 
-  // If it's not a Cloudinary URL, just pass it through
-  const parsed = parseCloudinaryUrl(url);
-  if (!parsed) {
+  if (!isSafeHttpUrl(url)) {
+    return NextResponse.json({ ok: false, error: "Файлын URL буруу байна" }, { status: 400 });
+  }
+
+  const attachmentName = sanitizeAttachmentName(req.nextUrl.searchParams.get("name"));
+
+  // If it's not a Cloudinary URL, pass through.
+  const parsedCloudinary = parseCloudinaryUrl(url);
+  if (!parsedCloudinary) {
     return NextResponse.redirect(url);
   }
 
   try {
-    // Ensure creds are present (throws if missing)
+    // Required for private resources (ACL/authenticated assets)
     getCloudinaryCreds();
 
-    const downloadUrl = cloudinary.utils.private_download_url(
-      parsed.publicId,
+    const signedDownloadUrl = cloudinary.utils.private_download_url(
+      parsedCloudinary.publicId,
       undefined,
       {
-        resource_type: parsed.resourceType,
-        type: "upload",
+        resource_type: parsedCloudinary.resourceType,
+        type: parsedCloudinary.deliveryType,
+        // Cloudinary supports passing attachment filename string, but typings only allow boolean.
+        attachment: (attachmentName || true) as any,
       }
     );
 
-    return NextResponse.redirect(downloadUrl);
+    return NextResponse.redirect(signedDownloadUrl);
   } catch (err) {
-    console.error("Lesson file download sign error:", err);
-    // Fallback to original URL (may still fail but better than blocking)
-    return NextResponse.redirect(url);
+    console.error("Lesson file download sign error, using unsigned fallback:", err);
+    return NextResponse.redirect(parsedCloudinary.attachmentUrl);
   }
 }
