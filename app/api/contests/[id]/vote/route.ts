@@ -12,7 +12,7 @@ export async function POST(
   }
 
   const params = await context.params;
-  const contest = getContest(params.id);
+  const contest = await getContest(params.id);
   if (!contest) {
     return NextResponse.json({ ok: false, error: "Уралдаан олдсонгүй" }, { status: 404 });
   }
@@ -29,13 +29,13 @@ export async function POST(
       return NextResponse.json({ ok: false, error: "Submission ID шаардлагатай" }, { status: 400 });
     }
 
-    const submission = voteSubmission(params.id, submissionId, session.email);
+    const submission = await voteSubmission(params.id, submissionId, session.email);
 
     if (!submission) {
       return NextResponse.json({ ok: false, error: "Санал өгөх боломжгүй" }, { status: 400 });
     }
 
-    const updatedContest = getContest(params.id);
+    const updatedContest = await getContest(params.id);
     return NextResponse.json({ ok: true, contest: updatedContest });
   } catch (err: any) {
     console.error("Vote submission error:", err);
@@ -45,4 +45,3 @@ export async function POST(
     );
   }
 }
-

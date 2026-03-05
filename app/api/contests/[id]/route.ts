@@ -6,14 +6,22 @@ export async function GET(
   req: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const params = await context.params;
-  const contest = getContest(params.id);
+  try {
+    const params = await context.params;
+    const contest = await getContest(params.id);
 
-  if (!contest) {
-    return NextResponse.json({ ok: false, error: "Уралдаан олдсонгүй" }, { status: 404 });
+    if (!contest) {
+      return NextResponse.json({ ok: false, error: "Уралдаан олдсонгүй" }, { status: 404 });
+    }
+
+    return NextResponse.json({ ok: true, contest });
+  } catch (err: any) {
+    console.error("Get contest error:", err);
+    return NextResponse.json(
+      { ok: false, error: err?.message || "Уралдааныг авахад алдаа гарлаа" },
+      { status: 500 }
+    );
   }
-
-  return NextResponse.json({ ok: true, contest });
 }
 
 export async function PUT(
@@ -30,7 +38,7 @@ export async function PUT(
   }
 
   const params = await context.params;
-  const existing = getContest(params.id);
+  const existing = await getContest(params.id);
   if (!existing) {
     return NextResponse.json({ ok: false, error: "Уралдаан олдсонгүй" }, { status: 404 });
   }
@@ -51,7 +59,7 @@ export async function PUT(
     if (prize !== undefined) updates.prize = prize;
     if (targetGrades !== undefined) updates.targetGrades = targetGrades;
 
-    const updated = updateContest(params.id, session.email, updates);
+    const updated = await updateContest(params.id, session.email, updates);
     if (!updated) {
       return NextResponse.json({ ok: false, error: "Засах боломжгүй" }, { status: 400 });
     }
@@ -80,12 +88,19 @@ export async function DELETE(
   }
 
   const params = await context.params;
-  const success = deleteContest(params.id, session.email);
+  try {
+    const success = await deleteContest(params.id, session.email);
 
-  if (!success) {
-    return NextResponse.json({ ok: false, error: "Уралдаан олдсонгүй эсвэл устгах эрхгүй" }, { status: 404 });
+    if (!success) {
+      return NextResponse.json({ ok: false, error: "Уралдаан олдсонгүй эсвэл устгах эрхгүй" }, { status: 404 });
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch (err: any) {
+    console.error("Delete contest error:", err);
+    return NextResponse.json(
+      { ok: false, error: err?.message || "Устгахад алдаа гарлаа" },
+      { status: 500 }
+    );
   }
-
-  return NextResponse.json({ ok: true });
 }
-

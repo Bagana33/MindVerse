@@ -25,6 +25,7 @@ export default function ContestsPage() {
   const { session } = useSession();
   const [contests, setContests] = useState<Contest[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   
@@ -43,13 +44,18 @@ export default function ContestsPage() {
 
   async function fetchContests() {
     try {
+      setLoadError(null);
       const res = await fetch("/api/contests");
-      if (res.ok) {
-        const json = await res.json();
-        setContests(json.contests || []);
+      const json = await res.json().catch(() => null);
+      if (!res.ok) {
+        setContests([]);
+        setLoadError(json?.error || "Уралдааныг ачаалахад алдаа гарлаа");
+        return;
       }
+      setContests(json?.contests || []);
     } catch (err) {
       console.error("Failed to fetch contests:", err);
+      setLoadError("Сүлжээний алдаа гарлаа");
     } finally {
       setLoading(false);
     }
@@ -295,7 +301,11 @@ export default function ContestsPage() {
           </div>
         )}
 
-        {contests.length === 0 ? (
+        {loadError ? (
+          <div className="glass-panel p-12 rounded-2xl text-center">
+            <p className="text-red-300">{loadError}</p>
+          </div>
+        ) : contests.length === 0 ? (
           <div className="glass-panel p-12 rounded-2xl text-center">
             <p className="text-slate-400">Одоогоор уралдаан байхгүй байна.</p>
           </div>

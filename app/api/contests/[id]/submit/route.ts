@@ -16,7 +16,7 @@ export async function POST(
   }
 
   const params = await context.params;
-  const contest = getContest(params.id);
+  const contest = await getContest(params.id);
   if (!contest) {
     return NextResponse.json({ ok: false, error: "Уралдаан олдсонгүй" }, { status: 404 });
   }
@@ -33,7 +33,7 @@ export async function POST(
       return NextResponse.json({ ok: false, error: "Файл шаардлагатай" }, { status: 400 });
     }
 
-    const submission = submitToContest(params.id, {
+    const submission = await submitToContest(params.id, {
       userEmail: session.email,
       userName: session.name || session.email,
       fileUrl,
@@ -44,7 +44,7 @@ export async function POST(
       return NextResponse.json({ ok: false, error: "Илгээх боломжгүй (аль хэдийн илгээсэн эсвэл уралдаан дууссан)" }, { status: 400 });
     }
 
-    const updatedContest = getContest(params.id);
+    const updatedContest = await getContest(params.id);
     return NextResponse.json({ ok: true, contest: updatedContest, submission });
   } catch (err: any) {
     console.error("Submit to contest error:", err);
@@ -54,4 +54,3 @@ export async function POST(
     );
   }
 }
-
