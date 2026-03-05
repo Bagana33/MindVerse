@@ -47,6 +47,13 @@ type Lesson = {
   createdAt: string;
 };
 
+function normalizeDescription(text: string): string {
+  return text
+    .replace(/\r\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export default function LessonDetailPage() {
   const { session } = useSession();
   const params = useParams();
@@ -340,6 +347,7 @@ export default function LessonDetailPage() {
   const isStudent = session?.role === "student";
   const mySubmission = lesson.submissions?.find(s => s.studentEmail === session?.email);
   const canSubmit = isStudent; // Allow resubmission
+  const lessonDescription = normalizeDescription(lesson.description);
 
   if (showResults) {
     const percentage = Math.round((score / lesson.questions.length) * 100);
@@ -420,7 +428,11 @@ export default function LessonDetailPage() {
 
         <div className="bg-slate-900/40 border border-slate-800 rounded-2xl px-6 py-5">
           <h1 className="text-2xl font-bold mb-2">{lesson.title}</h1>
-          <p className="text-slate-400 mb-4">{lesson.description}</p>
+          <div className="mb-4 rounded-xl border border-slate-800 bg-slate-950/40 px-4 py-3">
+            <p className="text-slate-300 leading-7 whitespace-pre-line break-words">
+              {lessonDescription}
+            </p>
+          </div>
           <div className="flex items-center gap-4 text-sm text-slate-500">
             <span>👤 {lesson.authorName}</span>
             <span>📝 {lesson.questions.length} асуулт</span>

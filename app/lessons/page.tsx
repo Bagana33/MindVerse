@@ -32,6 +32,13 @@ type FileInput = {
   fileSize: number;
 };
 
+function normalizeDescription(text: string): string {
+  return text
+    .replace(/\r\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 export default function LessonsPage() {
   const { session } = useSession();
   const [lessons, setLessons] = useState<Lesson[]>([]);
@@ -536,7 +543,12 @@ newFiles.push({
                 <div className="flex items-start justify-between gap-4">
                   <Link href={`/lessons/${lesson.id}`} className="flex-1">
                     <h3 className="text-lg font-semibold text-slate-200 mb-2 hover:text-violet-300 transition-colors">{lesson.title}</h3>
-                    <p className="text-sm text-slate-400 mb-3">{lesson.description}</p>
+                    <p
+                      className="text-sm text-slate-400 mb-3 whitespace-pre-line break-words overflow-hidden"
+                      style={{ display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" }}
+                    >
+                      {normalizeDescription(lesson.description)}
+                    </p>
                     <div className="flex items-center gap-4 text-xs text-slate-500">
                       <span>👤 {lesson.authorName}</span>
                       <span>📝 {lesson.questions.length} асуулт</span>
