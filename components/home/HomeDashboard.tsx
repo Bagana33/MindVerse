@@ -1,10 +1,25 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "../auth/useSession";
+import { BrandLogo } from "../layout/BrandLogo";
 import { LeaderboardSidebar } from "../leaderboard/LeaderboardTable";
+import { CommentsSection } from "../posts/CommentsSection";
 import { cachedFetch } from "../../lib/fetchCache";
+import { compressImageFile } from "../../lib/imageCompressor";
+import { FakeClientPanel } from "./FakeClientPanel";
+
+type Comment = {
+  id: string;
+  postId: string;
+  authorEmail: string;
+  content: string;
+  isAI: boolean;
+  parentCommentId?: string | null;
+  createdAt: string;
+};
 
 type UserPost = {
   id: string;
@@ -12,10 +27,13 @@ type UserPost = {
   description: string;
   author: string;
   authorEmail: string;
+  authorAvatarUrl?: string;
+  authorAvatarColor?: string;
   points: number;
   createdAt: string;
   imageUrl?: string;
   reactions: Array<{ userEmail: string; type: string }>;
+  comments?: Comment[];
 };
 
 type LeaderboardUser = {
@@ -23,8 +41,18 @@ type LeaderboardUser = {
   name?: string;
   nickname?: string;
   avatarUrl?: string;
+  avatarColor?: string;
   experience: number;
 };
+
+type GradeFilter = "all" | "10" | "11" | "12";
+
+const gradeFilters: Array<{ value: GradeFilter; label: string; shortLabel: string }> = [
+  { value: "all", label: "All Grades", shortLabel: "All" },
+  { value: "10", label: "10th Grade", shortLabel: "10" },
+  { value: "11", label: "11th Grade", shortLabel: "11" },
+  { value: "12", label: "12th Grade", shortLabel: "12" },
+];
 
 function formatRelativeTime(dateString: string) {
   const timestamp = new Date(dateString).getTime();
@@ -43,36 +71,23 @@ function formatRelativeTime(dateString: string) {
   });
 }
 
-/** Subsequence: query-ийн үсгүүд text дотор дарааллаар гарч байна уу (дутуу бичих зөвшөөрнө) */
-function isSubsequence(text: string, query: string): boolean {
-  let j = 0;
-  for (let i = 0; i < query.length; i++) {
-    const pos = text.indexOf(query[i], j);
-    if (pos === -1) return false;
-    j = pos + 1;
-  }
-  return true;
-}
-
-/** Fuzzy match: яг таарна, дэд мөр, үгний эх, subsequence, нэг үсэг алдаа зөвшөөрнө */
-function fuzzyMatch(text: string | undefined, query: string): boolean {
-  if (!text || !query) return false;
-  const t = text.toLowerCase();
+/** Accurate search matching:
+ * Checks if all query keywords are present in post title, description, author, email or comments.
+ */
+function searchMatch(post: UserPost, query: string): boolean {
+  if (!query || !query.trim()) return true;
   const q = query.toLowerCase().trim();
-  if (!q) return false;
-  if (t.includes(q)) return true;
-  const words = t.split(/\s+/);
-  for (const w of words) {
-    if (w.startsWith(q) || (q.length >= 2 && w.length >= 2 && q.startsWith(w.slice(0, 2)))) return true;
-  }
-  if (isSubsequence(t, q)) return true;
-  if (q.length >= 3) {
-    for (let skip = 0; skip < q.length; skip++) {
-      const sub = q.slice(0, skip) + q.slice(skip + 1);
-      if (isSubsequence(t, sub)) return true;
-    }
-  }
-  return false;
+  const tokens = q.split(/\s+/).filter(Boolean);
+
+  const searchableText = [
+    post.title || "",
+    post.description || "",
+    post.author || "",
+    post.authorEmail || "",
+    ...(post.comments || []).map(c => c.content || "")
+  ].join(" ").toLowerCase();
+
+  return tokens.every(token => searchableText.includes(token));
 }
 
 export function HomeDashboard() {
@@ -90,8 +105,8 @@ export function HomeDashboard() {
     const q = searchParams.get("search");
     if (q != null) setSearchQuery(q);
   }, [searchParams]);
-  const [selectedGrade, setSelectedGrade] = useState("all");
-  const [activeTab, setActiveTab] = useState<"feed" | "following" | "classroom">("feed");
+  const [selectedGrade, setSelectedGrade] = useState<GradeFilter>("all");
+  const [isFilterLoading, setIsFilterLoading] = useState(false);
   const [userXp, setUserXp] = useState<number | null>(null);
   const [xpMap, setXpMap] = useState<Record<string, number>>({});
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -105,6 +120,41 @@ export function HomeDashboard() {
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [reactingPostId, setReactingPostId] = useState<string | null>(null);
+  const [copiedPostId, setCopiedPostId] = useState<string | null>(null);
+  const [openCommentsPostId, setOpenCommentsPostId] = useState<string | null>(null);
+  // tracks detected aspect ratio per post image: 'portrait' | 'landscape' | 'square'
+  const [imgOrientations, setImgOrientations] = useState<Record<string, 'portrait' | 'landscape' | 'square'>>({});
+
+  const handleImgLoad = (postId: string, e: React.SyntheticEvent<HTMLImageElement>) => {
+    const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
+    const ratio = w / h;
+    let orient: 'portrait' | 'landscape' | 'square';
+    if (ratio < 0.85)       orient = 'portrait';   // taller than wide
+    else if (ratio > 1.25)  orient = 'landscape';  // wider than tall
+    else                    orient = 'square';      // roughly square
+    setImgOrientations(prev => ({ ...prev, [postId]: orient }));
+  };
+
+  const handleSharePost = async (postId: string, title: string, description: string) => {
+    const shareText = `${title}${description ? `\n\n${description}` : ''}`;
+    const shareUrl = typeof window !== 'undefined' ? `${window.location.origin}/?post=${postId}` : '';
+    
+    if (navigator.share) {
+      try {
+        await navigator.share({ title, text: shareText, url: shareUrl });
+        return;
+      } catch {}
+    }
+    
+    try {
+      await navigator.clipboard.writeText(`${shareText}\n\n${shareUrl}`);
+      setCopiedPostId(postId);
+      setTimeout(() => setCopiedPostId(null), 2500);
+    } catch {
+      alert("Хуваалцах боломжгүй байна");
+    }
+  };
+  const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
   const [notifications, setNotifications] = useState<Array<{ id: string; type: string; message: string; createdAt: string; read: boolean }>>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -187,41 +237,90 @@ export function HomeDashboard() {
     ? { current: userXp, goal: Math.max(userXp + 100, 100) }
     : { current: 0, goal: 100 };
 
+  async function fetchCommentCounts(postIds: string[]) {
+    if (postIds.length === 0) return;
+    try {
+      const res = await fetch(`/api/posts/comments/counts?ids=${postIds.map(encodeURIComponent).join(",")}`, {
+        cache: "no-store",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCommentCounts((prev) => ({ ...prev, ...(data.counts || {}) }));
+      }
+    } catch {
+      // Counts are secondary; comments can still load per post.
+    }
+  }
+
+  async function fetchPostComments(postId: string): Promise<Comment[]> {
+    try {
+      const res = await fetch(`/api/posts/comments?postId=${encodeURIComponent(postId)}`, {
+        cache: "no-store",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return Array.isArray(data.comments) ? data.comments : [];
+      }
+    } catch {
+      // The post can still render; comments can be loaded manually.
+    }
+    return [];
+  }
+
   // Fetch posts (first page)
   useEffect(() => {
+    const controller = new AbortController();
     setHasMore(true);
+    setIsFilterLoading(true);
+    setLoading(true);
+
     async function fetchPosts() {
       try {
         const gradeParam = selectedGrade !== "all" ? `&grade=${encodeURIComponent(selectedGrade)}` : "";
-        const res = await fetch(`/api/posts?limit=10${gradeParam}`);
+        const searchParam = searchQuery.trim() ? `&search=${encodeURIComponent(searchQuery.trim())}` : "";
+        const res = await fetch(`/api/posts?limit=10${gradeParam}${searchParam}`, { signal: controller.signal });
         if (res.ok) {
           const json = await res.json();
           const list = json.posts || [];
           setPosts(list);
+          setCommentCounts({});
+          await fetchCommentCounts(list.map((post: UserPost) => post.id));
           setHasMore(list.length >= 10);
         }
       } catch (err) {
-        console.error("Failed to fetch posts:", err);
+        if ((err as Error).name !== "AbortError") {
+          console.error("Failed to fetch posts:", err);
+        }
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) {
+          setLoading(false);
+          setIsFilterLoading(false);
+        }
       }
     }
+
     fetchPosts();
-  }, [selectedGrade]);
+
+    return () => {
+      controller.abort();
+    };
+  }, [selectedGrade, searchQuery]);
 
   async function loadOlderPosts() {
-    if (loadingOlder || !hasMore || posts.length === 0) return;
+    if (loadingOlder || !hasMore || posts.length === 0 || isFilterLoading) return;
     const lastPost = posts[posts.length - 1];
     const before = lastPost?.createdAt;
     if (!before) return;
     setLoadingOlder(true);
     try {
       const gradeParam = selectedGrade !== "all" ? `&grade=${encodeURIComponent(selectedGrade)}` : "";
-      const res = await fetch(`/api/posts?limit=10&before=${encodeURIComponent(before)}${gradeParam}`);
+      const searchParam = searchQuery.trim() ? `&search=${encodeURIComponent(searchQuery.trim())}` : "";
+      const res = await fetch(`/api/posts?limit=10&before=${encodeURIComponent(before)}${gradeParam}${searchParam}`);
       if (res.ok) {
         const json = await res.json();
         const list = json.posts || [];
         setPosts((prev) => [...prev, ...list]);
+        await fetchCommentCounts(list.map((post: UserPost) => post.id));
         setHasMore(list.length >= 10);
       }
     } catch (err) {
@@ -238,7 +337,7 @@ export function HomeDashboard() {
         const res = await cachedFetch("/api/leaderboard");
         const json = await res.json();
         const leaderboard = json.leaderboard || [];
-        setTopStudents(leaderboard.slice(0, 5));
+        setTopStudents(leaderboard.slice(0, 15));
         
         // Create XP map for post authors
         const map: Record<string, number> = {};
@@ -265,17 +364,11 @@ export function HomeDashboard() {
     }
   };
 
-  // Filter posts by fuzzy search (гарчиг, тайлбар, зохиогч — дутуу/алдаатай бичихэд ч гарна)
+  // Filter posts by search query (гарчиг, тайлбар, зохиогч, мэйлээр хайх)
   const filteredPosts = (() => {
     const q = searchQuery.trim();
     if (!q) return posts;
-    return posts.filter(
-      (p) =>
-        fuzzyMatch(p.title, q) ||
-        fuzzyMatch(p.description, q) ||
-        fuzzyMatch(p.author, q) ||
-        fuzzyMatch(p.authorEmail, q)
-    );
+    return posts.filter((p) => searchMatch(p, q));
   })();
 
   const reactionCounts = (post: UserPost) => ({
@@ -283,10 +376,11 @@ export function HomeDashboard() {
     wow: post.reactions.filter((r) => r.type === "WOW").length,
     love: post.reactions.filter((r) => r.type === "LOVE").length,
     cool: post.reactions.filter((r) => r.type === "COOL").length,
+    star: post.reactions.filter((r) => r.type === "STAR").length,
   });
 
   const handleReaction = useCallback(
-    async (postId: string, type: "FIRE" | "WOW" | "LOVE" | "COOL") => {
+    async (postId: string, type: "FIRE" | "WOW" | "LOVE" | "COOL" | "STAR") => {
       if (!session?.email) {
         router.push("/login");
         return;
@@ -305,33 +399,31 @@ export function HomeDashboard() {
             ? reactions.map((r, i) => (i === idx ? { ...r, type } : r))
             : [...reactions, { userEmail: session.email, type }];
 
+      // 1. Instant optimistic state update (0ms latency)
       setPosts((prev) =>
         prev.map((p) => (p.id === postId ? { ...p, reactions: nextReactions } : p))
       );
-      setReactingPostId(postId);
-      try {
-        const res = await fetch(`/api/posts/react?id=${encodeURIComponent(postId)}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ type }),
-        });
-        const json = await res.json().catch(() => ({}));
+
+      // 2. Non-blocking background API call
+      fetch(`/api/posts/react?id=${encodeURIComponent(postId)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type }),
+      }).then(async (res) => {
         if (!res.ok) {
+          const json = await res.json().catch(() => ({}));
+          // Rollback on failure
           setPosts((prev) =>
             prev.map((p) => (p.id === postId ? { ...p, reactions: post.reactions } : p))
           );
-          alert(json.error || "Реакц хийхэд алдаа гарлаа");
-          return;
+          console.error("Reaction failed:", json.error);
         }
-        // Optimistic state is already correct; server confirmed success
-      } catch (err: any) {
+      }).catch((err) => {
         setPosts((prev) =>
           prev.map((p) => (p.id === postId ? { ...p, reactions: post.reactions } : p))
         );
-        alert(err?.message || "Сүлжээний алдаа");
-      } finally {
-        setReactingPostId(null);
-      }
+        console.error("Reaction network error:", err);
+      });
     },
     [session?.email, posts, router]
   );
@@ -389,18 +481,10 @@ export function HomeDashboard() {
       setImageUploading(false);
     } catch (err) {
       try {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          const result = event.target?.result as string;
-          setImagePreview(result);
-          setImageUrl(result);
-          setImageUploading(false);
-        };
-        reader.onerror = () => {
-          setImageUploading(false);
-          setCreateError("Зураг уншихад алдаа гарлаа");
-        };
-        reader.readAsDataURL(file);
+        const compressedBase64 = await compressImageFile(file, 1200, 0.75);
+        setImagePreview(compressedBase64);
+        setImageUrl(compressedBase64);
+        setImageUploading(false);
       } catch (e) {
         setImageUploading(false);
         setCreateError("Зураг байршуулж чадсангүй");
@@ -443,7 +527,33 @@ export function HomeDashboard() {
       }
 
       const json = await res.json();
-      setPosts([json.post, ...posts]);
+      const postId = json.post.id;
+      const initialComments = await fetchPostComments(postId);
+      const postWithComments: UserPost = { ...json.post, comments: initialComments };
+
+      setPosts((prev) => [postWithComments, ...prev]);
+      setCommentCounts((prev) => ({ ...prev, [postId]: initialComments.length }));
+
+      let attempts = 0;
+      const pollForAIComment = window.setInterval(async () => {
+        attempts += 1;
+        const comments = await fetchPostComments(postId);
+        const hasAIComment = comments.some((comment) => comment.isAI);
+
+        if (comments.length > 0) {
+          setPosts((prev) =>
+            prev.map((post) =>
+              post.id === postId ? { ...post, comments } : post
+            )
+          );
+          setCommentCounts((prev) => ({ ...prev, [postId]: comments.length }));
+        }
+
+        if (hasAIComment || attempts >= 6) {
+          window.clearInterval(pollForAIComment);
+        }
+      }, 2000);
+
       setTitle("");
       setDescription("");
       setImageUrl("");
@@ -458,204 +568,6 @@ export function HomeDashboard() {
 
   return (
     <>
-      {/* Header */}
-      <header className="flex items-center justify-between mb-8 gap-4">
-        <div className="lg:hidden flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-indigo-600 flex items-center justify-center text-white font-bold text-xs">
-            MV
-          </div>
-          <span className="font-bold text-white">Mind Verse</span>
-        </div>
-        <div className="hidden lg:block">
-          <h2 className="text-2xl font-bold text-white">Dashboard</h2>
-          <p className="text-slate-500 text-sm">Welcome back, get ready to create.</p>
-        </div>
-        <div className="flex items-center gap-4 flex-1 lg:flex-none justify-end">
-          <div className="relative hidden md:block group">
-            <span className="material-symbols-outlined absolute left-3 top-2.5 text-slate-500 group-focus-within:text-primary-500 transition-colors text-[20px]">
-              search
-            </span>
-            <input
-              className={`bg-dark-800 border border-white/10 text-sm rounded-full pl-10 py-2.5 w-64 focus:w-80 transition-all outline-none text-white focus:border-primary-500/50 focus:ring-1 focus:ring-primary-500/50 placeholder-slate-600 ${searchQuery.trim() ? "pr-10" : "pr-4"}`}
-              placeholder="Гарчиг, зохиогчоор хайх..."
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={handleSearchKeyDown}
-            />
-            {searchQuery.trim() && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchQuery("");
-                  const params = new URLSearchParams(searchParams.toString());
-                  params.delete("search");
-                  router.push(params.toString() ? `/?${params.toString()}` : "/");
-                }}
-                className="absolute right-3 top-2.5 text-slate-400 hover:text-white transition-colors"
-                aria-label="Хайлт цэвэрлэх"
-              >
-                <span className="material-symbols-outlined text-[18px]">close</span>
-              </button>
-            )}
-          </div>
-          <div className="relative" ref={notifRef}>
-            <button
-              type="button"
-              onClick={() => session && setNotifOpen((o) => !o)}
-              className="relative p-2.5 rounded-full bg-dark-800 border border-white/5 hover:bg-dark-700 transition-colors text-slate-400 hover:text-white"
-              aria-label="Мэдэгдэл"
-            >
-              <span className="material-symbols-outlined text-[20px]">notifications</span>
-              {session && unreadCount > 0 && (
-                <span className="absolute top-1.5 right-1.5 min-w-[18px] h-[18px] flex items-center justify-center px-1 bg-rose-500 text-white text-[10px] font-bold rounded-full border-2 border-dark-800">
-                  {unreadCount > 99 ? "99+" : unreadCount}
-                </span>
-              )}
-            </button>
-            {notifOpen && session && (
-              <div className="absolute right-0 mt-2 w-72 max-h-96 overflow-auto rounded-2xl bg-dark-900 border border-white/10 shadow-xl p-3 z-50">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-semibold text-slate-300">Мэдэгдэл</span>
-                  <div className="flex items-center gap-2">
-                    <button type="button" onClick={fetchNotifications} className="text-[10px] px-2 py-1 rounded-full bg-dark-700 hover:bg-dark-600 text-slate-300">
-                      ↻
-                    </button>
-                    <button type="button" onClick={markAllNotifsRead} className="text-[10px] px-2 py-1 rounded-full bg-primary-600/40 hover:bg-primary-600 text-primary-200">
-                      Уншсан
-                    </button>
-                    <button type="button" onClick={clearAllNotifs} className="text-[10px] px-2 py-1 rounded-full bg-red-600/40 hover:bg-red-600 text-red-100">
-                      Устгах
-                    </button>
-                  </div>
-                </div>
-                {loadingNotifs && notifications.length === 0 && (
-                  <div className="text-xs text-slate-500 py-4 text-center">Ачаалж байна...</div>
-                )}
-                {notifications.length === 0 && !loadingNotifs && (
-                  <div className="text-xs text-slate-500 py-4 text-center">Мэдэгдэл алга</div>
-                )}
-                <ul className="space-y-2">
-                  {notifications.map((n) => (
-                    <li
-                      key={n.id}
-                      className={`rounded-xl px-3 py-2 text-xs flex flex-col gap-1 border transition-all ${
-                        n.read ? "border-white/5 bg-dark-800/60" : "border-primary-500/40 bg-primary-950/40"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-slate-200">
-                          {n.type === "LIKE" && "👍 Like"}
-                          {n.type === "GRADE" && "📝 Grade"}
-                          {n.type === "CONTEST_WIN" && "🏆 Winner"}
-                          {!["LIKE", "GRADE", "CONTEST_WIN"].includes(n.type) && "🔔"}
-                        </span>
-                        <span className="text-[10px] text-slate-400">
-                          {new Date(n.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                        </span>
-                      </div>
-                      <span className="text-[11px] text-slate-300 leading-snug">{n.message}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-          <button
-            onClick={() => router.push("/contests")}
-            className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full bg-gradient-to-r from-primary-600/20 to-indigo-600/20 border border-primary-500/30 text-primary-300 text-xs font-bold hover:bg-primary-600/30 transition-all"
-          >
-            <span className="material-symbols-outlined text-[16px]">add</span>
-            <span>Create</span>
-          </button>
-        </div>
-      </header>
-
-      {/* Hero Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-10 items-start">
-        <div className="lg:col-span-8 relative rounded-3xl overflow-hidden group">
-          <div className="absolute inset-0 bg-gradient-to-r from-indigo-950 to-violet-950"></div>
-          <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20"></div>
-          <div className="absolute right-[-10%] top-[-20%] w-[400px] h-[400px] bg-primary-500/30 rounded-full blur-[80px]"></div>
-          <div className="relative z-10 p-8 h-full flex flex-col justify-between min-h-[280px]">
-            <div>
-              <div className="flex items-center gap-2 mb-4">
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-white/10 text-white border border-white/10 uppercase tracking-wide">
-                  Daily Challenge
-                </span>
-                <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span>
-                <span className="text-xs font-semibold text-green-400">Active Now</span>
-              </div>
-              <h1 className="text-3xl lg:text-5xl font-extrabold text-white leading-tight mb-4 max-w-2xl">
-                Craft something <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-400 to-pink-400 glow-text">visually bold</span> today.
-              </h1>
-              <p className="text-indigo-200/80 max-w-lg text-lg mb-6">
-                Post your latest graphic design work, react to others, earn XP and climb the leaderboard.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <span className="px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs font-medium text-white hover:bg-white/10 hover:border-primary-500/50 cursor-pointer transition-all">
-                #Tear
-              </span>
-              <span className="px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs font-medium text-white hover:bg-white/10 hover:border-primary-500/50 cursor-pointer transition-all">
-                #Yourself
-              </span>
-              <span className="px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs font-medium text-white hover:bg-white/10 hover:border-primary-500/50 cursor-pointer transition-all">
-                #Destroy
-              </span>
-              <span className="px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs font-medium text-white hover:bg-white/10 hover:border-primary-500/50 cursor-pointer transition-all">
-                #Blind
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Weekly Goal & Share Progress */}
-        <div className="lg:col-span-4">
-          <div className="sticky top-8 flex flex-col gap-6 w-full">
-            <div className="glass-card rounded-3xl p-6 relative overflow-hidden group hover:border-primary-500/30 transition-all">
-              <div className="flex justify-between items-start mb-2">
-                <div>
-                  <h3 className="font-bold text-white text-lg">Weekly Goal</h3>
-                  <p className="text-xs text-slate-400">3 days streak</p>
-                </div>
-                <div className="w-10 h-10 rounded-full bg-gradient-to-b from-primary-500 to-indigo-600 flex items-center justify-center">
-                  <span className="material-symbols-outlined text-white text-xl">local_fire_department</span>
-                </div>
-              </div>
-              <div className="mt-4">
-                <div className="flex justify-between text-xs font-bold text-slate-300 mb-1">
-                  <span>Your XP</span>
-                  <span>
-                    {userXp !== null ? Math.round(userXp).toLocaleString() : "0"} XP
-                  </span>
-                </div>
-                {userXp !== null && (
-                  <div className="w-full bg-dark-700 rounded-full h-2 overflow-hidden">
-                    <div
-                      className="bg-gradient-to-r from-primary-500 to-pink-500 h-full rounded-full transition-all"
-                      style={{ width: `${Math.min((userXp / weeklyXp.goal) * 100, 100)}%` }}
-                    ></div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div
-              onClick={() => (session ? setShowCreateForm(true) : router.push("/login"))}
-              className="glass-card rounded-3xl p-6 flex flex-col justify-center items-center text-center hover:bg-dark-800 transition-all cursor-pointer border-dashed border-2 border-dark-700 hover:border-primary-500/50"
-            >
-              <div className="w-12 h-12 rounded-full bg-dark-700 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
-                <span className="material-symbols-outlined text-primary-400 text-2xl">add_photo_alternate</span>
-              </div>
-              <h3 className="font-bold text-white text-sm">Share Progress Drop</h3>
-              <p className="text-xs text-slate-500 mt-1">
-                {session ? "Drag & drop or click to upload" : "Нэвтэрч бүтээлээ хуваалцана уу"}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* Create Post Modal */}
       {showCreateForm && (
@@ -799,52 +711,140 @@ export function HomeDashboard() {
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8">
         {/* Feed Section */}
         <div className="xl:col-span-8 space-y-6">
-          {/* Feed Tabs */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-dark-900/50 backdrop-blur-sm p-2 rounded-2xl border border-white/5 sticky top-0 z-30 shadow-2xl shadow-black/50">
-            <div className="flex items-center gap-1 overflow-x-auto hide-scrollbar">
-              <button
-                onClick={() => setActiveTab("feed")}
-                className={`px-5 py-2 rounded-xl text-sm font-bold transition-colors ${
-                  activeTab === "feed"
-                    ? "bg-primary-600 text-white shadow-lg shadow-primary-500/20"
-                    : "text-slate-400 hover:text-white hover:bg-white/5"
-                }`}
-              >
-                Feed
-              </button>
-              <button
-                onClick={() => setActiveTab("following")}
-                className={`px-5 py-2 rounded-xl text-sm font-medium transition-colors whitespace-nowrap ${
-                  activeTab === "following"
-                    ? "bg-primary-600 text-white shadow-lg shadow-primary-500/20"
-                    : "text-slate-400 hover:text-white hover:bg-white/5"
-                }`}
-              >
-                Following
-              </button>
-              <button
-                onClick={() => setActiveTab("classroom")}
-                className={`px-5 py-2 rounded-xl text-sm font-medium transition-colors whitespace-nowrap ${
-                  activeTab === "classroom"
-                    ? "bg-primary-600 text-white shadow-lg shadow-primary-500/20"
-                    : "text-slate-400 hover:text-white hover:bg-white/5"
-                }`}
-              >
-                Classroom
-              </button>
+          {/* Featured Top Creators Stories Bar */}
+          <div className="rounded-3xl border border-white/10 bg-dark-900/80 backdrop-blur-md p-4 shadow-xl overflow-hidden relative group/stories">
+            <div className="flex items-center justify-between mb-3 px-1">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-pink-500 animate-pulse" />
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+                  <span>✨ Онцлох сурагчид</span>
+                </h3>
+              </div>
+              <Link href="/leaderboard" className="text-[11px] font-semibold text-primary-400 hover:text-primary-300 transition-colors">
+                Бүгдийг харах →
+              </Link>
             </div>
-            <div className="flex items-center gap-2 pr-2">
-              <span className="text-xs text-slate-500 uppercase font-bold tracking-wider hidden sm:block">Filter:</span>
-              <select
-                className="bg-dark-800 border-none text-xs text-white font-medium rounded-lg py-1.5 pl-3 pr-8 focus:ring-1 focus:ring-primary-500/50 cursor-pointer"
-                value={selectedGrade}
-                onChange={(e) => setSelectedGrade(e.target.value)}
+
+            <div className="flex items-center gap-4 overflow-x-auto no-scrollbar py-2 px-1 scroll-smooth">
+              {/* Logged-in User "Add Story / Post" circle */}
+              <div
+                className="flex flex-col items-center gap-1.5 shrink-0 group/story cursor-pointer"
+                onClick={() => setShowCreateForm(true)}
               >
-                <option value="all">All Grades</option>
-                <option value="10">10th Grade</option>
-                <option value="11">11th Grade</option>
-                <option value="12">12th Grade</option>
-              </select>
+                <div className="relative p-[2.5px] rounded-full bg-gradient-to-tr from-slate-700 to-slate-800 group-hover/story:from-violet-500 group-hover/story:to-pink-500 transition-all duration-300">
+                  <div className="w-16 h-16 rounded-full border-2 border-dark-900 bg-dark-800 flex items-center justify-center relative overflow-hidden">
+                    {session?.avatarUrl ? (
+                      <img src={session.avatarUrl} alt="Your story" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-slate-300 font-bold text-lg">
+                        {(session?.nickname || session?.name || session?.email || "U")[0]?.toUpperCase()}
+                      </span>
+                    )}
+                    <div className="absolute bottom-0 right-0 w-5 h-5 rounded-full bg-primary-500 border-2 border-dark-900 flex items-center justify-center text-white text-[12px] font-bold">
+                      +
+                    </div>
+                  </div>
+                </div>
+                <span className="text-[11px] font-medium text-slate-400 group-hover/story:text-white truncate max-w-[70px]">
+                  Таных
+                </span>
+              </div>
+
+              {/* Top Featured Creators Stories */}
+              {topStudents.map((student, idx) => {
+                const displayName = student.nickname || student.name || student.email.split("@")[0];
+                return (
+                  <button
+                    key={student.email}
+                    type="button"
+                    onClick={() => router.push(`/profile?user=${encodeURIComponent(student.email)}`)}
+                    className="flex flex-col items-center gap-1.5 shrink-0 group/story cursor-pointer focus:outline-none"
+                    title={`${displayName} · ${student.experience || 0} XP`}
+                  >
+                    {/* Instagram-style colorful gradient ring */}
+                    <div className="relative p-[2.5px] rounded-full bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 transition-transform duration-300 group-hover/story:scale-105 group-hover/story:shadow-[0_0_15px_rgba(236,72,153,0.5)]">
+                      <div
+                        className="w-16 h-16 rounded-full border-2 border-dark-900 bg-dark-800 flex items-center justify-center overflow-hidden relative"
+                        style={{ backgroundColor: student.avatarColor || undefined }}
+                      >
+                        {student.avatarUrl ? (
+                          <img
+                            src={student.avatarUrl}
+                            alt={displayName}
+                            loading="lazy"
+                            decoding="async"
+                            className="w-full h-full object-cover"
+                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                          />
+                        ) : (
+                          <span className="text-white font-bold text-lg">
+                            {displayName[0]?.toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                      {/* Rank badge for top creators */}
+                      {idx < 3 && (
+                        <span className={`absolute -bottom-1 -right-1 text-[10px] font-black px-1.5 py-0.2 rounded-full border border-dark-900 shadow-md ${
+                          idx === 0 ? "bg-amber-400 text-slate-950" : idx === 1 ? "bg-slate-300 text-slate-950" : "bg-amber-700 text-white"
+                        }`}>
+                          #{idx + 1}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[11px] font-medium text-slate-300 group-hover/story:text-white truncate max-w-[72px]">
+                      {displayName}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Grade filter */}
+          <div className="bg-dark-900/70 backdrop-blur-sm p-3 rounded-2xl border border-white/10 sticky top-0 z-30 shadow-2xl shadow-black/50">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-bold">Filter By Grade</p>
+                <p className="text-xs text-slate-500 mt-1">Showing: {gradeFilters.find((g) => g.value === selectedGrade)?.label}</p>
+              </div>
+              {selectedGrade !== "all" && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedGrade("all")}
+                  disabled={isFilterLoading}
+                  className="text-[11px] px-3 py-1.5 rounded-full border border-white/10 text-slate-300 hover:text-white hover:border-primary-500/40 transition-colors disabled:opacity-60"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              {gradeFilters.map((grade) => {
+                const active = selectedGrade === grade.value;
+                return (
+                  <button
+                    key={grade.value}
+                    type="button"
+                    onClick={() => setSelectedGrade(grade.value)}
+                    disabled={isFilterLoading && !active}
+                    className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all border ${
+                      active
+                        ? "bg-gradient-to-r from-primary-500 to-indigo-500 text-white border-primary-400/30 shadow-[0_8px_20px_rgba(99,102,241,0.35)]"
+                        : "bg-dark-800/80 text-slate-300 border-white/10 hover:border-primary-500/40 hover:text-white"
+                    } disabled:opacity-60 disabled:cursor-not-allowed`}
+                  >
+                    {grade.shortLabel}
+                  </button>
+                );
+              })}
+
+              {isFilterLoading && (
+                <span className="text-xs text-slate-400 inline-flex items-center gap-1.5 ml-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary-400 animate-pulse" />
+                  Loading...
+                </span>
+              )}
             </div>
           </div>
 
@@ -862,140 +862,287 @@ export function HomeDashboard() {
               const reactions = reactionCounts(post);
               const myReaction = post.reactions.find((r) => r.userEmail === session?.email)?.type ?? null;
               const isReacting = reactingPostId === post.id;
+              // Image orientation derived from loaded dimensions
+              const imgOrient = imgOrientations[post.id] ?? 'square';
+              const imgAspectClass =
+                imgOrient === 'portrait'  ? 'aspect-[4/5]  max-h-[640px]' :
+                imgOrient === 'landscape' ? 'aspect-[16/9] max-h-[420px]' :
+                                            'aspect-square  max-h-[600px]';
+              const imgOrientLabel =
+                imgOrient === 'portrait' ? 'Босоо' : imgOrient === 'landscape' ? 'Хэвтээ' : 'Квадрат';
+              const imgOrientIcon =
+                imgOrient === 'portrait' ? 'crop_portrait' : imgOrient === 'landscape' ? 'crop_landscape' : 'crop_square';
               return (
                 <article
                   key={post.id}
-                  className="p-6 rounded-[32px] bg-dark-900 border border-white/5 shadow-sm hover:border-primary-500/30 transition-all duration-300"
+                  className="rounded-2xl bg-nc-panel border border-nc-border/50 shadow-[0_4px_24px_rgba(0,0,0,0.7)] overflow-hidden transition-all duration-500 hover:border-primary-500/60 hover:shadow-[0_8px_40px_rgba(139,92,246,0.22)] group/card"
                 >
-                  <div className="flex items-center justify-between mb-5">
-                    <div className="flex items-center gap-3">
+                  {/* ── Image + overlaid header ───────────────────── */}
+                  <div className="relative w-full">
+                    {post.imageUrl ? (
                       <button
                         type="button"
+                        onClick={() => setLightbox({ src: post.imageUrl!, alt: post.title })}
+                        className={`relative w-full ${imgAspectClass} overflow-hidden cursor-zoom-in text-left block focus:outline-none group/photo transition-all duration-500`}
+                      >
+                        {/* Main image — detect orientation on load */}
+                        <img
+                          src={post.imageUrl}
+                          alt={post.title}
+                          onLoad={(e) => handleImgLoad(post.id, e)}
+                          className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover/photo:scale-[1.06]"
+                        />
+                        {/* Layer 1: top gradient */}
+                        <div className="absolute inset-0 bg-gradient-to-b from-black/70 via-transparent via-40% to-black/50 pointer-events-none" />
+                        {/* Layer 2: violet shimmer on hover */}
+                        <div className="absolute inset-0 bg-gradient-to-tr from-primary-600/20 via-transparent to-pink-500/10 opacity-0 group-hover/photo:opacity-100 transition-opacity duration-500 pointer-events-none mix-blend-screen" />
+                        {/* Layer 3: bottom vignette */}
+                        <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-black/80 to-transparent pointer-events-none" />
+                        {/* Orientation badge — bottom left */}
+                        <span className="absolute bottom-4 left-4 flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border border-white/15 bg-black/50 backdrop-blur-md text-white/70 opacity-0 group-hover/photo:opacity-100 transition-opacity duration-300">
+                          <span className="material-symbols-outlined text-[12px]">{imgOrientIcon}</span>
+                          {imgOrientLabel}
+                        </span>
+                        {/* Zoom pill — bottom right */}
+                        <span className="absolute bottom-4 right-4 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md text-white/90 text-xs font-semibold border border-white/15 shadow-lg translate-y-2 opacity-0 group-hover/photo:opacity-100 group-hover/photo:translate-y-0 transition-all duration-300">
+                          <span className="material-symbols-outlined text-[15px]">zoom_in</span>
+                          Томоор харах
+                        </span>
+                        {/* Violet ring on hover */}
+                        <div className="absolute inset-0 ring-0 group-hover/photo:ring-2 ring-primary-500/40 transition-all duration-300 pointer-events-none" />
+                      </button>
+                    ) : (
+                      <div className="h-0" />
+                    )}
+
+                    {/* ── Overlaid header (top-left) ── */}
+                    <div className={`${post.imageUrl ? "absolute top-0 left-0 right-0" : "relative bg-nc-panel border-b border-nc-border/40"} flex items-center justify-between px-4 py-3`}>
+                      <div className="flex items-center gap-3 min-w-0">
+                        {/* Avatar with violet gradient ring */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (post.authorEmail && post.authorEmail !== "news-bot" && post.authorEmail !== "ai-assistant") {
+                              router.push(`/profile?user=${encodeURIComponent(post.authorEmail)}`);
+                            }
+                          }}
+                          className="relative p-[2px] rounded-full bg-gradient-to-tr from-primary-500 via-pink-500 to-primary-400 shrink-0 cursor-pointer shadow-lg"
+                        >
+                          <div
+                            className="w-9 h-9 rounded-full bg-dark-800 flex items-center justify-center text-white font-bold text-sm border-[2px] border-black/50 overflow-hidden"
+                            style={{ backgroundColor: post.authorAvatarColor || undefined }}
+                          >
+                            {post.authorEmail === 'news-bot' ? (
+                              '📰'
+                            ) : post.authorAvatarUrl ? (
+                              <img
+                                src={post.authorAvatarUrl}
+                                alt={post.author}
+                                loading="lazy"
+                                decoding="async"
+                                className="w-full h-full object-cover rounded-full"
+                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                              />
+                            ) : (
+                              <span>{(post.author || post.authorEmail)[0]?.toUpperCase()}</span>
+                            )}
+                          </div>
+                        </button>
+
+                        <div className="flex flex-col min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span
+                              onClick={() => {
+                                if (post.authorEmail && post.authorEmail !== "news-bot" && post.authorEmail !== "ai-assistant") {
+                                  router.push(`/profile?user=${encodeURIComponent(post.authorEmail)}`);
+                                }
+                              }}
+                              className={`font-bold text-[13px] cursor-pointer truncate transition-colors ${post.imageUrl ? "text-white hover:text-primary-300 drop-shadow-md" : "text-nc-ink hover:text-primary-400"}`}
+                            >
+                              {post.author}
+                            </span>
+                            {post.authorEmail === 'news-bot' && (
+                              <span className="inline-flex items-center gap-0.5 rounded-full border border-cyan-400/40 bg-black/40 backdrop-blur-sm px-2 py-0.5 text-[10px] text-cyan-300 font-semibold shrink-0">
+                                🤖 AI
+                              </span>
+                            )}
+                          </div>
+                          <span className={`text-[11px] drop-shadow-md ${post.imageUrl ? "text-white/70" : "text-nc-muted"}`}>
+                            {formatRelativeTime(post.createdAt)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Right: XP + follow-style button */}
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold tracking-wide border ${post.imageUrl ? "border-white/20 bg-black/40 backdrop-blur-sm text-white/90" : "border-primary-500/30 bg-primary-500/10 text-primary-400"}`}>
+                          ✦ {xpMap[post.authorEmail] !== undefined ? Math.round(xpMap[post.authorEmail]) : 0} XP
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ── Action bar (Twitter/X style icon + count) ─── */}
+                  <div className="px-4 pt-3 pb-2">
+                    <div className="flex items-center justify-between">
+                      {/* Left cluster: reactions as heart-count, comment-count, share */}
+                      <div className="flex items-center gap-4">
+
+                        {/* Heart / reactions — click cycles through, shows total */}
+                        {(() => {
+                          const totalReactions = Object.values(reactions).reduce((a, b) => a + b, 0);
+                          const loved = myReaction === "LOVE";
+                          return (
+                            <button
+                              type="button"
+                              disabled={!session}
+                              onClick={() => handleReaction(post.id, "LOVE")}
+                              className={`flex items-center gap-1.5 transition-all duration-150 active:scale-90 group/heart disabled:opacity-50 ${loved ? "text-pink-400" : "text-nc-muted hover:text-pink-400"}`}
+                              title={session ? "Дур" : "Нэвтэрч реакц өгнө үү"}
+                            >
+                              <span className={`material-symbols-outlined text-[22px] transition-transform group-hover/heart:scale-110 ${loved ? "filled text-pink-400 drop-shadow-[0_0_6px_rgba(236,72,153,0.7)]" : ""}`}>
+                                {loved ? "favorite" : "favorite_border"}
+                              </span>
+                              <span className="text-[13px] font-semibold tabular-nums">{totalReactions > 0 ? totalReactions.toLocaleString() : ""}</span>
+                            </button>
+                          );
+                        })()}
+
+                        {/* Comment toggle button */}
+                        <button
+                          type="button"
+                          onClick={() => setOpenCommentsPostId(prev => prev === post.id ? null : post.id)}
+                          className={`flex items-center gap-1.5 transition-all duration-150 active:scale-90 group/comment ${
+                            openCommentsPostId === post.id ? "text-primary-400" : "text-nc-muted hover:text-primary-400"
+                          }`}
+                          title="Сэтгэгдэл харах"
+                        >
+                          <span className={`material-symbols-outlined text-[22px] transition-transform group-hover/comment:scale-110 ${
+                            openCommentsPostId === post.id ? "drop-shadow-[0_0_6px_rgba(139,92,246,0.7)]" : ""
+                          }`}>
+                            {openCommentsPostId === post.id ? "chat_bubble" : "chat_bubble_outline"}
+                          </span>
+                          <span className="text-[13px] font-semibold tabular-nums">
+                            {(commentCounts[post.id] ?? post.comments?.length ?? 0) > 0
+                              ? (commentCounts[post.id] ?? post.comments?.length ?? 0).toLocaleString()
+                              : ""}
+                          </span>
+                        </button>
+
+                        {/* Repost / reaction overflow — show emoji reactions as mini popover */}
+                        <div className="flex items-center gap-1 text-nc-muted">
+                          {[
+                            { type: "FIRE" as const, emoji: "🔥" },
+                            { type: "WOW" as const,  emoji: "😯" },
+                            { type: "COOL" as const, emoji: "😎" },
+                            { type: "STAR" as const, emoji: "⭐" },
+                          ].map((b) => {
+                            const count = reactions[b.type.toLowerCase() as keyof typeof reactions] || 0;
+                            const active = myReaction === b.type;
+                            return (
+                              <button
+                                key={b.type}
+                                type="button"
+                                disabled={!session}
+                                onClick={() => handleReaction(post.id, b.type)}
+                                title={b.type}
+                                className={`flex items-center gap-0.5 text-[13px] transition-all duration-100 active:scale-90 hover:scale-110 disabled:opacity-50 ${active ? "drop-shadow-[0_0_6px_rgba(255,255,255,0.5)]" : "opacity-60 hover:opacity-100"}`}
+                              >
+                                <span className="leading-none">{b.emoji}</span>
+                                {count > 0 && <span className="text-[11px] font-semibold text-nc-muted">{count}</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* Share */}
+                        <button
+                          type="button"
+                          onClick={() => handleSharePost(post.id, post.title, post.description)}
+                          className={`flex items-center gap-1.5 transition-all duration-150 active:scale-90 group/share ${
+                            copiedPostId === post.id ? "text-emerald-400" : "text-nc-muted hover:text-primary-400"
+                          }`}
+                          title="Хуваалцах"
+                        >
+                          <span className="material-symbols-outlined text-[22px] transition-transform group-hover/share:scale-110">
+                            {copiedPostId === post.id ? "check_circle" : "send"}
+                          </span>
+                        </button>
+                      </div>
+
+                      {/* Right: bookmark/save */}
+                      <button
+                        type="button"
+                        className="text-nc-muted hover:text-primary-400 transition-colors"
+                        title="Хадгалах"
+                      >
+                        <span className="material-symbols-outlined text-[22px]">bookmark_border</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* ── Caption ─────────────────────────────────────── */}
+                  <div className="px-4 pb-3 space-y-1">
+                    {/* "Liked by X others" line */}
+                    {(() => {
+                      const total = Object.values(reactions).reduce((a, b) => a + b, 0);
+                      return total > 0 ? (
+                        <p className="text-[12px] font-bold text-nc-ink">
+                          {total.toLocaleString()} хүн реакц өгсөн
+                        </p>
+                      ) : null;
+                    })()}
+
+                    {/* Title */}
+                    {post.title && (
+                      <h2 className="text-[13px] font-extrabold text-nc-ink leading-snug">{post.title}</h2>
+                    )}
+
+                    {/* Author inline + description */}
+                    <p className="text-[13px] text-nc-muted leading-relaxed whitespace-pre-line">
+                      <span
                         onClick={() => {
                           if (post.authorEmail && post.authorEmail !== "news-bot" && post.authorEmail !== "ai-assistant") {
                             router.push(`/profile?user=${encodeURIComponent(post.authorEmail)}`);
                           }
                         }}
-                        className={`flex items-center gap-3 text-left rounded-xl transition-colors ${
-                          post.authorEmail && post.authorEmail !== "news-bot" && post.authorEmail !== "ai-assistant"
-                            ? "hover:bg-white/5 cursor-pointer"
-                            : "cursor-default"
-                        }`}
-                        title={post.authorEmail && post.authorEmail !== "news-bot" && post.authorEmail !== "ai-assistant" ? `${post.author}-н profile харах` : undefined}
+                        className="font-bold text-nc-ink mr-1.5 cursor-pointer hover:text-primary-400 transition-colors"
                       >
-                        <div className="w-12 h-12 rounded-full bg-dark-800 flex items-center justify-center text-slate-300 font-bold text-lg border border-white/10 relative overflow-hidden shrink-0">
-                          {post.authorEmail && (
-                            <img
-                              alt="User Avatar"
-                              className="w-full h-full object-cover"
-                              src={`https://ui-avatars.com/api/?name=${encodeURIComponent(post.author)}&background=8b5cf6&color=fff`}
-                            />
-                          )}
-                        </div>
-                        <div>
-                          <h3 className="font-bold text-white text-base">{post.author}</h3>
-                          <p className="text-xs text-slate-500 font-medium mt-0.5">{formatRelativeTime(post.createdAt)}</p>
-                        </div>
-                      </button>
-                    </div>
-                    <div className="px-3 py-1 rounded-full border border-primary-500/20 bg-primary-500/10 text-primary-400 text-[11px] font-bold tracking-wide">
-                      XP {xpMap[post.authorEmail] !== undefined ? Math.round(xpMap[post.authorEmail]) : 0}
-                    </div>
-                  </div>
-
-                  <div className="mb-5">
-                    <h2 className="text-xl font-bold text-white mb-2 leading-tight">{post.title}</h2>
-                    <p className="text-slate-400 text-[15px] leading-relaxed font-light">{post.description}</p>
-                  </div>
-
-                  {post.imageUrl && (
-                    <button
-                      type="button"
-                      onClick={() => setLightbox({ src: post.imageUrl!, alt: post.title })}
-                      className="relative w-full rounded-2xl overflow-hidden mb-5 bg-dark-800 border border-white/5 group text-left cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary-500/50"
-                    >
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10 pointer-events-none" />
-                      <div className="aspect-[16/10] bg-gradient-to-br from-indigo-500/20 to-purple-500/20 relative">
-                        <img
-                          alt="Post Content"
-                          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                          src={post.imageUrl}
-                        />
-                      </div>
-                      <span className="absolute bottom-3 right-3 z-20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5 px-2 py-1 rounded-lg bg-black/50 text-white text-xs font-medium">
-                        <span className="material-symbols-outlined text-[16px]">fullscreen</span>
-                        Томоор харах
+                        {post.author}
                       </span>
-                    </button>
-                  )}
-
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <button className="flex items-center gap-2 px-4 py-2 rounded-full bg-dark-800/50 border border-white/5 hover:bg-dark-700 hover:border-primary-500/30 transition-all group">
-                      <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
-                      <span className="text-xs font-semibold text-slate-300 group-hover:text-white">0 comments</span>
-                    </button>
-                    <button className="flex items-center gap-2 px-4 py-2 rounded-full bg-dark-800/50 border border-white/5 hover:bg-dark-700 hover:border-primary-500/30 transition-all group">
-                      <span className="material-symbols-outlined text-[16px] text-blue-400">ios_share</span>
-                      <span className="text-xs font-semibold text-slate-300 group-hover:text-white">Share</span>
-                    </button>
-                    <div className="flex items-center gap-2 ml-auto sm:ml-0">
-                      <button
-                        type="button"
-                        disabled={!session || isReacting}
-                        onClick={() => handleReaction(post.id, "FIRE")}
-                        className={`flex items-center gap-1.5 px-3 py-2 rounded-full bg-dark-800/50 border transition-all group disabled:opacity-60 disabled:pointer-events-none ${
-                          myReaction === "FIRE" ? "border-orange-500/50 bg-orange-500/10" : "border-white/5 hover:bg-dark-700 hover:border-orange-500/30"
-                        }`}
-                      >
-                        <span className="text-sm">🔥</span>
-                        <span className={`text-xs font-bold ${myReaction === "FIRE" ? "text-orange-400" : "text-slate-400 group-hover:text-orange-400"}`}>{reactions.fire}</span>
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!session || isReacting}
-                        onClick={() => handleReaction(post.id, "WOW")}
-                        className={`flex items-center gap-1.5 px-3 py-2 rounded-full bg-dark-800/50 border transition-all group disabled:opacity-60 disabled:pointer-events-none ${
-                          myReaction === "WOW" ? "border-yellow-500/50 bg-yellow-500/10" : "border-white/5 hover:bg-dark-700 hover:border-yellow-500/30"
-                        }`}
-                      >
-                        <span className="text-sm">😯</span>
-                        <span className={`text-xs font-bold ${myReaction === "WOW" ? "text-yellow-400" : "text-slate-400 group-hover:text-yellow-400"}`}>{reactions.wow}</span>
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!session || isReacting}
-                        onClick={() => handleReaction(post.id, "LOVE")}
-                        className={`flex items-center gap-1.5 px-3 py-2 rounded-full bg-dark-800/50 border transition-all group disabled:opacity-60 disabled:pointer-events-none ${
-                          myReaction === "LOVE" ? "border-pink-500/50 bg-pink-500/10" : "border-white/5 hover:bg-dark-700 hover:border-pink-500/30"
-                        }`}
-                      >
-                        <span className="text-sm">💖</span>
-                        <span className={`text-xs font-bold ${myReaction === "LOVE" ? "text-pink-400" : "text-slate-400 group-hover:text-pink-400"}`}>{reactions.love}</span>
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!session || isReacting}
-                        onClick={() => handleReaction(post.id, "COOL")}
-                        className={`flex items-center gap-1.5 px-3 py-2 rounded-full bg-dark-800/50 border transition-all group disabled:opacity-60 disabled:pointer-events-none ${
-                          myReaction === "COOL" ? "border-emerald-500/50 bg-emerald-500/10" : "border-white/5 hover:bg-dark-700 hover:border-emerald-500/30"
-                        }`}
-                      >
-                        <span className="text-sm">😎</span>
-                        <span className={`text-xs font-bold ${myReaction === "COOL" ? "text-emerald-400" : "text-slate-400 group-hover:text-emerald-400"}`}>{reactions.cool}</span>
-                      </button>
-                    </div>
+                      {post.description}
+                    </p>
                   </div>
 
-                  <div className="mt-5 pt-4 border-t border-white/5">
-                    <button className="flex items-center gap-3 w-full text-left group">
-                      <span className="material-symbols-outlined text-slate-500 group-hover:text-slate-300 text-[20px] transition-colors">
-                        chat_bubble_outline
-                      </span>
-                      <span className="text-sm text-slate-500 group-hover:text-slate-300 font-medium transition-colors">Add a comment...</span>
-                    </button>
+                  {/* ── Comments (toggle open/close) ────────────── */}
+                  <div
+                    className={`overflow-hidden transition-all duration-300 ease-in-out ${
+                      openCommentsPostId === post.id ? "max-h-[800px] opacity-100" : "max-h-0 opacity-0"
+                    }`}
+                  >
+                    <div className="px-4 pb-4 border-t border-nc-border/30 pt-3">
+                      <CommentsSection
+                        postId={post.id}
+                        comments={post.comments}
+                        initialCommentCount={commentCounts[post.id] ?? post.comments?.length ?? 0}
+                        onCommentAdded={(newComment) => {
+                          setPosts((prev) =>
+                            prev.map((currentPost) =>
+                              currentPost.id === post.id
+                                ? { ...currentPost, comments: [...(currentPost.comments || []), newComment] }
+                                : currentPost
+                            )
+                          );
+                          setCommentCounts((prev) => ({
+                            ...prev,
+                            [post.id]: (prev[post.id] ?? post.comments?.length ?? 0) + 1,
+                          }));
+                        }}
+                      />
+                    </div>
                   </div>
                 </article>
-              );
+               );
             })
           )}
 
@@ -1021,8 +1168,11 @@ export function HomeDashboard() {
         {/* Sidebar */}
         <div className="xl:col-span-4 space-y-6">
           <div className="sticky top-4 space-y-6">
+            {/* Fake Client Panel */}
+            <FakeClientPanel />
+
             <LeaderboardSidebar compact />
-            
+
             {/* Upcoming Deadlines */}
             <div className="bg-dark-900 border border-white/5 rounded-3xl p-6">
             <h3 className="font-bold text-white mb-4 text-sm">Upcoming Deadlines</h3>
@@ -1060,4 +1210,3 @@ export function HomeDashboard() {
     </>
   );
 }
-

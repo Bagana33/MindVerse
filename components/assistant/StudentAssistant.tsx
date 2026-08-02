@@ -1,12 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useSession } from "../auth/useSession";
 
 type ChatMsg = { role: "user" | "assistant"; content: string; images?: string[] };
 
 export default function StudentAssistant() {
-  const { session } = useSession();
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -22,8 +20,6 @@ export default function StudentAssistant() {
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, open]);
-
-  if (!session) return null;
 
   async function send() {
     const text = input.trim();
@@ -41,9 +37,7 @@ export default function StudentAssistant() {
       const json = await res.json();
       console.log("API Response:", json); // Debug log
       if (!res.ok || !json.ok) throw new Error(json.error || "Алдаа гарлаа");
-      const answerText = json.offline
-        ? `ℹ️ AI одоогоор ашиглах боломжгүй (API key эсвэл config). Доорх зөвлөгөөг ашиглана уу:\n\n${json.answer}`
-        : json.answer;
+      const answerText = json.answer;
       setMessages((m) => [...m, { 
         role: "assistant", 
         content: answerText,

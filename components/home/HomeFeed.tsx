@@ -7,6 +7,7 @@ import ImageLightbox from "../posts/ImageLightbox";
 import { useSession } from "../auth/useSession";
 import { CommentsSection } from "../posts/CommentsSection";
 import { cachedFetch, invalidateCache } from "../../lib/fetchCache";
+import { compressImageFile } from "../../lib/imageCompressor";
 
 type ReactionType = 'FIRE' | 'WOW' | 'LOVE' | 'COOL' | 'STAR';
 type PostReaction = { userEmail: string; type: ReactionType };
@@ -25,6 +26,8 @@ type UserPost = {
   description: string;
   author: string;
   authorEmail: string;
+  authorAvatarUrl?: string;
+  authorAvatarColor?: string;
   points: number;
   createdAt: string;
   imageUrl?: string;
@@ -88,6 +91,7 @@ const PostCard = memo(({
   reactingPostId: string | null;
 }) => {
   const router = useRouter();
+  const [imgError, setImgError] = useState(false);
   
   const userReaction = useMemo(() => 
     session ? post.reactions.find(r => r.userEmail === session.email)?.type : null,
@@ -101,6 +105,8 @@ const PostCard = memo(({
     COOL: post.reactions.filter(r => r.type === 'COOL').length,
     STAR: post.reactions.filter(r => r.type === 'STAR').length,
   }), [post.reactions]);
+
+  const [copied, setCopied] = useState(false);
 
   return (
     <article
@@ -118,15 +124,31 @@ const PostCard = memo(({
             }
           }}
           disabled={post.authorEmail === 'news-bot' || post.authorEmail === 'ai-assistant'}
-          className={`relative z-20 flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full text-sm font-bold text-white shadow-lg group-hover:shadow-xl transition-all ${
+          className={`relative z-20 flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full text-sm font-bold text-white shadow-lg group-hover:shadow-xl transition-all overflow-hidden ${
             post.authorEmail === 'news-bot' 
               ? 'bg-gradient-to-br from-cyan-500 via-blue-500 to-purple-500' 
               : 'bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900'
           } ${post.authorEmail !== 'news-bot' && post.authorEmail !== 'ai-assistant' ? 'cursor-pointer hover:scale-110 hover:ring-2 hover:ring-violet-400/50 active:scale-95' : 'cursor-default'}`}
           title={post.authorEmail !== 'news-bot' && post.authorEmail !== 'ai-assistant' ? `${post.author}-н profile харах` : ''}
-          style={{ pointerEvents: 'auto' }}
+          style={{ 
+            pointerEvents: 'auto',
+            backgroundColor: post.authorAvatarColor || undefined
+          }}
         >
-          {post.authorEmail === 'news-bot' ? '📰' : getInitials(post.author || post.authorEmail)}
+          {post.authorEmail === 'news-bot' ? (
+            '📰'
+          ) : post.authorAvatarUrl && !imgError ? (
+            <img
+              src={post.authorAvatarUrl}
+              alt={post.author}
+              loading="lazy"
+              decoding="async"
+              className="w-full h-full object-cover rounded-full"
+              onError={() => setImgError(true)}
+            />
+          ) : (
+            getInitials(post.author || post.authorEmail)
+          )}
         </button>
         <div className="flex-1 min-w-0">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -179,71 +201,80 @@ const PostCard = memo(({
         </div>
       )}
 
-      <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-slate-400">
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-700/50 bg-slate-800/30 px-3 py-1.5">
-          <span className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-pulse" />
-          {typeof commentCounts[post.id] === 'number' ? `${commentCounts[post.id]} comments` : 'Open for feedback'}
-        </span>
-        <button
-          onClick={async () => {
-            const shareText = `${post.title}${post.description ? `\n\n${post.description}` : ''}`;
-            const shareUrl = typeof window !== 'undefined' ? `${window.location.origin}/?post=${post.id}` : '';
-            
-            if (navigator.share) {
-              try {
-                await navigator.share({
-                  title: post.title,
-                  text: shareText,
-                  url: shareUrl,
-                });
-                return;
-              } catch (err) {
-                // Fall back to clipboard
-              }
-            }
-            
-            try {
-              await navigator.clipboard.writeText(`${shareText}\n\n${shareUrl}`);
-              alert('Линк хуулагдлаа!');
-            } catch (err) {
-              alert('Хуваалцах боломжгүй байна');
-            }
-          }}
-          className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-800/50 px-3 py-1.5 text-[11px] text-slate-300 hover:border-violet-500/40 hover:bg-slate-700/60 hover:text-white transition-all"
-          title="Найзуудтай хуваалцах"
-        >
-          <span>📤</span>
-          <span>Хуваалцах</span>
-        </button>
-        <div className="flex items-center gap-2">
+      {/* Action Bar: Reactions, Comments, Share */}
+      <div className="mt-4 pt-3 border-t border-slate-700/40 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="flex items-center gap-1.5 flex-wrap">
           {[
-            { type: 'FIRE' as ReactionType, emoji: '🔥', color: 'from-orange-500 to-red-500' },
-            { type: 'WOW' as ReactionType, emoji: '😮', color: 'from-yellow-400 to-amber-500' },
-            { type: 'LOVE' as ReactionType, emoji: '💖', color: 'from-pink-500 to-fuchsia-500' },
-            { type: 'COOL' as ReactionType, emoji: '😎', color: 'from-blue-500 to-cyan-500' },
-            { type: 'STAR' as ReactionType, emoji: '⭐', color: 'from-yellow-500 to-orange-400' },
+            { type: 'FIRE' as ReactionType, emoji: '🔥', color: 'from-amber-500 to-rose-500', shadow: 'rgba(245,158,11,0.3)' },
+            { type: 'WOW' as ReactionType, emoji: '😯', color: 'from-yellow-400 to-amber-500', shadow: 'rgba(234,179,8,0.3)' },
+            { type: 'LOVE' as ReactionType, emoji: '💖', color: 'from-pink-500 to-fuchsia-500', shadow: 'rgba(236,72,153,0.3)' },
+            { type: 'COOL' as ReactionType, emoji: '😎', color: 'from-blue-500 to-cyan-500', shadow: 'rgba(6,182,212,0.3)' },
+            { type: 'STAR' as ReactionType, emoji: '⭐', color: 'from-yellow-500 to-orange-400', shadow: 'rgba(251,191,36,0.3)' },
           ].map(b => {
             const active = userReaction === b.type;
+            const count = reactionCounts[b.type] || 0;
             return (
               <button
                 key={b.type}
                 onClick={() => onReaction(post.id, b.type)}
-                disabled={!session || reactingPostId === post.id}
-                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold transition-all duration-300 border ${active
-                  ? `bg-gradient-to-r ${b.color} text-white border-transparent shadow-[0_0_16px_rgba(255,255,255,0.25)] scale-[1.05]`
-                  : `border-slate-700 bg-slate-800/50 text-slate-300 hover:border-violet-500/40 hover:bg-slate-700/60 hover:text-white`}`}
+                disabled={!session}
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold transition-all duration-200 border ${
+                  active
+                    ? `bg-gradient-to-r ${b.color} text-white border-transparent shadow-[0_0_14px_${b.shadow}] scale-[1.05]`
+                    : `border-slate-700 bg-slate-800/50 text-slate-300 hover:border-violet-500/40 hover:bg-slate-700/60 hover:text-white`
+                }`}
                 title={session ? `${b.type} reaction` : 'Нэвтэрч орно уу'}
               >
-                <span>{b.emoji}</span>
-                <span>{reactionCounts[b.type] || 0}</span>
+                <span className="text-sm">{b.emoji}</span>
+                <span>{count}</span>
               </button>
             );
           })}
         </div>
+
+        <div className="flex items-center gap-2 ml-auto sm:ml-0">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-800/50 px-3.5 py-1.5 text-xs text-slate-300 font-medium">
+            <span className="material-symbols-outlined text-[16px] text-violet-400">chat_bubble_outline</span>
+            {typeof commentCounts[post.id] === 'number' ? `${commentCounts[post.id]} сэтгэгдэл` : 'Сэтгэгдэл бичих'}
+          </span>
+
+          <button
+            onClick={async () => {
+              const shareText = `${post.title}${post.description ? `\n\n${post.description}` : ''}`;
+              const shareUrl = typeof window !== 'undefined' ? `${window.location.origin}/?post=${post.id}` : '';
+              
+              if (navigator.share) {
+                try {
+                  await navigator.share({ title: post.title, text: shareText, url: shareUrl });
+                  return;
+                } catch (err) {}
+              }
+              
+              try {
+                await navigator.clipboard.writeText(`${shareText}\n\n${shareUrl}`);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2500);
+              } catch (err) {
+                alert('Хуваалцах боломжгүй байна');
+              }
+            }}
+            className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-all duration-200 ${
+              copied
+                ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.3)]'
+                : 'border-slate-700 bg-slate-800/50 text-slate-300 hover:border-violet-500/40 hover:bg-slate-700/60 hover:text-white'
+            }`}
+            title="Найзуудтай хуваалцах"
+          >
+            <span className="material-symbols-outlined text-[16px]">{copied ? 'check_circle' : 'ios_share'}</span>
+            <span>{copied ? 'Хуулагдлаа!' : 'Хуваалцах'}</span>
+          </button>
+        </div>
       </div>
+
       <CommentsSection
         postId={post.id}
         comments={post.comments}
+        initialCommentCount={commentCounts[post.id] ?? post.comments?.length ?? 0}
         onCommentAdded={onCommentAdded}
       />
     </article>
@@ -386,18 +417,10 @@ export function HomeFeed() {
       setImagePreview(uploadJson.secure_url as string);
       return;
     } catch (err) {
-      // Fallback to base64 if Cloudinary not configured or upload failed
       try {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          const result = event.target?.result as string;
-          setImagePreview(result);
-          setImageUrl(result);
-        };
-        reader.onerror = () => {
-          setError("Зураг уншихад алдаа гарлаа");
-        };
-        reader.readAsDataURL(file);
+        const compressedBase64 = await compressImageFile(file, 1200, 0.75);
+        setImagePreview(compressedBase64);
+        setImageUrl(compressedBase64);
       } catch (e) {
         setError("Зураг байршуулж чадсангүй");
       }
@@ -879,7 +902,7 @@ export function HomeFeed() {
         {/* Grade Filter */}
         <div className="flex items-center gap-2 flex-wrap rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
           <span className="text-xs font-medium text-slate-400">Анги:</span>
-          {['all', '10', '11', '12', 'Р'].map(grade => (
+          {['all', '10', '11', '12'].map(grade => (
             <button
               key={grade}
               onClick={() => setSelectedGrade(grade)}
@@ -946,6 +969,10 @@ export function HomeFeed() {
                   ? { ...p, comments: [...(p.comments || []), newComment] }
                   : p
               ));
+              setCommentCounts(prev => ({
+                ...prev,
+                [post.id]: (prev[post.id] ?? post.comments?.length ?? 0) + 1,
+              }));
             }}
             deletingPostId={deletingPostId}
             reactingPostId={reactingPostId}

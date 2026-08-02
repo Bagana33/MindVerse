@@ -13,7 +13,7 @@ export async function GET(req: Request) {
   return new NextResponse(JSON.stringify({ ok: true, counts }), {
     headers: {
       'Content-Type': 'application/json',
-      'Cache-Control': 'public, s-maxage=10, stale-while-revalidate=60'
+      'Cache-Control': 'no-store'
     }
   });
 }

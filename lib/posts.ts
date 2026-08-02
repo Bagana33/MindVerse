@@ -10,6 +10,8 @@ export type UserPost = {
   description: string;
   author: string;
   authorEmail: string;
+  authorAvatarUrl?: string;
+  authorAvatarColor?: string;
   points: number;
   createdAt: string;
   imageUrl?: string;
@@ -18,7 +20,13 @@ export type UserPost = {
 };
 
 // Helper to convert DB format to UserPost
-function dbToPost(dbRow: any, reactions: any[], authorName?: string): UserPost {
+function dbToPost(
+  dbRow: any, 
+  reactions: any[], 
+  authorName?: string,
+  authorAvatarUrl?: string,
+  authorAvatarColor?: string
+): UserPost {
   // Calculate points based on reactions count (each reaction = 1 point)
   const reactionCount = reactions?.length || 0;
   return {
@@ -27,6 +35,8 @@ function dbToPost(dbRow: any, reactions: any[], authorName?: string): UserPost {
     description: dbRow.description || dbRow.text,
     author: authorName || dbRow.author_email, // Use provided name or fallback to email
     authorEmail: dbRow.author_email,
+    authorAvatarUrl,
+    authorAvatarColor,
     points: reactionCount, // Points = number of reactions
     createdAt: dbRow.created_at,
     imageUrl: dbRow.image_data,
@@ -56,7 +66,7 @@ export async function createPost(data: Omit<UserPost, "id" | "points" | "created
     throw error;
   }
 
-  return dbToPost(inserted, []);
+  return dbToPost(inserted, [], data.author, data.authorAvatarUrl, data.authorAvatarColor);
 }
 
 export async function getUserPosts(email: string): Promise<UserPost[]> {
@@ -68,10 +78,10 @@ export async function getUserPosts(email: string): Promise<UserPost[]> {
 
   if (postsError || !posts) return [];
 
-  // Get user info for author name
+  // Get user info for author name & avatar
   const { data: user } = await supabase
     .from('users')
-    .select('email, name, nickname')
+    .select('email, name, nickname, avatar_url, avatar_color')
     .eq('email', email)
     .single();
 
@@ -86,7 +96,7 @@ export async function getUserPosts(email: string): Promise<UserPost[]> {
 
   return posts.map(post => {
     const postReactions = reactions?.filter(r => r.post_id === post.id) || [];
-    return dbToPost(post, postReactions, authorName);
+    return dbToPost(post, postReactions, authorName, user?.avatar_url, user?.avatar_color);
   });
 }
 
@@ -95,50 +105,43 @@ export async function getAllPosts(): Promise<UserPost[]> {
   return getPostsPage(30);
 }
 
-// Paginated posts with optional cursor (created_at before) and grade filter
-export async function getPostsPage(limit = 20, beforeISO?: string, grade?: string): Promise<UserPost[]> {
+// Paginated posts with optional cursor (created_at before), grade filter, and database search query
+export async function getPostsPage(limit = 20, beforeISO?: string, grade?: string, search?: string): Promise<UserPost[]> {
   let posts: any[] = [];
 
+  let query = supabase
+    .from('posts')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (beforeISO) {
+    query = query.lt('created_at', beforeISO);
+  }
+
+  if (search && search.trim()) {
+    const q = search.trim();
+    query = query.or(`title.ilike.%${q}%,description.ilike.%${q}%,text.ilike.%${q}%,author_email.ilike.%${q}%`);
+  }
+
   if (grade && grade !== 'all') {
-    // Grade filter: first get author emails for this grade, then fetch only their posts (correct pagination)
     const { data: usersWithGrade, error: usersError } = await supabase
       .from('users')
       .select('email')
       .eq('grade', grade);
     if (usersError || !usersWithGrade?.length) return [];
     const authorEmails = usersWithGrade.map(u => u.email);
-
-    let query = supabase
-      .from('posts')
-      .select('*')
-      .in('author_email', authorEmails)
-      .order('created_at', { ascending: false })
-      .limit(limit);
-    if (beforeISO) {
-      query = query.lt('created_at', beforeISO);
-    }
-    const { data: gradePosts, error: postsError } = await query;
-    if (postsError || !gradePosts) return [];
-    posts = gradePosts;
-  } else {
-    // No grade filter: fetch all posts with limit and cursor
-    let query = supabase
-      .from('posts')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(limit);
-    if (beforeISO) {
-      query = query.lt('created_at', beforeISO);
-    }
-    const { data: allPosts, error: postsError } = await query;
-    if (postsError || !allPosts) return [];
-    posts = allPosts;
+    query = query.in('author_email', authorEmails);
   }
+
+  const { data: fetchedPosts, error: postsError } = await query;
+  if (postsError || !fetchedPosts) return [];
+  posts = fetchedPosts;
 
   const authorEmails = [...new Set(posts.map(p => p.author_email))];
   const { data: users } = await supabase
     .from('users')
-    .select('email, name, nickname, grade')
+    .select('email, name, nickname, grade, avatar_url, avatar_color')
     .in('email', authorEmails);
   const userMap = new Map(users?.map(u => [u.email, u]) || []);
 
@@ -152,7 +155,7 @@ export async function getPostsPage(limit = 20, beforeISO?: string, grade?: strin
     const postReactions = reactions?.filter(r => r.post_id === post.id) || [];
     const user = userMap.get(post.author_email);
     const authorName = user?.nickname || user?.name || post.author_email;
-    return dbToPost(post, postReactions, authorName);
+    return dbToPost(post, postReactions, authorName, user?.avatar_url, user?.avatar_color);
   });
 }
 
@@ -250,10 +253,10 @@ export async function getPost(postId: string): Promise<UserPost | null> {
 
   if (error || !post) return null;
 
-  // Get user info for author name
+  // Get user info for author name & avatar
   const { data: user } = await supabase
     .from('users')
-    .select('email, name, nickname')
+    .select('email, name, nickname, avatar_url, avatar_color')
     .eq('email', post.author_email)
     .single();
 
@@ -264,5 +267,5 @@ export async function getPost(postId: string): Promise<UserPost | null> {
 
   const authorName = user?.nickname || user?.name || post.author_email;
 
-  return dbToPost(post, reactions || [], authorName);
+  return dbToPost(post, reactions || [], authorName, user?.avatar_url, user?.avatar_color);
 }

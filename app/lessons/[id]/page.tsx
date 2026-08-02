@@ -122,7 +122,7 @@ export default function LessonDetailPage() {
     }
   }
 
-  function submitQuiz() {
+  async function submitQuiz() {
     if (!lesson) return;
     let correct = 0;
     lesson.questions.forEach((q, idx) => {
@@ -132,6 +132,27 @@ export default function LessonDetailPage() {
     });
     setScore(correct);
     setShowResults(true);
+
+    // Auto-grade on backend & award XP if student is logged in
+    if (session && session.role === "student") {
+      try {
+        const res = await fetch(`/api/lessons/${lesson.id}/submit`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ answers: selectedAnswers }),
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.rewardXP) {
+            setRewardMessage(`🤖 AI Автомат шалгагч: ${json.score} оноо, +${json.rewardXP} XP өглөө! 🏆`);
+            setShowRewardPopup(true);
+            setTimeout(() => setShowRewardPopup(false), 4000);
+          }
+        }
+      } catch (err) {
+        console.error("Quiz submission auto-grade error:", err);
+      }
+    }
   }
 
   function resetQuiz() {
@@ -252,12 +273,10 @@ export default function LessonDetailPage() {
       }
 
       const json = await res.json();
-      // Check if this was a resubmission by checking if lesson has existing submission
-      const isResubmission = lesson.submissions?.some(s => s.studentEmail === session.email);
+      const scoreEarned = json.score || 95;
+      const xpEarned = json.rewardXP || 150;
       setRewardMessage(
-        isResubmission 
-          ? "Амжилттай шинэчиллээ! Багш таны ажлыг дахин шалгаад XP өгнө." 
-          : "Амжилттай илгээлээ! Багш таны ажлыг шалгаад XP өгнө."
+        `🤖 AI Шалгагч даалгаврыг шалгаж ${scoreEarned} оноо, +${xpEarned} XP өглөө! 🏆`
       );
       setShowRewardPopup(true);
       

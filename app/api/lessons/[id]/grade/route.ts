@@ -37,17 +37,20 @@ export async function POST(
       return NextResponse.json({ error: "Хичээл олдсонгүй" }, { status: 404 });
     }
 
-    // Any teacher can grade submissions (removed author check)
-    
+    // Find existing submission to prevent duplicate XP awards on re-grade
+    const existingSubmission = lesson.submissions?.find(s => s.id === submissionId);
+    const previousXP = existingSubmission?.rewardXP || 0;
+    const deltaXP = rewardXP - previousXP;
+
     const submission = await gradeSubmission(lessonId, submissionId, score, rewardXP, feedback);
 
     if (!submission) {
       return NextResponse.json({ error: "Submission олдсонгүй" }, { status: 404 });
     }
 
-    // Award XP to student + notification
-    if (rewardXP > 0) {
-      await addExperience(submission.studentEmail, rewardXP);
+    // Award XP difference to student + notification
+    if (deltaXP > 0) {
+      await addExperience(submission.studentEmail, deltaXP);
     }
     await addNotification(
       submission.studentEmail,

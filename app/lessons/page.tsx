@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSession } from "../../components/auth/useSession";
 import { DashboardLayout } from "../../components/layout/DashboardLayout";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 type Lesson = {
   id: string;
@@ -39,12 +40,24 @@ function normalizeDescription(text: string): string {
     .trim();
 }
 
-export default function LessonsPage() {
+function LessonsContent() {
   const { session } = useSession();
+  const searchParams = useSearchParams();
+  const searchQuery = (searchParams?.get("search") || "").trim().toLowerCase();
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingLessonId, setEditingLessonId] = useState<string | null>(null);
+
+  const filteredLessons = searchQuery
+    ? lessons.filter(
+        (l) =>
+          l.title.toLowerCase().includes(searchQuery) ||
+          l.description.toLowerCase().includes(searchQuery) ||
+          l.authorName.toLowerCase().includes(searchQuery) ||
+          l.authorEmail.toLowerCase().includes(searchQuery)
+      )
+    : lessons;
   
   // Form state
   const [title, setTitle] = useState("");
@@ -529,74 +542,88 @@ newFiles.push({
 
         {loading ? (
           <p className="text-slate-400 text-sm">Loading...</p>
-        ) : lessons.length === 0 ? (
+        ) : filteredLessons.length === 0 ? (
           <div className="bg-slate-900/40 border border-slate-800 rounded-2xl px-6 py-8 text-center">
-            <p className="text-slate-400">Одоогоор хичээл байхгүй байна</p>
+            <p className="text-slate-400">
+              {searchQuery ? `"${searchQuery}" хайлтаар хичээл олдсонгүй` : "Одоогоор хичээл байхгүй байна"}
+            </p>
           </div>
         ) : (
           <div className="grid gap-4">
-            {lessons.map((lesson) => {
+            {filteredLessons.map((lesson) => {
               const isAuthor = session?.email === lesson.authorEmail;
               
               return (
-              <div key={lesson.id} className="bg-slate-900/40 border border-slate-800 rounded-2xl px-6 py-5 hover:border-violet-500/50 transition-all">
-                <div className="flex items-start justify-between gap-4">
-                  <Link href={`/lessons/${lesson.id}`} className="flex-1">
-                    <h3 className="text-lg font-semibold text-slate-200 mb-2 hover:text-violet-300 transition-colors">{lesson.title}</h3>
-                    <p
-                      className="text-sm text-slate-400 mb-3 whitespace-pre-line break-words overflow-hidden"
-                      style={{ display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" }}
-                    >
-                      {normalizeDescription(lesson.description)}
-                    </p>
-                    <div className="flex items-center gap-4 text-xs text-slate-500">
-                      <span>👤 {lesson.authorName}</span>
-                      <span>📝 {lesson.questions.length} асуулт</span>
-                      {lesson.files && lesson.files.length > 0 && (
-                        <span>📎 {lesson.files.length} файл</span>
-                      )}
-                      <span>{new Date(lesson.createdAt).toLocaleDateString("mn-MN")}</span>
-                    </div>
-                  </Link>
-                  <div className="flex flex-col gap-2">
-                    <Link 
-                      href={`/lessons/${lesson.id}`}
-                      className="text-violet-400 text-sm hover:text-violet-300 transition-colors"
-                    >
-                      →
-                    </Link>
-                    {isAuthor && (
-                      <div className="flex flex-col gap-1">
-                        <button
-                          onClick={(e) => {
-                            e.preventDefault();
-                            startEditLesson(lesson);
-                          }}
-                          className="px-3 py-1 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 text-xs transition-colors"
-                          title="Засах"
-                        >
-                          ✏️
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.preventDefault();
-                            handleDeleteLesson(lesson.id);
-                          }}
-                          className="px-3 py-1 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 text-xs transition-colors"
-                          title="Устгах"
-                        >
-                          🗑️
-                        </button>
+                <div key={lesson.id} className="bg-slate-900/40 border border-slate-800 rounded-2xl px-6 py-5 hover:border-violet-500/50 transition-all">
+                  <div className="flex items-start justify-between gap-4">
+                    <Link href={`/lessons/${lesson.id}`} className="flex-1">
+                      <h3 className="text-lg font-semibold text-slate-200 mb-2 hover:text-violet-300 transition-colors">{lesson.title}</h3>
+                      <p
+                        className="text-sm text-slate-400 mb-3 whitespace-pre-line break-words overflow-hidden"
+                        style={{ display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" }}
+                      >
+                        {normalizeDescription(lesson.description)}
+                      </p>
+                      <div className="flex items-center gap-4 text-xs text-slate-500">
+                        <span>👤 {lesson.authorName}</span>
+                        <span>📝 {lesson.questions.length} асуулт</span>
+                        {lesson.files && lesson.files.length > 0 && (
+                          <span>📎 {lesson.files.length} файл</span>
+                        )}
+                        <span>{new Date(lesson.createdAt).toLocaleDateString("mn-MN")}</span>
                       </div>
-                    )}
+                    </Link>
+                    <div className="flex flex-col gap-2">
+                      <Link 
+                        href={`/lessons/${lesson.id}`}
+                        className="text-violet-400 text-sm hover:text-violet-300 transition-colors"
+                      >
+                        →
+                      </Link>
+                      {isAuthor && (
+                        <div className="flex flex-col gap-1">
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              startEditLesson(lesson);
+                            }}
+                            className="px-3 py-1 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 text-xs transition-colors"
+                            title="Засах"
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              handleDeleteLesson(lesson.id);
+                            }}
+                            className="px-3 py-1 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 text-xs transition-colors"
+                            title="Устгах"
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
+              );
             })}
           </div>
         )}
       </div>
     </DashboardLayout>
+  );
+}
+
+export default function LessonsPage() {
+  return (
+    <Suspense fallback={
+      <DashboardLayout>
+        <div className="p-8 text-slate-400">Ачаалж байна...</div>
+      </DashboardLayout>
+    }>
+      <LessonsContent />
+    </Suspense>
   );
 }

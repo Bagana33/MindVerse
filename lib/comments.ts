@@ -6,6 +6,8 @@ export type Comment = {
   postId: string;
   authorEmail: string;
   authorName?: string;
+  authorAvatarUrl?: string;
+  authorAvatarColor?: string;
   content: string;
   isAI: boolean;
   parentCommentId?: string | null;
@@ -81,9 +83,25 @@ export async function getPostComments(postId: string): Promise<Comment[]> {
     .eq('post_id', postId)
     .order('created_at', { ascending: true });
 
-  if (error || !data) return [];
+  if (error || !data || data.length === 0) return [];
 
-  return data.map(dbToComment);
+  const authorEmails = [...new Set(data.map(c => c.author_email))];
+  const { data: users } = await supabase
+    .from('users')
+    .select('email, name, nickname, avatar_url, avatar_color')
+    .in('email', authorEmails);
+  const userMap = new Map(users?.map(u => [u.email, u]) || []);
+
+  return data.map(dbRow => {
+    const user = userMap.get(dbRow.author_email);
+    const authorName = user?.nickname || user?.name || dbRow.author_email;
+    return {
+      ...dbToComment(dbRow),
+      authorName,
+      authorAvatarUrl: user?.avatar_url,
+      authorAvatarColor: user?.avatar_color,
+    };
+  });
 }
 
 // Batch counts for comments to avoid N+1 queries in feed

@@ -88,29 +88,38 @@ export default function ContestDetailPage() {
       const signRes = await fetch("/api/uploads/sign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fileName: file.name,
-          fileType: file.type,
-          fileSize: file.size,
-        }),
+        body: JSON.stringify({ folder: "neoncanvas/contests" }),
       });
 
+      if (!signRes.ok) throw new Error("Cloudinary баталгаажуулалт амжилтгүй боллоо");
       const signData = await signRes.json();
-      if (!signData.ok || !signData.uploadUrl) {
-        throw new Error("Upload URL авах боломжгүй");
+      if (!signData.ok || !signData.cloudName || !signData.apiKey || !signData.signature) {
+        throw new Error("Upload тохиргоо буруу байна");
       }
 
-      const uploadRes = await fetch(signData.uploadUrl, {
-        method: "PUT",
-        body: file,
-        headers: { "Content-Type": file.type },
-      });
+      const { cloudName, apiKey, folder, timestamp, signature } = signData;
+      const form = new FormData();
+      form.append("file", file);
+      form.append("api_key", apiKey);
+      form.append("timestamp", String(timestamp));
+      form.append("signature", signature);
+      form.append("folder", folder);
+
+      const uploadRes = await fetch(
+        `https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`,
+        { method: "POST", body: form }
+      );
 
       if (!uploadRes.ok) {
         throw new Error("Файл upload хийхэд алдаа гарлаа");
       }
 
-      const fileUrl = signData.publicUrl;
+      const uploadJson = await uploadRes.json();
+      if (!uploadJson?.secure_url) {
+        throw new Error("Upload линк буцаж ирсэнгүй");
+      }
+
+      const fileUrl = uploadJson.secure_url;
       setFileUrl(fileUrl);
       setFilePreview(fileUrl);
     } catch (err: any) {

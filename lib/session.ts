@@ -7,6 +7,8 @@ export type Session = {
   name?: string;
   nickname?: string;
   role: Role;
+  avatarUrl?: string;
+  avatarColor?: string;
 };
 
 const COOKIE_NAME = "nc_session";

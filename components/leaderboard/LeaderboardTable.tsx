@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "../auth/useSession";
 import Medal3D from "./Medal3D";
 import { cachedFetch } from "../../lib/fetchCache";
+import { RealmMap } from "./RealmMap";
+import { getPersonalizedTitleShort, generatePersonalizedTitle } from "../../lib/rpgTitleGenerator";
 
 type LeaderboardUser = {
   email: string;
@@ -186,8 +188,17 @@ export function LeaderboardFull() {
   const [searchQuery, setSearchQuery] = useState("");
   const [rankFilter, setRankFilter] = useState<string>("all");
   const [gradeFilter, setGradeFilter] = useState<string>("all"); // New grade filter
+  const [viewMode, setViewMode] = useState<"map" | "table">("map");
   const { session } = useSession();
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const q = searchParams?.get("search");
+    if (q !== null) {
+      setSearchQuery(q);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     async function fetchLeaderboard(grade?: string) {
@@ -245,8 +256,8 @@ export function LeaderboardFull() {
   if (loading) {
     return (
       <section className="bg-dark-900 border border-white/5 rounded-2xl px-4 py-4">
-        <h2 className="text-sm font-semibold mb-2">Top Students</h2>
-        <p className="text-xs text-nc-muted">Loading...</p>
+        <h2 className="text-sm font-semibold mb-2 font-bold text-white">Mindverse Leaderboard & RPG Realm</h2>
+        <p className="text-xs text-nc-muted">Ачаалж байна...</p>
       </section>
     );
   }
@@ -254,20 +265,55 @@ export function LeaderboardFull() {
   if (users.length === 0) {
     return (
       <section className="bg-dark-900 border border-white/5 rounded-2xl px-4 py-4">
-        <h2 className="text-sm font-semibold mb-2">Top Students</h2>
-        <p className="text-xs text-nc-muted">No students yet. Start creating posts and getting reactions!</p>
+        <h2 className="text-sm font-semibold mb-2 font-bold text-white">Mindverse Leaderboard & RPG Realm</h2>
+        <p className="text-xs text-nc-muted">Одоогоор сурагчдын мэдээлэл олдсонгүй.</p>
       </section>
     );
   }
 
   return (
-    <section className="bg-nc-panel/90 border border-nc-border rounded-2xl px-4 py-4 shadow-nc-soft">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-sm font-semibold">Top Students</h2>
+    <div className="space-y-6">
+      {/* View Toggle Tabs Header */}
+      <div className="flex items-center justify-between flex-wrap gap-3 glass-panel p-3.5 rounded-3xl border border-purple-500/20 shadow-lg">
         <div className="flex items-center gap-2">
-          <span className="text-[10px] text-slate-400">{filteredUsers.length} / {users.length}</span>
+          <button
+            onClick={() => setViewMode("map")}
+            className={`px-5 py-2.5 rounded-2xl text-xs font-black transition-all duration-300 flex items-center gap-2 ${
+              viewMode === "map"
+                ? "bg-gradient-to-r from-amber-500 via-purple-600 to-pink-600 text-white shadow-[0_0_25px_rgba(251,191,36,0.4)] scale-105"
+                : "bg-dark-800 text-slate-400 hover:text-white border border-white/5"
+            }`}
+          >
+            <span className="text-base">🗺️</span>
+            <span>Хаант Улсын Мап (RPG World)</span>
+          </button>
+          <button
+            onClick={() => setViewMode("table")}
+            className={`px-5 py-2.5 rounded-2xl text-xs font-black transition-all duration-300 flex items-center gap-2 ${
+              viewMode === "table"
+                ? "bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-[0_0_25px_rgba(139,92,246,0.4)] scale-105"
+                : "bg-dark-800 text-slate-400 hover:text-white border border-white/5"
+            }`}
+          >
+            <span className="text-base">🏆</span>
+            <span>Хүснэгт (Rankings)</span>
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-extrabold text-purple-300 px-3 py-1.5 rounded-xl bg-purple-500/10 border border-purple-500/20">
+            👥 Нийт сурагчид: {filteredUsers.length} / {users.length}
+          </span>
         </div>
       </div>
+
+      {viewMode === "map" ? (
+        <RealmMap users={filteredUsers} />
+      ) : (
+        <section className="bg-nc-panel/90 border border-nc-border rounded-3xl px-6 py-6 shadow-nc-soft">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-extrabold text-white">🏆 Сурагчдын Чансаа (Leaderboard)</h2>
+          </div>
 
       {/* Search and Filter Section */}
       <div className="mb-4 space-y-3">
@@ -457,7 +503,8 @@ export function LeaderboardFull() {
                     {u.nickname || u.name || u.email}
                     {isMe && <span className="ml-1 text-[10px] text-violet-300 font-semibold">(You)</span>}
                   </button>
-                  <div className="text-[10px] text-nc-muted">XP collector</div>
+                  <div className="text-[10px] text-amber-300 font-semibold">{getPersonalizedTitleShort(u)}</div>
+                  <div className="text-[9px] text-slate-500 italic truncate max-w-[180px]">{generatePersonalizedTitle(u).subtitle}</div>
                 </div>
               </div>
               <div className="text-[11px]">
@@ -480,5 +527,7 @@ export function LeaderboardFull() {
         </div>
       )}
     </section>
+  )}
+</div>
   );
 }

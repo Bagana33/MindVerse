@@ -8,6 +8,6 @@ export async function GET() {
     return NextResponse.json({ ok: false, error: "Нэвтэрнэ үү" }, { status: 401 });
   }
   const notifications = await getUserNotifications(session.email);
-  const unreadCount = await getUnreadCount(session.email);
+  const unreadCount = notifications.filter(n => !n.read).length;
   return NextResponse.json({ ok: true, notifications, unreadCount });
 }

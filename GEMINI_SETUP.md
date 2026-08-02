@@ -34,11 +34,13 @@ Chat bot нь зөвхөн **graphic design** сэдвүүдэд тусална:
 
 ## Техникийн дэлгэрэнгүй
 
-**Файлууд өөрчлөгдсөн:**
-- `app/api/assistant/chat/route.ts` - OpenAI → Gemini API
-- `components/assistant/StudentAssistant.tsx` - Error message update
-- `.env.local` - GOOGLE_GEMINI_API_KEY variable
+**Файлууд:**
+- `lib/gemini.ts` - Gemini API client
+- `lib/ai-critique.ts` - Пост бүр дээр автомат дизайны шүүмжлэл
+- `app/api/posts/route.ts` - Пост үүсэхэд AI comment нэмнэ
+- `app/api/assistant/chat/route.ts` - Chat bot (OpenRouter/OpenAI)
+- `components/assistant/StudentAssistant.tsx` - Chat UI
 
-**Model:** `gemini-1.5-flash`
+**Model:** `gemini-flash-latest` (GEMINI_MODEL env-ээр өөрчлөх боломжтой)
 **Max tokens:** 350
 **Temperature:** 0.5

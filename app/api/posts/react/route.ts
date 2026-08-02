@@ -64,11 +64,9 @@ export async function POST(req: Request) {
       );
     }
 
-    const settled = await Promise.allSettled(tasks);
-    settled.forEach((r, i) => {
-      if (r.status === "rejected") {
-        console.error(`Reaction side-effect #${i + 1} failed:`, r.reason);
-      }
+    // Fire side-effects in background to respond instantly
+    Promise.allSettled(tasks).catch((err) => {
+      console.error("Reaction side-effects error:", err);
     });
   }
 

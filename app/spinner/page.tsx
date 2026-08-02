@@ -159,22 +159,19 @@ export default function SpinnerPage() {
     // Use the random value to select index - ensure uniform distribution
     const randomIndex = Math.floor(randomValue * options.length);
     
-    // Calculate rotation (multiple full spins + final position)
-    // Add extra randomness to rotation for more unpredictable results
-    const baseSpins = 10;
-    const extraSpins = Math.random() * 6; // 0-6 additional spins
+    // Calculate target rotation so option center lands under top pointer (12 o'clock)
+    const baseSpins = 8;
+    const extraSpins = Math.floor(Math.random() * 4); // 0-3 additional spins
     const fullSpins = baseSpins + extraSpins;
     const anglePerSlice = 360 / options.length;
     
-    // Add small random offset to final angle for more randomness
-    // But keep it within the slice to ensure correct selection
-    const randomOffset = (Math.random() - 0.5) * (anglePerSlice * 0.2); // ±10% of slice
-    const finalAngle = randomIndex * anglePerSlice + randomOffset;
+    // Slight random offset inside the slice
+    const randomOffset = (Math.random() - 0.5) * (anglePerSlice * 0.4);
+    const targetSliceAngle = ((360 - ((randomIndex + 0.5) * anglePerSlice + randomOffset)) % 360 + 360) % 360;
     
-    // Get current rotation and normalize
-    const currentNormalized = ((rotation % 360) + 360) % 360;
-    // Calculate target: current + full spins + adjust to target slice
-    const targetRotation = rotation + fullSpins * 360 + (360 - currentNormalized) + finalAngle;
+    const currentMod = ((rotation % 360) + 360) % 360;
+    const deltaToTarget = ((targetSliceAngle - currentMod + 360) % 360);
+    const targetRotation = rotation + fullSpins * 360 + (deltaToTarget < 180 ? deltaToTarget + 360 : deltaToTarget);
 
     setRotation(targetRotation);
 

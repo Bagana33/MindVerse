@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSession } from "../../components/auth/useSession";
 import { DashboardLayout } from "../../components/layout/DashboardLayout";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 type Contest = {
   id: string;
@@ -21,8 +22,10 @@ type Contest = {
   createdAt: string;
 };
 
-export default function ContestsPage() {
+function ContestsContent() {
   const { session } = useSession();
+  const searchParams = useSearchParams();
+  const searchQuery = (searchParams?.get("search") || "").trim().toLowerCase();
   const [contests, setContests] = useState<Contest[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -179,9 +182,19 @@ export default function ContestsPage() {
     );
   }
 
-  const activeContests = contests.filter(c => c.status === "active");
-  const upcomingContests = contests.filter(c => c.status === "upcoming");
-  const endedContests = contests.filter(c => c.status === "ended");
+  const filteredContests = searchQuery
+    ? contests.filter(
+        (c) =>
+          c.title.toLowerCase().includes(searchQuery) ||
+          c.description.toLowerCase().includes(searchQuery) ||
+          c.authorName.toLowerCase().includes(searchQuery) ||
+          c.authorEmail.toLowerCase().includes(searchQuery)
+      )
+    : contests;
+
+  const activeContests = filteredContests.filter(c => c.status === "active");
+  const upcomingContests = filteredContests.filter(c => c.status === "upcoming");
+  const endedContests = filteredContests.filter(c => c.status === "ended");
 
   return (
     <DashboardLayout>
@@ -488,5 +501,17 @@ export default function ContestsPage() {
         )}
       </div>
     </DashboardLayout>
+  );
+}
+
+export default function ContestsPage() {
+  return (
+    <Suspense fallback={
+      <DashboardLayout>
+        <div className="p-8 text-slate-400">Ачаалж байна...</div>
+      </DashboardLayout>
+    }>
+      <ContestsContent />
+    </Suspense>
   );
 }

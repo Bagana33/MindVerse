@@ -44,7 +44,7 @@ node scripts/create-ai-user.js
 ### Сурагч пост оруулах үед:
 
 1. **Пост үүсгэгдэнэ** - Title, description, зураг
-2. **AI анализ ажиллана** - GPT-4 бүтээлийг үнэлнэ
+2. **AI анализ ажиллана** - Google Gemini (gemini-flash-latest) бүтээлийг үнэлнэ
 3. **Comment үүсгэгдэнэ** - AI шүүмжлэл автоматаар бичигдэнэ
 4. **Notification ирнэ** - "🤖 AI шүүмжлэл таны бүтээлд бэлэн боллоо!"
 
@@ -72,11 +72,14 @@ node scripts/create-ai-user.js
 
 ## 6. Deployment
 
-Vercel дээр автоматаар deploy хийгдэх үед бүх зүйл ажиллана. OpenAI API key шаардлагатай:
+Vercel дээр автоматаар deploy хийгдэх үед бүх зүйл ажиллана. Google Gemini API key шаардлагатай:
 
 ```
-OPENAI_API_KEY=sk-proj-...
+GOOGLE_GEMINI_API_KEY=your_key_here
+GEMINI_MODEL=gemini-flash-latest
 ```
+
+Дэлгэрэнгүй: `GEMINI_SETUP.md`
 
 ## Troubleshooting
 

@@ -7,6 +7,8 @@ export type ClientSession = {
   name?: string;
   nickname?: string;
   role: "student" | "teacher";
+  avatarUrl?: string;
+  avatarColor?: string;
 } | null;
 
 export function useSession() {

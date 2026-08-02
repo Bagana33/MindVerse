@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "../auth/useSession";
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, Suspense } from "react";
+import { BrandLogo } from "./BrandLogo";
 
-export function Topbar() {
+function TopbarInner() {
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { session, logout } = useSession();
   const [notifications, setNotifications] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -15,6 +17,28 @@ export function Topbar() {
   const [loadingNotifs, setLoadingNotifs] = useState(false);
   const [xp, setXp] = useState<number | null>(null);
   const [searchInput, setSearchInput] = useState("");
+
+  // Sync search input with URL search param
+  useEffect(() => {
+    const q = searchParams?.get("search");
+    if (q !== null) {
+      setSearchInput(q);
+    }
+  }, [searchParams]);
+
+  const handleSearchChange = (val: string) => {
+    setSearchInput(val);
+    const params = new URLSearchParams(searchParams?.toString() || "");
+    if (val.trim()) {
+      params.set("search", val);
+    } else {
+      params.delete("search");
+    }
+    const queryString = params.toString();
+    const targetPath = (pathname === "/" || pathname === "/lessons" || pathname === "/contests" || pathname === "/leaderboard") ? pathname : "/";
+    const newUrl = queryString ? `${targetPath}?${queryString}` : targetPath;
+    router.replace(newUrl);
+  };
 
   const fetchNotifications = useCallback(async () => {
     if (!session) return;
@@ -97,9 +121,7 @@ export function Topbar() {
     <header className="sticky top-0 z-50 backdrop-blur-xl bg-slate-950/80 border-b border-slate-800/50">
       <div className="max-w-6xl mx-auto px-4 pt-4 pb-2">
         <div className="flex items-center gap-3">
-          <div className="relative w-12 h-12 rounded-full flex items-center justify-center bg-gradient-to-tr from-violet-500 to-pink-500 shadow-[0_8px_24px_rgba(139,92,246,0.4)] font-bold neon-glow animate-pulse">
-            <span className="text-white">MV</span>
-          </div>
+          <BrandLogo size="lg" className="w-12 h-12 rounded-full shadow-[0_8px_24px_rgba(139,92,246,0.4)] neon-glow animate-pulse" />
           <div>
             <h1 className="text-base font-bold bg-gradient-to-r from-violet-300 via-purple-300 to-pink-300 bg-clip-text text-transparent">Mind Verse</h1>
             <p className="text-xs text-slate-400">
@@ -215,21 +237,25 @@ export function Topbar() {
           </div>
 
           <div className="flex items-center gap-2">
-            <input
-              type="text"
-              placeholder="🔍 Дизайн, tag хайх..."
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && searchInput.trim()) {
-                  // Navigate to home with search query
-                  const params = new URLSearchParams();
-                  params.set('search', searchInput.trim());
-                  router.push(`/?${params.toString()}`);
-                }
-              }}
-              className="hidden md:block w-56 glass-panel rounded-full px-4 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all"
-            />
+            <div className="relative hidden md:block">
+              <input
+                type="text"
+                placeholder="🔍 Дизайн, tag хайх..."
+                value={searchInput}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                className="w-56 glass-panel rounded-full pl-4 pr-8 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all"
+              />
+              {searchInput && (
+                <button
+                  type="button"
+                  onClick={() => handleSearchChange("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs"
+                  aria-label="Clear search"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
             {session ? (
               <div className="inline-flex items-center gap-2">
                 <div className="relative">
@@ -285,9 +311,23 @@ export function Topbar() {
                   )}
                 </div>
                 <div className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-xs glass-panel">
-                  <span className="w-6 h-6 rounded-full bg-gradient-to-tr from-sky-500 to-violet-500 flex items-center justify-center text-[10px] font-bold shadow-lg">
-                    {session.nickname?.[0]?.toUpperCase() || session.name?.[0]?.toUpperCase() || session.email[0]?.toUpperCase() || "U"}
-                  </span>
+                  {session.avatarUrl ? (
+                    <img 
+                      src={session.avatarUrl} 
+                      alt={session.name || session.email} 
+                      loading="lazy"
+                      decoding="async"
+                      className="w-6 h-6 rounded-full object-cover shadow-lg"
+                      onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                    />
+                  ) : (
+                    <span 
+                      className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shadow-lg"
+                      style={{ backgroundColor: session.avatarColor || '#6366f1' }}
+                    >
+                      {session.nickname?.[0]?.toUpperCase() || session.name?.[0]?.toUpperCase() || session.email[0]?.toUpperCase() || "U"}
+                    </span>
+                  )}
                   <span className="text-slate-200 font-medium">{session.nickname || session.name || session.email.split('@')[0]}</span>
                   <span className="ml-1 inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] text-emerald-400 font-medium">
                     {session.role === "teacher" ? "✨ Багш" : "👨‍🎓 Сурагч"}
@@ -325,5 +365,13 @@ export function Topbar() {
         </nav>
       </div>
     </header>
+  );
+}
+
+export function Topbar() {
+  return (
+    <Suspense fallback={null}>
+      <TopbarInner />
+    </Suspense>
   );
 }

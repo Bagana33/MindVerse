@@ -1,14 +1,11 @@
 import { NextResponse } from "next/server";
 import { getSessionFromCookies } from "../../../lib/session";
-import { createPost, getAllPosts, deletePost, getPostsPage } from "../../../lib/posts";
-import { addNotification } from "../../../lib/notifications";
+import { createPost, deletePost, getPostsPage } from "../../../lib/posts";
+import { addNotification, addNotificationBatch } from "../../../lib/notifications";
 import { getAllUsers, ensureAIUserExists } from "../../../lib/users";
 import { createComment } from "../../../lib/comments";
-import OpenAI from "openai";
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+import { generateDesignCritique } from "../../../lib/ai-critique";
+import { getCached, setCached, invalidateServerCache } from "../../../lib/serverCache";
 
 // GET: Fetch all posts
 export async function GET(req: Request) {
@@ -17,20 +14,25 @@ export async function GET(req: Request) {
   const limit = Math.max(1, Math.min(200, Number(searchParams.get('limit') || 20))); // Increased max to 200
   const before = searchParams.get('before') || undefined;
   const grade = searchParams.get('grade') || undefined; // Filter by grade
-  const posts = await getPostsPage(limit, before, grade);
+  const search = searchParams.get('search') || undefined; // Database search term
+
+  const cacheKey = `posts:${limit}:${before || ''}:${grade || ''}:${search || ''}:${session ? session.email : 'public'}`;
+  const cachedData = getCached<any>(cacheKey, 3000);
+  if (cachedData) {
+    return NextResponse.json(cachedData);
+  }
+
+  const posts = await getPostsPage(limit, before, grade, search);
 
   // If user is signed in, include their private posts; otherwise only public posts
   const visible = session
     ? posts.filter((p) => p.visibility === 'PUBLIC' || p.authorEmail === session.email)
     : posts.filter((p) => p.visibility === 'PUBLIC');
 
-  // Short edge cache to smooth bursts
-  return new NextResponse(JSON.stringify({ ok: true, posts: visible }), {
-    headers: {
-      'Content-Type': 'application/json',
-      'Cache-Control': 'public, s-maxage=5, stale-while-revalidate=30'
-    }
-  });
+  const responseObj = { ok: true, posts: visible };
+  setCached(cacheKey, responseObj);
+
+  return NextResponse.json(responseObj);
 }
 
 // POST: Create a new post (requires authentication)
@@ -93,96 +95,48 @@ export async function POST(req: Request) {
     visibility: visibility === 'PRIVATE' ? 'PRIVATE' : 'PUBLIC',
   });
 
-  // AI automatic critique for student posts (only for students)
-  if (session.role === 'student' && visibility === 'PUBLIC') {
+  // AI automatic critique for public user posts
+  if (visibility === 'PUBLIC' && !['ai-assistant', 'news-bot'].includes(session.email)) {
     try {
-      const aiPrompt = `Та graphic design багшийн AI туслах юм. Сурагчийн дизайн бүтээлийг шүүмжилж байна.
+      const aiCritique = await generateDesignCritique({ title, description, imageUrl });
 
-Гарчиг: ${title}
-Тайлбар: ${description}
-${imageUrl ? 'Зурагтай бүтээл' : 'Зураггүй бүтээл'}
-
-Дараах байдлаар шүүмжлэл өг:
-1. ✅ Сайн талууд (1-2 өгүүлбэр)
-2. 💡 Сайжруулах санал (2-3 практик зөвлөмж)
-3. 🎯 Дараагийн алхам (юу дээр анхаарах)
-
-Монгол хэлээр, найрсаг, урам өгөх маягаар бич. Богино, тодорхой байлгаарай (5-6 өгүүлбэр).`;
-
-      const completion = await openai.chat.completions.create({
-        // Prefer a lighter, widely available model
-        model: process.env.OPENAI_CHAT_MODEL || "gpt-4o-mini",
-        messages: [
-          {
-            role: "system",
-            content: "Та graphic design багшийн AI туслах юм. Сурагчдад найрсаг, урам өгөх маягаар практик зөвлөмж өгдөг.",
-          },
-          {
-            role: "user",
-            content: aiPrompt,
-          },
-        ],
-        max_tokens: 300,
+      await ensureAIUserExists();
+      await createComment({
+        postId: newPost.id,
+        authorEmail: 'ai-assistant',
+        content: aiCritique,
+        isAI: true,
       });
 
-  const aiCritique = completion.choices?.[0]?.message?.content;
-
-      if (aiCritique) {
-        // Ensure AI user exists to satisfy FK constraint
-        await ensureAIUserExists();
-        // Create AI comment
-        await createComment({
-          postId: newPost.id,
-          authorEmail: 'ai-assistant',
-          content: aiCritique,
-          isAI: true,
-        });
-
-        // Notify user about AI feedback
-        await addNotification(
-          session.email,
-          'ai-assistant',
-          'LIKE',
-          '🤖 AI шүүмжлэл таны бүтээлд бэлэн боллоо!'
-        );
-      }
+      await addNotification(
+        session.email,
+        'ai-assistant',
+        'LIKE',
+        '🤖 AI шүүмжлэл таны бүтээлд бэлэн боллоо!'
+      );
     } catch (aiError) {
       console.error('AI critique error:', aiError);
-      // Fallback: post a short friendly default comment so students still get feedback
-      try {
-        await ensureAIUserExists();
-        await createComment({
-          postId: newPost.id,
-          authorEmail: 'ai-assistant',
-          content: `✅ Сайн тал: Сэдэв тодорхой, санаа сонирхолтой байна.\n\n💡 Зөвлөмж: Контраст (өнгө/хэмжээ) дээр илүү тоглоорой, зай талбайг амьсгаа авах боломжтой болго.\n\n🎯 Дараагийн алхам: Гарчиг, тайлбарын typography-г нэмж туршаарай.`,
-          isAI: true,
-        });
-      } catch (fallbackError) {
-        // ignore
-      }
     }
   }
 
-  // Send notification to all users about new post (if public)
+  // Send notification to all users about new post (non-blocking async batch)
   if (visibility === 'PUBLIC') {
-    try {
-      const allUsers = await getAllUsers();
-      const notifications = allUsers
-        .filter(u => u.email !== session.email) // Don't notify the author
-        .map(u => 
-          addNotification(
-            u.email,
-            session.email,
-            'LIKE',
-            `🎨 ${session.name || session.email} шинэ пост нийтэллээ: ${title}`
-          )
+    getAllUsers()
+      .then((allUsers) => {
+        const recipientEmails = allUsers
+          .filter((u) => u.email !== session.email)
+          .map((u) => u.email);
+        return addNotificationBatch(
+          recipientEmails,
+          session.email,
+          'LIKE',
+          `🎨 ${session.name || session.email} шинэ пост нийтэллээ: ${title}`
         );
-      await Promise.allSettled(notifications);
-    } catch (e) {
-      console.error('Failed to send notifications:', e);
-    }
+      })
+      .catch((e) => console.error('Failed async notification broadcast:', e));
   }
 
+  invalidateServerCache('posts');
   return NextResponse.json({ ok: true, post: newPost });
 }
 
@@ -205,5 +159,6 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ ok: false, error: "Post олдсонгүй эсвэл устгах эрхгүй" }, { status: 404 });
   }
 
+  invalidateServerCache('posts');
   return NextResponse.json({ ok: true });
 }

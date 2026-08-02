@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
-import { getSessionFromCookies } from "../../../../lib/session";
+import { getClientKey, rateLimit } from "../../../../lib/rate-limit";
 
 export const runtime = "nodejs";
 
-type ChatClient = { client: OpenAI; model: string; provider: "openrouter" };
+type ChatClient = { client: OpenAI; model: string; provider: "openai" | "openrouter" };
 
 const systemPrompt = `Та график дизайны туслах багш AI. Зөвхөн дараах сэдвүүдээр тусална:
 — Typography, layout, color, contrast, spacing
@@ -22,6 +22,12 @@ const openRouterHeaders = {
   "X-Title": process.env.OPENROUTER_APP_NAME || process.env.APP_NAME || "Mind Verse",
 };
 
+const openRouterTextModels = [
+  process.env.OPENROUTER_CHAT_MODEL,
+  "openai/gpt-4o-mini",
+  "qwen/qwen-2.5-7b-instruct",
+].filter(Boolean) as string[];
+
 function getOpenRouterClient(): OpenAI | null {
   const apiKeyRaw = process.env.OPENROUTER_API_KEY;
   const apiKey = apiKeyRaw?.trim().replace(/^<|>$/g, "");
@@ -34,18 +40,56 @@ function getOpenRouterClient(): OpenAI | null {
   });
 }
 
-function getTextClient(): ChatClient | null {
+function getGeminiOpenAIClient(): OpenAI | null {
+  const apiKeyRaw = process.env.GOOGLE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+  const apiKey = apiKeyRaw?.trim().replace(/^<|>$/g, "");
+  if (!apiKey) return null;
+
+  return new OpenAI({
+    apiKey,
+    baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+  });
+}
+
+function getOpenAIClient(): OpenAI | null {
+  const apiKeyRaw = process.env.OPENAI_API_KEY;
+  const apiKey = apiKeyRaw?.trim().replace(/^<|>$/g, "");
+  if (!apiKey) return null;
+
+  return new OpenAI({ apiKey });
+}
+
+function getTextClients(): ChatClient[] {
+  const clients: ChatClient[] = [];
   const openrouter = getOpenRouterClient();
+  const gemini = getGeminiOpenAIClient();
+  const openai = getOpenAIClient();
 
   if (openrouter) {
-    return {
-      client: openrouter,
-      model: "google/gemma-3-27b-it:free",
-      provider: "openrouter",
-    };
+    for (const model of Array.from(new Set(openRouterTextModels))) {
+      clients.push({
+        client: openrouter,
+        model,
+        provider: "openrouter",
+      });
+    }
+  }
+  if (gemini) {
+    clients.push({
+      client: gemini,
+      model: process.env.GEMINI_MODEL || "gemini-flash-latest",
+      provider: "openai",
+    });
+  }
+  if (openai) {
+    clients.push({
+      client: openai,
+      model: process.env.OPENAI_CHAT_MODEL || "gpt-4o-mini",
+      provider: "openai",
+    });
   }
 
-  return null;
+  return clients;
 }
 
 function fallbackDesignTips(q: string): string {
@@ -141,8 +185,13 @@ function extractImages(msg: any): string[] {
 }
 
 export async function POST(req: Request) {
-  const session = await getSessionFromCookies();
-  if (!session) return NextResponse.json({ ok: false, error: "Нэвтэрнэ үү" }, { status: 401 });
+  const rl = rateLimit(getClientKey(req, "assistant-chat"), { windowMs: 60_000, max: 20 });
+  if (!rl.ok) {
+    return NextResponse.json(
+      { ok: false, error: "Хэт олон асуулт илгээлээ. Түр хүлээгээд дахин оролдоно уу." },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfterSec || 30) } }
+    );
+  }
 
   let body: any = {};
   try {
@@ -185,8 +234,8 @@ export async function POST(req: Request) {
     }
   }
 
-  const textClient = getTextClient();
-  if (!textClient) {
+  const textClients = getTextClients();
+  if (!textClients.length) {
     const offline = fallbackDesignTips(message);
     return NextResponse.json({ ok: true, answer: offline, offline: true });
   }
@@ -199,22 +248,34 @@ export async function POST(req: Request) {
     { role: "user", content: message },
   ];
 
-  try {
-    const completion = await textClient.client.chat.completions.create({
-      model: textClient.model,
-      messages,
-      temperature: 0.5,
-      max_tokens: 350,
-    });
+  const errors: string[] = [];
+  for (const textClient of textClients) {
+    try {
+      const completion = await textClient.client.chat.completions.create({
+        model: textClient.model,
+        messages,
+        temperature: 0.5,
+        max_tokens: 350,
+      });
 
-    const answer =
-      extractText(completion.choices?.[0]?.message) ||
-      "Сайн асуулт байна. Илүү тодорхой тайлбар өгвөл би илүү нарийн зөвлөмж өгч чадна.";
+      const answer =
+        extractText(completion.choices?.[0]?.message) ||
+        "Сайн асуулт байна. Илүү тодорхой тайлбар өгвөл би илүү нарийн зөвлөмж өгч чадна.";
 
-    return NextResponse.json({ ok: true, answer });
-  } catch (e) {
-    console.error("Assistant text error:", e);
-    const tips = fallbackDesignTips(message);
-    return NextResponse.json({ ok: true, answer: tips, offline: true });
+      return NextResponse.json({
+        ok: true,
+        answer,
+        provider: textClient.provider,
+        model: textClient.model,
+      });
+    } catch (e: any) {
+      const code = e?.status ?? e?.code ?? e?.response?.status ?? "";
+      const messageText = e?.message || "unknown error";
+      errors.push(`${textClient.provider}/${textClient.model}: ${code} ${messageText}`.trim());
+      console.error("Assistant text error:", textClient.provider, textClient.model, e);
+    }
   }
+
+  const tips = fallbackDesignTips(message);
+  return NextResponse.json({ ok: true, answer: tips, offline: true, errors });
 }

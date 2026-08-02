@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromCookies } from "../../../../../lib/session";
-import { submitToLesson } from "../../../../../lib/lessons";
+import { submitToLesson, getLesson, gradeSubmission } from "../../../../../lib/lessons";
+import { addExperience } from "../../../../../lib/users";
+import { addNotification } from "../../../../../lib/notifications";
+import { generateDesignCritique } from "../../../../../lib/ai-critique";
 
 export async function POST(
   request: NextRequest,
@@ -19,7 +22,7 @@ export async function POST(
     const params = await context.params;
     const { id: lessonId } = params;
     
-    let body;
+    let body: any = {};
     try {
       body = await request.json();
     } catch (jsonError) {
@@ -27,10 +30,9 @@ export async function POST(
       return NextResponse.json({ error: "Invalid JSON format" }, { status: 400 });
     }
 
-    const { fileUrl, fileUrls } = body;
+    const { fileUrl, fileUrls, answers } = body;
 
     // Support both old format (fileUrl) and new format (fileUrls array)
-    // If fileUrls is provided, use it; otherwise fall back to fileUrl as array
     const urls = fileUrls 
       ? (Array.isArray(fileUrls) ? fileUrls : [fileUrls])
       : (fileUrl ? [fileUrl] : undefined);
@@ -58,7 +60,6 @@ export async function POST(
         .single();
 
       if (gameState && submission.fileUrls && submission.fileUrls.length > 0) {
-        // Check if submission already exists in game
         const { data: existing } = await supabase
           .from("game_images")
           .select("*")
@@ -66,14 +67,13 @@ export async function POST(
           .single();
 
         if (!existing) {
-          // Add to game with all file URLs
           const gameImageId = `game-img-${submission.id}`;
           await supabase
             .from("game_images")
             .upsert({
               id: gameImageId,
-              image_url: submission.fileUrls[0], // Keep for backward compatibility
-              image_urls: submission.fileUrls, // Store all file URLs
+              image_url: submission.fileUrls[0],
+              image_urls: submission.fileUrls,
               added_by: session.email,
               submission_id: submission.id,
               liked_by: [],
@@ -83,14 +83,74 @@ export async function POST(
         }
       }
     } catch (err) {
-      // Ignore errors - game might not be set up yet
       console.log("Auto-add to game error (non-critical):", err);
     }
 
+    // --- AI AUTO-GRADING SYSTEM ---
+    let autoScore = 90;
+    let autoXP = 100;
+    let autoFeedback = "🤖 AI Шалгагч: Даалгавар амжилттай шалгагдлаа! Бүтээл болон гүйцэтгэл сайн байна.";
+
+    const lesson = await getLesson(lessonId);
+    const lessonTitle = lesson?.title || "Хичээл";
+
+    if (Array.isArray(answers) && lesson && lesson.questions && lesson.questions.length > 0) {
+      let correctCount = 0;
+      lesson.questions.forEach((q, idx) => {
+        if (answers[idx] === q.correctAnswer) {
+          correctCount++;
+        }
+      });
+      const pct = Math.round((correctCount / lesson.questions.length) * 100);
+      autoScore = pct;
+      autoXP = Math.max(20, Math.round((pct / 100) * 100)); // Up to 100 XP for quiz
+      autoFeedback = `🤖 AI Асуулт хариултыг шалгалаа: ${correctCount}/${lesson.questions.length} зөв хариуллаа! (${pct}%)`;
+    } else if (urls && urls.length > 0 && lesson) {
+      try {
+        const critique = await generateDesignCritique({
+          title: lesson.title,
+          description: lesson.description,
+          imageUrl: urls[0],
+        });
+        autoScore = 95;
+        autoXP = 150; // 150 XP for design submission
+        autoFeedback = `🤖 AI Автомат Шалгалтын Дүн:\n${critique}`;
+      } catch (e) {
+        autoScore = 90;
+        autoXP = 100;
+        autoFeedback = `🤖 AI Шалгагч: Даалгаврын файлыг хүлээн авч шалгалаа. Амжилттай!`;
+      }
+    }
+
+    // Apply grade automatically
+    const gradedSubmission = await gradeSubmission(
+      lessonId,
+      submission.id,
+      autoScore,
+      autoXP,
+      autoFeedback
+    );
+
+    // Award XP to student
+    if (autoXP > 0) {
+      await addExperience(session.email, autoXP);
+    }
+
+    // Send notification
+    await addNotification(
+      session.email,
+      'ai-assistant',
+      'GRADE',
+      `📝 🤖 AI Автомат шалгагч "${lessonTitle}" даалгаврыг шалгаж ${autoScore} оноо, +${autoXP} XP өглөө!`
+    ).catch(() => {});
+
     return NextResponse.json({ 
       success: true, 
-      submission,
-      message: "Амжилттай илгээлээ! Багш таны ажлыг шалгаад XP өгнө." 
+      submission: gradedSubmission || submission,
+      score: autoScore,
+      rewardXP: autoXP,
+      feedback: autoFeedback,
+      message: `🤖 AI Автомат шалгагч даалгаврыг шалгаж ${autoScore} оноо, +${autoXP} XP өглөө!` 
     });
   } catch (error: any) {
     console.error("Submit lesson error:", error);

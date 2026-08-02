@@ -2,6 +2,7 @@
 
 import { FormEvent, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { BrandLogo } from "../layout/BrandLogo";
 
 type Mode = "signin" | "signup";
 
@@ -95,9 +96,7 @@ export function LoginForm() {
             
             <div className="relative z-10">
               <div className="flex items-center gap-3 mb-8">
-                <div className="w-14 h-14 rounded-2xl bg-white/20 backdrop-blur-xl border border-white/30 flex items-center justify-center font-extrabold text-xl shadow-[0_12px_30px_rgba(255,255,255,0.3)] neon-glow">
-                  MV
-                </div>
+                <BrandLogo size="lg" className="border border-white/30 shadow-[0_12px_30px_rgba(255,255,255,0.3)] neon-glow" />
                 <div>
                   <h3 className="text-xl font-bold">Mind Verse</h3>
                   <p className="text-xs text-white/90">

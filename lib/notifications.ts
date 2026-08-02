@@ -64,6 +64,32 @@ export async function addNotification(userEmail: string, actorEmail: string, typ
   };
 }
 
+export async function addNotificationBatch(
+  userEmails: string[],
+  actorEmail: string,
+  type: NotificationType,
+  message: string
+): Promise<void> {
+  if (!userEmails || userEmails.length === 0) return;
+  const rows = userEmails.map(userEmail => ({
+    id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+    user_email: userEmail,
+    message,
+    read: false,
+    type,
+  }));
+
+  try {
+    const { error } = await supabase.from('notifications').insert(rows);
+    if (error && /column.*type.*does not exist/i.test(String(error.message))) {
+      const rowsWithoutType = rows.map(({ type: _t, ...r }) => r);
+      await supabase.from('notifications').insert(rowsWithoutType);
+    }
+  } catch (err) {
+    console.error('Error batch inserting notifications:', err);
+  }
+}
+
 export async function getUserNotifications(userEmail: string, limit: number = 50): Promise<Notification[]> {
   const { data, error } = await supabase
     .from('notifications')
