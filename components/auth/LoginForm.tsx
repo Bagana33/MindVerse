@@ -70,6 +70,9 @@ export function LoginForm() {
       setResetToken(json.resetToken);
       setForgotStep(2);
       setResendCooldown(60);
+      if (json.devCode) {
+        setOtpCode(json.devCode);
+      }
       setStatus(json.message || `Таны "${cleanEmail}" имэйл рүү 6 оронтой код илгээгдлээ.`);
     } catch (err: any) {
       setError(err.message || "Сүлжээний алдаа гарлаа");

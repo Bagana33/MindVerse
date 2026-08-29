@@ -57,13 +57,22 @@ export async function POST(req: Request) {
       );
     }
 
+    if (emailResult.devMode) {
+      return NextResponse.json({
+        ok: true,
+        resetToken: token,
+        expiresAt,
+        devMode: true,
+        devCode: code,
+        message: `⚠️ Имэйл серверийн тохиргоо (GMAIL_APP_PASSWORD) хийгдээгүй тул туршилтын код: ${code}`,
+      });
+    }
+
     return NextResponse.json({
       ok: true,
       resetToken: token,
       expiresAt,
-      message: `Таны "${email}" имэйл хаяг руу 6 оронтой баталгаажуулах код илгээгдлээ.`,
-      // In dev mode / if SMTP not yet configured, provide helpful debug info
-      ...(emailResult.devMode && process.env.NODE_ENV !== "production" ? { devCode: code } : {}),
+      message: `Таны "${email}" имэйл хаяг руу 6 оронтой баталгаажуулах код амжилттай илгээгдлээ. Спам (Junk/Spam) хавтсаа мөн шалгана уу.`,
     });
   } catch (error: any) {
     console.error("Send reset code error:", error);
