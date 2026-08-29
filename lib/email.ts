@@ -8,16 +8,12 @@ export type EmailResult = {
 };
 
 /**
- * Creates nodemailer transport based on environment variables.
- * Supports:
- * 1. Gmail SMTP (GMAIL_USER, GMAIL_APP_PASSWORD)
- * 2. Generic SMTP (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_SECURE)
- * 3. Resend API (RESEND_API_KEY)
+ * Creates Nodemailer transport using Gmail SMTP or generic SMTP.
  */
 function getTransporter(): nodemailer.Transporter | null {
   const gmailUser = (process.env.GMAIL_USER || process.env.SMTP_USER || "").trim();
   const rawPass = process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || "";
-  const gmailPass = rawPass.replace(/\s+/g, ""); // Strip spaces from Gmail app passwords
+  const gmailPass = rawPass.replace(/\s+/g, ""); // Strip whitespace from Gmail app passwords
   const smtpHost = process.env.SMTP_HOST;
   const smtpPort = parseInt(process.env.SMTP_PORT || "587", 10);
 
@@ -34,7 +30,6 @@ function getTransporter(): nodemailer.Transporter | null {
   }
 
   if (gmailUser && gmailPass) {
-    // Gmail service
     return nodemailer.createTransport({
       service: "gmail",
       auth: {
@@ -48,7 +43,7 @@ function getTransporter(): nodemailer.Transporter | null {
 }
 
 /**
- * Sends a password reset email with the 6-digit OTP code.
+ * Sends a password reset email with the 6-digit OTP code using Gmail SMTP.
  */
 export async function sendPasswordResetEmail(
   toEmail: string,
@@ -58,12 +53,12 @@ export async function sendPasswordResetEmail(
   const normalizedEmail = toEmail.trim().toLowerCase();
   const displayName = userName || "Хэрэглэгч";
 
-  // 1. Check Nodemailer / Gmail SMTP first (allows sending to ANY student email address)
   const transporter = getTransporter();
   if (transporter) {
     try {
       const senderUser = (process.env.GMAIL_USER || process.env.SMTP_USER || "").trim();
       const sender = process.env.SMTP_FROM || (senderUser ? `Mind Verse <${senderUser}>` : "Mind Verse <no-reply@mindverse.mn>");
+      
       const info = await transporter.sendMail({
         from: sender,
         to: normalizedEmail,
@@ -74,55 +69,18 @@ export async function sendPasswordResetEmail(
 
       return { success: true, messageId: info.messageId };
     } catch (err: any) {
-      console.error("SMTP send error:", err);
+      console.error("Gmail SMTP send error:", err);
       return { success: false, error: err.message || "Имэйл илгээхэд алдаа гарлаа" };
     }
   }
 
-  // 2. Fallback to Resend API
-  const resendApiKey = process.env.RESEND_API_KEY;
-  if (resendApiKey) {
-    try {
-      const fromEmail = process.env.RESEND_FROM_EMAIL || "Mind Verse <onboarding@resend.dev>";
-      const res = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${resendApiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          from: fromEmail,
-          to: [normalizedEmail],
-          subject: `🔐 [Mind Verse] Нууц үг сэргээх баталгаажуулах код: ${code}`,
-          html: generateEmailHtml(displayName, code),
-        }),
-      });
-
-      const data = await res.json();
-      if (res.ok) {
-        return { success: true, messageId: data.id };
-      }
-      console.error("Resend API error:", data);
-      const isResendRestriction = data?.message?.includes("testing emails to your own email") || data?.message?.includes("only send testing emails");
-      return {
-        success: false,
-        error: isResendRestriction
-          ? `Resend үнэгүй горимд зөвхөн өөрийн бүртгүүлсэн имэйл рүү илгээх боломжтой: ${data.message}`
-          : (data?.message || "Имэйл илгээхэд алдаа гарлаа"),
-      };
-    } catch (err: any) {
-      console.error("Failed to send email via Resend:", err);
-      return { success: false, error: err.message || "Имэйл сервертэй холбогдож чадсангүй" };
-    }
-  }
-
-  // Fallback if no SMTP is configured (e.g., local dev or initial deployment)
+  // Fallback if no Gmail/SMTP credentials configured in environment
   console.log(`\n======================================================`);
   console.log(`📧 [MIND VERSE PASSWORD RESET OTP EMAIL]`);
   console.log(`To: ${normalizedEmail} (${displayName})`);
   console.log(`🔐 Verification Code: ${code}`);
   console.log(`Expires in: 10 minutes`);
-  console.log(`💡 Note: To send real emails, configure GMAIL_USER/GMAIL_APP_PASSWORD, SMTP_*, or RESEND_API_KEY.`);
+  console.log(`💡 Note: To send real emails, set GMAIL_USER & GMAIL_APP_PASSWORD in environment variables.`);
   console.log(`======================================================\n`);
 
   return {
