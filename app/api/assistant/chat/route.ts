@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { getClientKey, rateLimit } from "../../../../lib/rate-limit";
+import { generateGeminiText } from "../../../../lib/gemini";
 
 export const runtime = "nodejs";
+export const maxDuration = 30;
 
-type ChatClient = { client: OpenAI; model: string; provider: "openai" | "openrouter" };
+type ChatClient = { client: OpenAI; model: string; provider: "gemini" | "openai" | "openrouter" };
 
 const systemPrompt = `Та график дизайны туслах багш AI. Зөвхөн дараах сэдвүүдээр тусална:
 — Typography, layout, color, contrast, spacing
@@ -61,24 +63,16 @@ function getOpenAIClient(): OpenAI | null {
 
 function getTextClients(): ChatClient[] {
   const clients: ChatClient[] = [];
-  const openrouter = getOpenRouterClient();
   const gemini = getGeminiOpenAIClient();
   const openai = getOpenAIClient();
+  const openrouter = getOpenRouterClient();
 
-  if (openrouter) {
-    for (const model of Array.from(new Set(openRouterTextModels))) {
-      clients.push({
-        client: openrouter,
-        model,
-        provider: "openrouter",
-      });
-    }
-  }
+  // Prioritize Gemini first (free & fastest)
   if (gemini) {
     clients.push({
       client: gemini,
-      model: process.env.GEMINI_MODEL || "gemini-flash-latest",
-      provider: "openai",
+      model: process.env.GEMINI_MODEL || "gemini-3.1-flash-lite",
+      provider: "gemini",
     });
   }
   if (openai) {
@@ -87,6 +81,15 @@ function getTextClients(): ChatClient[] {
       model: process.env.OPENAI_CHAT_MODEL || "gpt-4o-mini",
       provider: "openai",
     });
+  }
+  if (openrouter) {
+    for (const model of Array.from(new Set(openRouterTextModels))) {
+      clients.push({
+        client: openrouter,
+        model,
+        provider: "openrouter",
+      });
+    }
   }
 
   return clients;
@@ -274,6 +277,25 @@ export async function POST(req: Request) {
       errors.push(`${textClient.provider}/${textClient.model}: ${code} ${messageText}`.trim());
       console.error("Assistant text error:", textClient.provider, textClient.model, e);
     }
+  }
+
+  // Direct REST Gemini fallback if OpenAI-compatible wrappers failed
+  try {
+    const directGemini = await generateGeminiText(message, {
+      systemInstruction: systemPrompt,
+      maxOutputTokens: 350,
+      temperature: 0.5,
+    });
+    if (directGemini) {
+      return NextResponse.json({
+        ok: true,
+        answer: directGemini,
+        provider: "gemini-rest",
+        model: process.env.GEMINI_MODEL || "gemini-3.1-flash-lite",
+      });
+    }
+  } catch (err: any) {
+    errors.push(`gemini-rest: ${err?.message || "unknown"}`);
   }
 
   const tips = fallbackDesignTips(message);

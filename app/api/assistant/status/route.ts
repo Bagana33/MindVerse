@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { generateGeminiText } from "../../../../lib/gemini";
 
-type ChatClient = { client: OpenAI; model: string; provider: "openai" | "openrouter" };
+export const runtime = "nodejs";
+export const maxDuration = 30;
+
+type ChatClient = { client: OpenAI; model: string; provider: "gemini" | "openai" | "openrouter" };
 
 const openRouterHeaders = {
   "HTTP-Referer": process.env.OPENROUTER_SITE_URL || process.env.APP_URL || "http://localhost:3000",
@@ -15,6 +19,17 @@ const openRouterTextModels = [
   "google/gemma-4-26b-a4b-it:free",
   "meta-llama/llama-3.3-70b-instruct:free",
 ].filter(Boolean) as string[];
+
+function getGeminiOpenAIClient(): OpenAI | null {
+  const apiKeyRaw = process.env.GOOGLE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+  const apiKey = apiKeyRaw?.trim().replace(/^<|>$/g, "");
+  if (!apiKey) return null;
+
+  return new OpenAI({
+    apiKey,
+    baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+  });
+}
 
 function getOpenRouterClient(): OpenAI | null {
   const apiKeyRaw = process.env.OPENROUTER_API_KEY;
@@ -38,16 +53,20 @@ function getOpenAIClient(): OpenAI | null {
 
 function getTextClients(): ChatClient[] {
   const clients: ChatClient[] = [];
+  const gemini = getGeminiOpenAIClient();
   const openai = getOpenAIClient();
   const openrouter = getOpenRouterClient();
 
+  if (gemini) {
+    clients.push({ client: gemini, model: process.env.GEMINI_MODEL || "gemini-3.1-flash-lite", provider: "gemini" });
+  }
+  if (openai) {
+    clients.push({ client: openai, model: process.env.OPENAI_CHAT_MODEL || "gpt-4o-mini", provider: "openai" });
+  }
   if (openrouter) {
     for (const model of Array.from(new Set(openRouterTextModels))) {
       clients.push({ client: openrouter, model, provider: "openrouter" });
     }
-  }
-  if (openai) {
-    clients.push({ client: openai, model: process.env.OPENAI_CHAT_MODEL || "gpt-4o-mini", provider: "openai" });
   }
 
   return clients;

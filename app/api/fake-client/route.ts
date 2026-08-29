@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromCookies } from "../../../lib/session";
 import { addExperience } from "../../../lib/users";
 import { invalidateServerCache } from "../../../lib/serverCache";
+import { fetchImageForGemini } from "../../../lib/gemini";
 
 export const runtime = "nodejs";
+export const maxDuration = 30;
 
 // ── Fake Client Briefs pool ─────────────────────────────────────────────────
 const CLIENT_BRIEFS = [
@@ -137,19 +139,21 @@ async function callGeminiGrading(prompt: string, imageUrl?: string): Promise<str
   const apiKey = getGeminiClient();
   if (!apiKey) throw new Error("No Gemini API key");
 
-  const parts: any[] = [{ text: prompt }];
+  const parts: any[] = [];
 
-  if (imageUrl && imageUrl.startsWith('data:image')) {
-    const match = imageUrl.match(/^data:([^;]+);base64,(.+)$/);
-    if (match) {
-      parts.unshift({
+  if (imageUrl) {
+    const imgData = await fetchImageForGemini(imageUrl);
+    if (imgData) {
+      parts.push({
         inline_data: {
-          mime_type: match[1],
-          data: match[2],
+          mime_type: imgData.mimeType,
+          data: imgData.data,
         },
       });
     }
   }
+
+  parts.push({ text: prompt });
 
   const responseSchema = {
     type: "OBJECT",
@@ -163,7 +167,7 @@ async function callGeminiGrading(prompt: string, imageUrl?: string): Promise<str
     required: ["score", "passed", "feedback", "clientReaction", "xpEarned"]
   };
 
-  const model = (process.env.GEMINI_MODEL || "gemini-flash-latest").trim();
+  const model = (process.env.GEMINI_MODEL || "gemini-3.1-flash-lite").trim();
 
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,

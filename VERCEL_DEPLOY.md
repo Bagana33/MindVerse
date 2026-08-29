@@ -32,21 +32,36 @@ git push -u origin main
    - **Build Command**: `npm run build` (default)
    - **Output Directory**: `.next` (default)
 
-4. **Environment Variables нэмэх** ⚠️ **МАШ ЧУХАЛ!**
+4. **Environment Variables нэмэх** ⚠️ **МАШ ЧУХАЛ! (AI болон зураг ажиллахад шаардлагатай)**
    
-   "Environment Variables" хэсэгт дараахыг нэм:
+   Vercel Dashboard → **Settings** → **Environment Variables** хэсэгт `.env.local` файл доторх бүх утгуудыг нэм:
    
    ```
-   Name: NEXT_PUBLIC_SUPABASE_URL
-   Value: https://your-project.supabase.co
+   # 1. Supabase (Database)
+   NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
    
-   Name: NEXT_PUBLIC_SUPABASE_ANON_KEY
-   Value: eyJhbGc... (таны Supabase anon key)
+   # 2. Google Gemini AI (AI Chatbot, Fake Client, AI Шүүмжлэл)
+   GOOGLE_GEMINI_API_KEY=your_gemini_api_key
+   GEMINI_MODEL=gemini-3.1-flash-lite
+   
+   # 3. OpenRouter / OpenAI (Нэмэлт AI туслах)
+   OPENROUTER_API_KEY=your_openrouter_api_key
+   OPENROUTER_SITE_URL=https://your-domain.vercel.app
+   OPENROUTER_APP_NAME=Mind Verse
+   OPENAI_API_KEY=your_openai_api_key
+   
+   # 4. Cloudinary (Зураг оруулах)
+   CLOUDINARY_CLOUD_NAME=your_cloudinary_cloud_name
+   CLOUDINARY_API_KEY=your_cloudinary_api_key
+   CLOUDINARY_API_SECRET=your_cloudinary_api_secret
+   
+   # 5. Бусад тохиргоо
+   CRON_SECRET=your_cron_secret
+   NC_SESSION_SECRET=your_session_secret
    ```
    
-   💡 **Эдгээр утгуудыг хаанаас авах вэ?**
-   - Supabase Dashboard → Settings → API
-   - Project URL болон anon/public key-г хуул
+   💡 **Тайлбар:** Өөрийн `.env.local` файл доторх бодит утгуудыг хуулж Vercel Environment Variables дээр оруулна уу.
 
 5. **Deploy дарах**
    - "Deploy" товч дар

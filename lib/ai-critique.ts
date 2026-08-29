@@ -64,38 +64,23 @@ export async function generateDesignCritique(input: {
   const hasImage = Boolean(input.imageUrl);
   const prompt = buildCritiquePrompt(input.title, input.description, hasImage);
 
-  // If image is attached, prioritize Gemini Vision AI for real visual inspection
-  if (hasImage) {
-    try {
-      const critique = await generateGeminiText(prompt, {
-        systemInstruction: SYSTEM_INSTRUCTION,
-        imageUrl: input.imageUrl,
-        maxOutputTokens: 400,
-        temperature: 0.5,
-      });
-
-      if (critique && critique.length >= 40) return critique;
-    } catch (err) {
-      console.error("Gemini Vision design critique error:", err);
-    }
-  }
-
-  // Try OpenRouter (GPT-4o-mini)
-  const openRouterCritique = await generateOpenRouterCritique(prompt);
-  if (openRouterCritique) return openRouterCritique;
-
-  // Fallback Gemini attempt
+  // 1. Try Gemini AI (Vision if image present, or Text)
   try {
     const critique = await generateGeminiText(prompt, {
       systemInstruction: SYSTEM_INSTRUCTION,
+      ...(hasImage ? { imageUrl: input.imageUrl } : {}),
       maxOutputTokens: 400,
-      temperature: 0.6,
+      temperature: 0.5,
     });
 
     if (critique && critique.length >= 40) return critique;
   } catch (err) {
-    console.error("Gemini design critique fallback error:", err);
+    console.error("Gemini design critique error:", err);
   }
+
+  // 2. Fallback to OpenRouter
+  const openRouterCritique = await generateOpenRouterCritique(prompt);
+  if (openRouterCritique) return openRouterCritique;
 
   return FALLBACK_CRITIQUE;
 }
