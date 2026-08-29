@@ -9,14 +9,18 @@ type Mode = "signin" | "signup" | "forgot";
 export function LoginForm() {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("signin");
+  const [forgotStep, setForgotStep] = useState<1 | 2>(1);
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
+  const [otpCode, setOtpCode] = useState("");
+  const [resetToken, setResetToken] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [role, setRole] = useState<"student" | "teacher">("student");
   const [grade, setGrade] = useState<string>("10"); // Default to grade 10
   const [rememberMe, setRememberMe] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -31,47 +35,109 @@ export function LoginForm() {
     }
   }, []);
 
+  // Countdown timer for OTP resend
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setResendCooldown((c) => Math.max(0, c - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
+
+  async function handleSendResetCode(e?: FormEvent) {
+    if (e) e.preventDefault();
+    setStatus(null);
+    setError(null);
+
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes("@")) {
+      return setError("Зөв имэйл хаяг оруулна уу");
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/send-reset-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: cleanEmail }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        setError(json.error || "Код илгээхэд алдаа гарлаа");
+        return;
+      }
+
+      setResetToken(json.resetToken);
+      setForgotStep(2);
+      setResendCooldown(60);
+      setStatus(json.message || `Таны "${cleanEmail}" имэйл рүү 6 оронтой код илгээгдлээ.`);
+    } catch (err: any) {
+      setError(err.message || "Сүлжээний алдаа гарлаа");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setStatus(null);
     setError(null);
-    setLoading(true);
 
-    try {
-      if (mode === "forgot") {
-        if (!email || !email.includes("@")) {
-          setLoading(false);
-          return setError("Зөв имэйл хаяг оруулна уу");
-        }
-        if (!newPassword || newPassword.length < 6) {
-          setLoading(false);
-          return setError("Шинэ нууц үг хамгийн багадаа 6 тэмдэгт байх ёстой");
-        }
-        if (newPassword !== confirmPassword) {
-          setLoading(false);
-          return setError("Шинэ нууц үг хоорондоо таарахгүй байна");
-        }
+    if (mode === "forgot") {
+      if (forgotStep === 1) {
+        return handleSendResetCode(e);
+      }
 
+      const cleanCode = otpCode.trim();
+      if (!cleanCode || cleanCode.length !== 6) {
+        return setError("Имэйлээр ирсэн 6 оронтой баталгаажуулах кодыг оруулна уу");
+      }
+      if (!newPassword || newPassword.length < 6) {
+        return setError("Шинэ нууц үг хамгийн багадаа 6 тэмдэгт байх ёстой");
+      }
+      if (newPassword !== confirmPassword) {
+        return setError("Шинэ нууц үг хоорондоо таарахгүй байна");
+      }
+
+      setLoading(true);
+      try {
         const res = await fetch("/api/auth/reset-password", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, newPassword, confirmPassword }),
+          body: JSON.stringify({
+            email: email.trim().toLowerCase(),
+            code: cleanCode,
+            resetToken,
+            newPassword,
+            confirmPassword,
+          }),
         });
         const json = await res.json();
         if (!res.ok || !json.ok) {
-          setError(json.error ?? "Нууц үг солиход алдаа гарлаа");
+          setError(json.error || "Нууц үг солиход алдаа гарлаа");
           return;
         }
 
-        setStatus("✓ Нууц үг амжилттай шинэчлэгдлээ! Шинэ нууц үгээрээ нэвтэрнэ үү.");
+        setStatus("✓ Нууц үг амжилттай солигдлоо! Шинэ нууц үгээрээ нэвтэрнэ үү.");
+        setOtpCode("");
         setNewPassword("");
         setConfirmPassword("");
+        setResetToken("");
+        setForgotStep(1);
         setTimeout(() => {
           setMode("signin");
           setStatus(null);
-        }, 1500);
-        return;
+        }, 1800);
+      } catch (err: any) {
+        setError(err.message || "Серверийн алдаа гарлаа");
+      } finally {
+        setLoading(false);
       }
+      return;
+    }
+
+    setLoading(true);
+    try {
 
       // Simple client-side validation
       if (mode === "signup") {
@@ -190,72 +256,80 @@ export function LoginForm() {
                     ? "Нэвтрэх"
                     : mode === "signup"
                     ? "Бүртгүүлэх"
-                    : "🔑 Нууц үг сэргээх"}
+                    : forgotStep === 1
+                    ? "🔑 Нууц үг сэргээх"
+                    : "🔐 Код баталгаажуулах"}
                 </h2>
                 <p className="text-sm text-slate-400 mt-2">
                   {mode === "signin"
                     ? "Өөрийн бүртгэлтэй имэйлээр нэвтэрнэ үү."
                     : mode === "signup"
                     ? "Шинээр бүртгүүлж Mind Verse-д нэгдээрэй."
-                    : "Бүртгэлтэй имэйл хаягаа оруулаад шинэ нууц үгээ тохируулна уу."}
+                    : forgotStep === 1
+                    ? "Бүртгэлтэй имэйл хаягаа оруулан 6 оронтой код хүлээн авна уу."
+                    : `Таны "${email}" хаяг руу илгээсэн 6 оронтой кодыг оруулаад шинэ нууц үгээ тохируулна уу.`}
                 </p>
               </div>
 
-              <div className="space-y-2 text-sm">
-                <label className="block font-semibold text-slate-200">📧 Имэйл</label>
-                <input
-                  type="email"
-                  required
-                  className="w-full rounded-xl glass-panel border-slate-700/50 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
-
-              {mode === "signup" && (
+              {/* Step 1 or Signin/Signup: Email Input */}
+              {(mode !== "forgot" || forgotStep === 1) && (
                 <div className="space-y-2 text-sm">
-                  <label className="block font-semibold text-slate-200">👤 Нэр (Display name)</label>
+                  <label className="block font-semibold text-slate-200">📧 Имэйл</label>
                   <input
-                    className="w-full rounded-xl glass-panel border-slate-700/50 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all"
-                    placeholder="Жишээ: Enkhtuya D."
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                  />
-                </div>
-              )}
-
-              {mode !== "forgot" && (
-                <div className="space-y-2 text-sm">
-                  <div className="flex items-center justify-between">
-                    <label className="block font-semibold text-slate-200">🔒 Нууц үг</label>
-                    {mode === "signin" && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setMode("forgot");
-                          setError(null);
-                          setStatus(null);
-                        }}
-                        className="text-xs text-violet-400 hover:text-violet-300 font-medium transition-colors cursor-pointer"
-                      >
-                        Нууц үгээ мартсан уу?
-                      </button>
-                    )}
-                  </div>
-                  <input
-                    type="password"
+                    type="email"
                     required
                     className="w-full rounded-xl glass-panel border-slate-700/50 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
                   />
                 </div>
               )}
 
-              {mode === "forgot" && (
+              {/* Forgot Step 2: Email Badge & OTP Input */}
+              {mode === "forgot" && forgotStep === 2 && (
                 <>
+                  <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-violet-500/10 border border-violet-500/30 text-xs">
+                    <div className="flex items-center gap-2 text-slate-300">
+                      <span>📧</span>
+                      <span className="font-semibold text-violet-300 truncate max-w-[200px] sm:max-w-[260px]">{email}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setForgotStep(1);
+                        setOtpCode("");
+                        setError(null);
+                      }}
+                      className="text-violet-400 hover:text-violet-200 underline font-medium text-xs ml-2 cursor-pointer"
+                    >
+                      Солих
+                    </button>
+                  </div>
+
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center justify-between">
+                      <label className="block font-semibold text-slate-200">🔢 Баталгаажуулах 6 оронтой код</label>
+                      <button
+                        type="button"
+                        disabled={resendCooldown > 0 || loading}
+                        onClick={() => handleSendResetCode()}
+                        className="text-xs text-violet-400 hover:text-violet-300 disabled:text-slate-500 disabled:cursor-not-allowed font-medium transition-colors cursor-pointer"
+                      >
+                        {resendCooldown > 0 ? `Дахин илгээх (${resendCooldown}с)` : "Дахин код авах"}
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      maxLength={6}
+                      required
+                      className="w-full rounded-xl glass-panel border-slate-700/50 px-4 py-3 text-center text-xl font-bold tracking-[0.4em] font-mono text-cyan-300 placeholder:text-slate-600 focus:outline-none focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 transition-all"
+                      placeholder="••••••"
+                      value={otpCode}
+                      onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
+                    />
+                  </div>
+
                   <div className="space-y-2 text-sm">
                     <label className="block font-semibold text-slate-200">🔒 Шинэ нууц үг</label>
                     <input
@@ -280,6 +354,48 @@ export function LoginForm() {
                     />
                   </div>
                 </>
+              )}
+
+              {mode === "signup" && (
+                <div className="space-y-2 text-sm">
+                  <label className="block font-semibold text-slate-200">👤 Нэр (Display name)</label>
+                  <input
+                    className="w-full rounded-xl glass-panel border-slate-700/50 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all"
+                    placeholder="Жишээ: Enkhtuya D."
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                </div>
+              )}
+
+              {mode !== "forgot" && (
+                <div className="space-y-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <label className="block font-semibold text-slate-200">🔒 Нууц үг</label>
+                    {mode === "signin" && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMode("forgot");
+                          setForgotStep(1);
+                          setError(null);
+                          setStatus(null);
+                        }}
+                        className="text-xs text-violet-400 hover:text-violet-300 font-medium transition-colors cursor-pointer"
+                      >
+                        Нууц үгээ мартсан уу?
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    type="password"
+                    required
+                    className="w-full rounded-xl glass-panel border-slate-700/50 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all"
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                </div>
               )}
 
               {mode === "signin" && (
@@ -387,7 +503,9 @@ export function LoginForm() {
                   ? "🚀 Нэвтрэх"
                   : mode === "signup"
                   ? "✨ Шинээр бүртгүүлэх"
-                  : "✨ Шинэ нууц үг хадгалах"}
+                  : forgotStep === 1
+                  ? "📩 Баталгаажуулах код илгээх"
+                  : "✨ Баталгаажуулж нууц үг шинэчлэх"}
               </button>
 
               <div className="relative my-6">
@@ -404,6 +522,8 @@ export function LoginForm() {
                   type="button"
                   onClick={() => {
                     setMode("signin");
+                    setForgotStep(1);
+                    setOtpCode("");
                     setError(null);
                     setStatus(null);
                   }}

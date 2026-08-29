@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { resetUserPassword, getUser } from "../../../../lib/users";
+import { verifyPasswordResetToken } from "../../../../lib/otp";
 import { getClientKey, rateLimit } from "../../../../lib/rate-limit";
 
 export async function POST(req: Request) {
   try {
-    // Rate limit: 5 requests / 60s per IP
+    // Rate limit: 6 attempts / 60s per IP
     const key = getClientKey(req, "auth-reset-password");
-    const rl = rateLimit(key, { windowMs: 60_000, max: 5 });
+    const rl = rateLimit(key, { windowMs: 60_000, max: 6 });
     if (!rl.ok) {
       return NextResponse.json(
         { ok: false, error: `Хэт олон хүсэлт илгээлээ. ${rl.retryAfterSec || 30} секундийн дараа дахин оролдоно уу.` },
@@ -22,6 +23,8 @@ export async function POST(req: Request) {
     }
 
     const email = (body?.email ?? "").toString().trim().toLowerCase();
+    const code = (body?.code ?? "").toString().trim();
+    const resetToken = (body?.resetToken ?? "").toString().trim();
     const newPassword = (body?.newPassword ?? "").toString().trim();
     const confirmPassword = (body?.confirmPassword ?? "").toString().trim();
 
@@ -29,9 +32,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Имэйл хаягаа оруулна уу" }, { status: 400 });
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return NextResponse.json({ ok: false, error: "Зөв имэйл хаяг оруулна уу" }, { status: 400 });
+    if (!code) {
+      return NextResponse.json({ ok: false, error: "Имэйлээр ирсэн 6 оронтой баталгаажуулах кодыг оруулна уу" }, { status: 400 });
+    }
+
+    if (!resetToken) {
+      return NextResponse.json({ ok: false, error: "Баталгаажуулах токен байхгүй байна. Дахин код авна уу." }, { status: 400 });
     }
 
     if (!newPassword || newPassword.length < 6) {
@@ -48,7 +54,16 @@ export async function POST(req: Request) {
       );
     }
 
-    // Check if user exists
+    // 1. Verify OTP code and token signature
+    const verifyResult = verifyPasswordResetToken(email, code, resetToken);
+    if (!verifyResult.valid) {
+      return NextResponse.json(
+        { ok: false, error: verifyResult.error || "Баталгаажуулах код буруу байна" },
+        { status: 400 }
+      );
+    }
+
+    // 2. Check if user exists
     const existing = await getUser(email);
     if (!existing) {
       return NextResponse.json(
@@ -57,7 +72,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // Reset password
+    // 3. Reset password securely
     await resetUserPassword(email, newPassword);
 
     return NextResponse.json({
