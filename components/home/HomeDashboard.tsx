@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "../auth/useSession";
 import { BrandLogo } from "../layout/BrandLogo";
-import { LeaderboardSidebar } from "../leaderboard/LeaderboardTable";
 import { CommentsSection } from "../posts/CommentsSection";
 import { cachedFetch } from "../../lib/fetchCache";
 import { compressImageFile } from "../../lib/imageCompressor";
@@ -1170,8 +1169,6 @@ export function HomeDashboard() {
           <div className="sticky top-4 space-y-6">
             {/* Fake Client Panel */}
             <FakeClientPanel />
-
-            <LeaderboardSidebar compact />
 
             {/* Upcoming Deadlines */}
             <div className="bg-dark-900 border border-white/5 rounded-3xl p-6">
