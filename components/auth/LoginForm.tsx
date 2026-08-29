@@ -4,7 +4,7 @@ import { FormEvent, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { BrandLogo } from "../layout/BrandLogo";
 
-type Mode = "signin" | "signup";
+type Mode = "signin" | "signup" | "forgot";
 
 export function LoginForm() {
   const router = useRouter();
@@ -12,6 +12,8 @@ export function LoginForm() {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [role, setRole] = useState<"student" | "teacher">("student");
   const [grade, setGrade] = useState<string>("10"); // Default to grade 10
   const [rememberMe, setRememberMe] = useState(false);
@@ -36,6 +38,41 @@ export function LoginForm() {
     setLoading(true);
 
     try {
+      if (mode === "forgot") {
+        if (!email || !email.includes("@")) {
+          setLoading(false);
+          return setError("Зөв имэйл хаяг оруулна уу");
+        }
+        if (!newPassword || newPassword.length < 6) {
+          setLoading(false);
+          return setError("Шинэ нууц үг хамгийн багадаа 6 тэмдэгт байх ёстой");
+        }
+        if (newPassword !== confirmPassword) {
+          setLoading(false);
+          return setError("Шинэ нууц үг хоорондоо таарахгүй байна");
+        }
+
+        const res = await fetch("/api/auth/reset-password", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, newPassword, confirmPassword }),
+        });
+        const json = await res.json();
+        if (!res.ok || !json.ok) {
+          setError(json.error ?? "Нууц үг солиход алдаа гарлаа");
+          return;
+        }
+
+        setStatus("✓ Нууц үг амжилттай шинэчлэгдлээ! Шинэ нууц үгээрээ нэвтэрнэ үү.");
+        setNewPassword("");
+        setConfirmPassword("");
+        setTimeout(() => {
+          setMode("signin");
+          setStatus(null);
+        }, 1500);
+        return;
+      }
+
       // Simple client-side validation
       if (mode === "signup") {
         if (!name || name.trim().length < 2) {
@@ -149,12 +186,18 @@ export function LoginForm() {
             <form onSubmit={handleSubmit} className="space-y-5">
               <div>
                 <h2 className="text-2xl font-bold bg-gradient-to-r from-violet-400 to-purple-400 bg-clip-text text-transparent">
-                  {mode === "signin" ? "Нэвтрэх" : "Бүртгүүлэх"}
+                  {mode === "signin"
+                    ? "Нэвтрэх"
+                    : mode === "signup"
+                    ? "Бүртгүүлэх"
+                    : "🔑 Нууц үг сэргээх"}
                 </h2>
                 <p className="text-sm text-slate-400 mt-2">
                   {mode === "signin"
                     ? "Өөрийн бүртгэлтэй имэйлээр нэвтэрнэ үү."
-                    : "Шинээр бүртгүүлж Mind Verse-д нэгдээрэй."}
+                    : mode === "signup"
+                    ? "Шинээр бүртгүүлж Mind Verse-д нэгдээрэй."
+                    : "Бүртгэлтэй имэйл хаягаа оруулаад шинэ нууц үгээ тохируулна уу."}
                 </p>
               </div>
 
@@ -182,17 +225,62 @@ export function LoginForm() {
                 </div>
               )}
 
-              <div className="space-y-2 text-sm">
-                <label className="block font-semibold text-slate-200">🔒 Нууц үг</label>
-                <input
-                  type="password"
-                  required
-                  className="w-full rounded-xl glass-panel border-slate-700/50 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
+              {mode !== "forgot" && (
+                <div className="space-y-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <label className="block font-semibold text-slate-200">🔒 Нууц үг</label>
+                    {mode === "signin" && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMode("forgot");
+                          setError(null);
+                          setStatus(null);
+                        }}
+                        className="text-xs text-violet-400 hover:text-violet-300 font-medium transition-colors cursor-pointer"
+                      >
+                        Нууц үгээ мартсан уу?
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    type="password"
+                    required
+                    className="w-full rounded-xl glass-panel border-slate-700/50 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all"
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                </div>
+              )}
+
+              {mode === "forgot" && (
+                <>
+                  <div className="space-y-2 text-sm">
+                    <label className="block font-semibold text-slate-200">🔒 Шинэ нууц үг</label>
+                    <input
+                      type="password"
+                      required
+                      className="w-full rounded-xl glass-panel border-slate-700/50 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all"
+                      placeholder="Хамгийн багадаа 6 тэмдэгт"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="space-y-2 text-sm">
+                    <label className="block font-semibold text-slate-200">🔒 Шинэ нууц үг давтах</label>
+                    <input
+                      type="password"
+                      required
+                      className="w-full rounded-xl glass-panel border-slate-700/50 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all"
+                      placeholder="Нууц үгээ дахин оруулна уу"
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                    />
+                  </div>
+                </>
+              )}
 
               {mode === "signin" && (
                 <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer hover:text-slate-200 transition-colors">
@@ -206,52 +294,54 @@ export function LoginForm() {
                 </label>
               )}
 
-              <div className="space-y-3 text-sm">
-                <label className="block font-semibold text-slate-200">
-                  👥 {mode === "signin" ? "Та хэн бэ?" : "Хэрэглэгчийн төрөл"}
-                </label>
-                <p className="text-xs text-slate-400 -mt-1">
-                  {mode === "signin" 
-                    ? "Та сурагч уу багш уу?"
-                    : "Сурагчид XP цуглуулж, багш нар даалгавар үүсгэнэ"}
-                </p>
-                <div className="grid grid-cols-2 gap-3">
-                  <label className={`flex flex-col items-center justify-center gap-2 cursor-pointer rounded-xl border-2 px-4 py-5 transition-all duration-300 ${
-                    role === "student" 
-                      ? "border-violet-500 bg-gradient-to-br from-violet-500/20 to-purple-500/20 text-white shadow-[0_8px_24px_rgba(139,92,246,0.5)] scale-105" 
-                      : "border-slate-700/50 text-slate-400 hover:border-violet-500/30 hover:bg-slate-800/30 hover:text-slate-300"
-                  }`}>
-                    <input
-                      type="radio"
-                      name="role"
-                      value="student"
-                      checked={role === "student"}
-                      onChange={() => setRole("student")}
-                      className="hidden"
-                    />
-                    <span className="text-4xl">🎓</span>
-                    <span className="font-bold text-base">Сурагч</span>
-                    <span className="text-xs text-center opacity-80">XP цуглуулах, хичээл хийх</span>
+              {mode !== "forgot" && (
+                <div className="space-y-3 text-sm">
+                  <label className="block font-semibold text-slate-200">
+                    👥 {mode === "signin" ? "Та хэн бэ?" : "Хэрэглэгчийн төрөл"}
                   </label>
-                  <label className={`flex flex-col items-center justify-center gap-2 cursor-pointer rounded-xl border-2 px-4 py-5 transition-all duration-300 ${
-                    role === "teacher" 
-                      ? "border-violet-500 bg-gradient-to-br from-violet-500/20 to-purple-500/20 text-white shadow-[0_8px_24px_rgba(139,92,246,0.5)] scale-105" 
-                      : "border-slate-700/50 text-slate-400 hover:border-violet-500/30 hover:bg-slate-800/30 hover:text-slate-300"
-                  }`}>
-                    <input
-                      type="radio"
-                      name="role"
-                      value="teacher"
-                      checked={role === "teacher"}
-                      onChange={() => setRole("teacher")}
-                      className="hidden"
-                    />
-                    <span className="text-4xl">👨‍🏫</span>
-                    <span className="font-bold text-base">Багш</span>
-                    <span className="text-xs text-center opacity-80">Даалгавар үүсгэх, үнэлэх</span>
-                  </label>
+                  <p className="text-xs text-slate-400 -mt-1">
+                    {mode === "signin" 
+                      ? "Та сурагч уу багш уу?"
+                      : "Сурагчид XP цуглуулж, багш нар даалгавар үүсгэнэ"}
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className={`flex flex-col items-center justify-center gap-2 cursor-pointer rounded-xl border-2 px-4 py-5 transition-all duration-300 ${
+                      role === "student" 
+                        ? "border-violet-500 bg-gradient-to-br from-violet-500/20 to-purple-500/20 text-white shadow-[0_8px_24px_rgba(139,92,246,0.5)] scale-105" 
+                        : "border-slate-700/50 text-slate-400 hover:border-violet-500/30 hover:bg-slate-800/30 hover:text-slate-300"
+                    }`}>
+                      <input
+                        type="radio"
+                        name="role"
+                        value="student"
+                        checked={role === "student"}
+                        onChange={() => setRole("student")}
+                        className="hidden"
+                      />
+                      <span className="text-4xl">🎓</span>
+                      <span className="font-bold text-base">Сурагч</span>
+                      <span className="text-xs text-center opacity-80">XP цуглуулах, хичээл хийх</span>
+                    </label>
+                    <label className={`flex flex-col items-center justify-center gap-2 cursor-pointer rounded-xl border-2 px-4 py-5 transition-all duration-300 ${
+                      role === "teacher" 
+                        ? "border-violet-500 bg-gradient-to-br from-violet-500/20 to-purple-500/20 text-white shadow-[0_8px_24px_rgba(139,92,246,0.5)] scale-105" 
+                        : "border-slate-700/50 text-slate-400 hover:border-violet-500/30 hover:bg-slate-800/30 hover:text-slate-300"
+                    }`}>
+                      <input
+                        type="radio"
+                        name="role"
+                        value="teacher"
+                        checked={role === "teacher"}
+                        onChange={() => setRole("teacher")}
+                        className="hidden"
+                      />
+                      <span className="text-4xl">👨‍🏫</span>
+                      <span className="font-bold text-base">Багш</span>
+                      <span className="text-xs text-center opacity-80">Даалгавар үүсгэх, үнэлэх</span>
+                    </label>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {mode === "signup" && role === "student" && (
                 <div className="space-y-3 text-sm">
@@ -289,13 +379,15 @@ export function LoginForm() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-xl bg-gradient-to-r from-violet-500 to-purple-500 text-white font-bold py-4 mt-6 shadow-[0_20px_40px_rgba(139,92,246,0.5)] hover:shadow-[0_24px_48px_rgba(139,92,246,0.7)] hover:scale-[1.02] disabled:opacity-60 disabled:shadow-none transition-all duration-300 text-base"
+                className="w-full rounded-xl bg-gradient-to-r from-violet-500 to-purple-500 text-white font-bold py-4 mt-6 shadow-[0_20px_40px_rgba(139,92,246,0.5)] hover:shadow-[0_24px_48px_rgba(139,92,246,0.7)] hover:scale-[1.02] disabled:opacity-60 disabled:shadow-none transition-all duration-300 text-base cursor-pointer"
               >
                 {loading
                   ? "⏳ Түр хүлээнэ үү..."
                   : mode === "signin"
                   ? "🚀 Нэвтрэх"
-                  : "✨ Шинээр бүртгүүлэх"}
+                  : mode === "signup"
+                  ? "✨ Шинээр бүртгүүлэх"
+                  : "✨ Шинэ нууц үг хадгалах"}
               </button>
 
               <div className="relative my-6">
@@ -307,19 +399,37 @@ export function LoginForm() {
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setMode((m) => (m === "signin" ? "signup" : "signin"))}
-                className="w-full rounded-xl border-2 border-slate-700 hover:border-violet-500/50 bg-slate-900/50 hover:bg-slate-800/50 text-slate-200 font-semibold py-3.5 transition-all duration-300"
-              >
-                {mode === "signin" 
-                  ? "📝 Шинээр бүртгүүлэх" 
-                  : "🔑 Нэвтрэх хэсэг рүү шилжих"}
-              </button>
+              {mode === "forgot" ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("signin");
+                    setError(null);
+                    setStatus(null);
+                  }}
+                  className="w-full rounded-xl border-2 border-slate-700 hover:border-violet-500/50 bg-slate-900/50 hover:bg-slate-800/50 text-slate-200 font-semibold py-3.5 transition-all duration-300 cursor-pointer"
+                >
+                  ← Нэвтрэх хэсэг рүү буцах
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode((m) => (m === "signin" ? "signup" : "signin"));
+                    setError(null);
+                    setStatus(null);
+                  }}
+                  className="w-full rounded-xl border-2 border-slate-700 hover:border-violet-500/50 bg-slate-900/50 hover:bg-slate-800/50 text-slate-200 font-semibold py-3.5 transition-all duration-300 cursor-pointer"
+                >
+                  {mode === "signin" 
+                    ? "📝 Шинээр бүртгүүлэх" 
+                    : "🔑 Нэвтрэх хэсэг рүү шилжих"}
+                </button>
+              )}
 
               {status && (
                 <div className="px-4 py-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
-                  <p className="text-sm text-emerald-400 font-medium">✓ {status}</p>
+                  <p className="text-sm text-emerald-400 font-medium">{status}</p>
                 </div>
               )}
               {error && (

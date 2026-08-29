@@ -25,6 +25,9 @@ export default function AdminPage() {
   const [deletingStudent, setDeletingStudent] = useState<string | null>(null);
   const [gradeFilter, setGradeFilter] = useState<string>("all");
   const [applyToAll, setApplyToAll] = useState(false);
+  const [resetModalStudent, setResetModalStudent] = useState<Student | null>(null);
+  const [resetPasswordValue, setResetPasswordValue] = useState("123456");
+  const [resettingPassword, setResettingPassword] = useState(false);
 
   useEffect(() => {
     if (!sessionLoading && (!session || session.role !== "teacher")) {
@@ -166,6 +169,40 @@ export default function AdminPage() {
       setMessage({ type: "error", text: err.message || "Сүлжээний алдаа гарлаа" });
     } finally {
       setDeletingStudent(null);
+    }
+  }
+
+  async function handleResetStudentPassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (!resetModalStudent) return;
+    if (!resetPasswordValue || resetPasswordValue.length < 6) {
+      alert("Шинэ нууц үг хамгийн багадаа 6 тэмдэгт байх ёстой");
+      return;
+    }
+
+    setResettingPassword(true);
+    try {
+      const res = await fetch("/api/admin/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentEmail: resetModalStudent.email,
+          newPassword: resetPasswordValue,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        alert(json.error || "Нууц үг шинэчлэхэд алдаа гарлаа");
+        return;
+      }
+
+      setMessage({ type: "success", text: json.message || "Нууц үг амжилттай солигдлоо" });
+      setResetModalStudent(null);
+      setResetPasswordValue("123456");
+    } catch (err: any) {
+      alert(err.message || "Сүлжээний алдаа гарлаа");
+    } finally {
+      setResettingPassword(false);
     }
   }
 
@@ -433,6 +470,16 @@ export default function AdminPage() {
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
                         <button
+                          onClick={() => {
+                            setResetModalStudent(student);
+                            setResetPasswordValue("123456");
+                          }}
+                          className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-300 hover:bg-amber-500/20 hover:border-amber-500/50 transition-colors"
+                          title="Нууц үг шинэчлэх"
+                        >
+                          🔑 Нууц үг
+                        </button>
+                        <button
                           onClick={() => setSelectedStudent(student.email)}
                           className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-300 hover:border-violet-500/40 hover:text-violet-300 transition-colors"
                           title="XP засах"
@@ -456,6 +503,85 @@ export default function AdminPage() {
           </div>
         </div>
       </div>
+
+      {/* Password Reset Modal */}
+      {resetModalStudent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="relative w-full max-w-md rounded-3xl border border-slate-700/60 bg-slate-900 p-6 shadow-2xl space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 text-lg">
+                  🔑
+                </div>
+                <div>
+                  <h3 className="font-bold text-white text-base">Нууц үг шинэчлэх</h3>
+                  <p className="text-xs text-slate-400">{resetModalStudent.name || resetModalStudent.email}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setResetModalStudent(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleResetStudentPassword} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                  Сурагчийн имэйл
+                </label>
+                <input
+                  type="text"
+                  readOnly
+                  value={resetModalStudent.email}
+                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-4 py-2.5 text-sm text-slate-400 cursor-not-allowed"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-300">
+                    Шинэ нууц үг (хамгийн багадаа 6 тэмдэгт)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setResetPasswordValue("123456")}
+                    className="text-[11px] text-amber-400 hover:text-amber-300 underline font-medium"
+                  >
+                    "123456" болгох
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  required
+                  value={resetPasswordValue}
+                  onChange={(e) => setResetPasswordValue(e.target.value)}
+                  placeholder="Шинэ нууц үг оруулах..."
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-2.5 text-sm text-white placeholder:text-slate-600 focus:border-amber-500/50 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                />
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setResetModalStudent(null)}
+                  className="flex-1 rounded-xl border border-slate-700 py-2.5 text-sm font-semibold text-slate-300 hover:bg-slate-800 transition-colors"
+                >
+                  Болих
+                </button>
+                <button
+                  type="submit"
+                  disabled={resettingPassword}
+                  className="flex-1 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 py-2.5 text-sm font-bold text-white shadow-lg hover:shadow-amber-500/30 hover:scale-[1.02] disabled:opacity-60 transition-all"
+                >
+                  {resettingPassword ? "Хадгалж байна..." : "Шинэчлэх"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

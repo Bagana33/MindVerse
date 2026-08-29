@@ -138,6 +138,34 @@ export async function verifyUser(email: string, password: string): Promise<User 
   return user;
 }
 
+// Reset user password
+export async function resetUserPassword(email: string, newPassword: string): Promise<User> {
+  const normalizedEmail = normalizeEmail(email);
+  const existingUser = await getUser(normalizedEmail);
+  if (!existingUser) {
+    throw new Error("Ийм бүртгэлтэй хэрэглэгч олдсонгүй");
+  }
+
+  if (!newPassword || newPassword.length < 6) {
+    throw new Error("Нууц үг хамгийн багадаа 6 тэмдэгт байх ёстой");
+  }
+
+  const hashedPassword = await bcrypt.hash(newPassword, 10);
+  const { data, error } = await supabase
+    .from('users')
+    .update({ password: hashedPassword })
+    .eq('email', existingUser.email)
+    .select()
+    .single();
+
+  if (error || !data) {
+    console.error('Error resetting user password:', error);
+    throw new Error("Нууц үг шинэчлэхэд алдаа гарлаа");
+  }
+
+  return dbToUser(data);
+}
+
 export async function getUser(email: string): Promise<User | null> {
   // Normalize email to lowercase for case-insensitive comparison
   const normalizedEmail = normalizeEmail(email);
