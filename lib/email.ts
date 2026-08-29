@@ -81,8 +81,16 @@ export async function sendPasswordResetEmail(
         return { success: true, messageId: data.id };
       }
       console.error("Resend API error:", data);
+      const isResendRestriction = data?.message?.includes("testing emails to your own email") || data?.message?.includes("only send testing emails");
+      return {
+        success: false,
+        error: isResendRestriction
+          ? `Resend үнэгүй горимд зөвхөн өөрийн бүртгүүлсэн имэйл рүү илгээх боломжтой: ${data.message}`
+          : (data?.message || "Имэйл илгээхэд алдаа гарлаа"),
+      };
     } catch (err: any) {
       console.error("Failed to send email via Resend:", err);
+      return { success: false, error: err.message || "Имэйл сервертэй холбогдож чадсангүй" };
     }
   }
 
