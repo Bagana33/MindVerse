@@ -15,8 +15,9 @@ export type EmailResult = {
  * 3. Resend API (RESEND_API_KEY)
  */
 function getTransporter(): nodemailer.Transporter | null {
-  const gmailUser = process.env.GMAIL_USER || process.env.SMTP_USER;
-  const gmailPass = process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS;
+  const gmailUser = (process.env.GMAIL_USER || process.env.SMTP_USER || "").trim();
+  const rawPass = process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || "";
+  const gmailPass = rawPass.replace(/\s+/g, ""); // Strip spaces from Gmail app passwords
   const smtpHost = process.env.SMTP_HOST;
   const smtpPort = parseInt(process.env.SMTP_PORT || "587", 10);
 
@@ -33,7 +34,7 @@ function getTransporter(): nodemailer.Transporter | null {
   }
 
   if (gmailUser && gmailPass) {
-    // Default to Gmail service if host not specified
+    // Gmail service
     return nodemailer.createTransport({
       service: "gmail",
       auth: {
@@ -57,7 +58,28 @@ export async function sendPasswordResetEmail(
   const normalizedEmail = toEmail.trim().toLowerCase();
   const displayName = userName || "Хэрэглэгч";
 
-  // Check for Resend API Key first
+  // 1. Check Nodemailer / Gmail SMTP first (allows sending to ANY student email address)
+  const transporter = getTransporter();
+  if (transporter) {
+    try {
+      const senderUser = (process.env.GMAIL_USER || process.env.SMTP_USER || "").trim();
+      const sender = process.env.SMTP_FROM || (senderUser ? `Mind Verse <${senderUser}>` : "Mind Verse <no-reply@mindverse.mn>");
+      const info = await transporter.sendMail({
+        from: sender,
+        to: normalizedEmail,
+        subject: `🔐 [Mind Verse] Нууц үг сэргээх баталгаажуулах код: ${code}`,
+        html: generateEmailHtml(displayName, code),
+        text: `Сайн байна уу, ${displayName}!\n\nТаны Mind Verse нууц үг сэргээх 6 оронтой баталгаажуулах код: ${code}\n\nЭнэ код нь 10 минутын хугацаанд хүчинтэй.\nХэрэв та энэ хүсэлтийг явуулаагүй бол энэ имэйлийг тоохгүй орхино уу.`,
+      });
+
+      return { success: true, messageId: info.messageId };
+    } catch (err: any) {
+      console.error("SMTP send error:", err);
+      return { success: false, error: err.message || "Имэйл илгээхэд алдаа гарлаа" };
+    }
+  }
+
+  // 2. Fallback to Resend API
   const resendApiKey = process.env.RESEND_API_KEY;
   if (resendApiKey) {
     try {
@@ -91,26 +113,6 @@ export async function sendPasswordResetEmail(
     } catch (err: any) {
       console.error("Failed to send email via Resend:", err);
       return { success: false, error: err.message || "Имэйл сервертэй холбогдож чадсангүй" };
-    }
-  }
-
-  // Check Nodemailer SMTP
-  const transporter = getTransporter();
-  if (transporter) {
-    try {
-      const sender = process.env.SMTP_FROM || process.env.GMAIL_USER || "Mind Verse <no-reply@mindverse.mn>";
-      const info = await transporter.sendMail({
-        from: sender,
-        to: normalizedEmail,
-        subject: `🔐 [Mind Verse] Нууц үг сэргээх баталгаажуулах код: ${code}`,
-        html: generateEmailHtml(displayName, code),
-        text: `Сайн байна уу, ${displayName}!\n\nТаны Mind Verse нууц үг сэргээх 6 оронтой баталгаажуулах код: ${code}\n\nЭнэ код нь 10 минутын хугацаанд хүчинтэй.\nХэрэв та энэ хүсэлтийг явуулаагүй бол энэ имэйлийг тоохгүй орхино уу.`,
-      });
-
-      return { success: true, messageId: info.messageId };
-    } catch (err: any) {
-      console.error("SMTP send error:", err);
-      return { success: false, error: err.message || "Имэйл илгээхэд алдаа гарлаа" };
     }
   }
 
