@@ -1,19 +1,21 @@
 import { NextResponse } from "next/server";
 import { Role, Session, setSessionCookie } from "../../../../lib/session";
-import { createUser, verifyUser, getUser } from "../../../../lib/users";
+import { createUser, getUser } from "../../../../lib/users";
 import { getClientKey, rateLimit } from "../../../../lib/rate-limit";
+import bcrypt from "bcryptjs";
 
 export async function POST(req: Request) {
   try {
-    // Basic rate limit to protect CPU (bcrypt) under bursts
-    const key = getClientKey(req, 'auth-login');
-    const rl = rateLimit(key, { windowMs: 30_000, max: 8 }); // 8 req / 30s per IP
-    if (!rl.ok) {
+    // Classroom & NAT-friendly IP rate limit (120 req / 30s per IP allows 30+ students simultaneously)
+    const ipKey = getClientKey(req, 'auth-login');
+    const ipRl = rateLimit(ipKey, { windowMs: 30_000, max: 120 });
+    if (!ipRl.ok) {
       return new NextResponse(
-        JSON.stringify({ ok: false, error: "Хэт олон оролдлого. Дахин оролдох хугацаа: " + rl.retryAfterSec + " сек" }),
-        { status: 429, headers: { 'Content-Type': 'application/json', 'Retry-After': String(rl.retryAfterSec || 30) } }
+        JSON.stringify({ ok: false, error: "Серверийн ачаалал өндөр байна. Дахин оролдох хугацаа: " + ipRl.retryAfterSec + " сек" }),
+        { status: 429, headers: { 'Content-Type': 'application/json', 'Retry-After': String(ipRl.retryAfterSec || 30) } }
       );
     }
+
     let body;
     try {
       body = await req.json();
@@ -43,9 +45,20 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Email хаяг буруу байна" }, { status: 400 });
     }
 
+    // Per-account rate limit to protect individual emails from brute-force (10 attempts / min)
+    const emailRl = rateLimit(`auth-acc:${email}`, { windowMs: 60_000, max: 10 });
+    if (!emailRl.ok) {
+      return new NextResponse(
+        JSON.stringify({ ok: false, error: `Энэ хаяг дээр олон буруу оролдлого хийгдлээ. ${emailRl.retryAfterSec || 30} сек дараа оролдоно уу.` }),
+        { status: 429, headers: { 'Content-Type': 'application/json', 'Retry-After': String(emailRl.retryAfterSec || 30) } }
+      );
+    }
+
     let sessionUserName = name;
     let sessionNickname: string | undefined;
     let sessionRole: Role = role;
+    let sessionAvatarUrl: string | undefined;
+    let sessionAvatarColor: string | undefined;
 
     if (mode === "signup") {
       try {
@@ -53,29 +66,51 @@ export async function POST(req: Request) {
         sessionUserName = created.name;
         sessionNickname = created.nickname;
         sessionRole = created.role as Role;
+        sessionAvatarUrl = created.avatarUrl;
+        sessionAvatarColor = created.avatarColor;
       } catch (err: any) {
         return NextResponse.json({ ok: false, error: err.message || "Бүртгэл амжилтгүй" }, { status: 400 });
       }
     } else {
-      // Sign-in flow
+      // Single DB query for signin verification (avoids double roundtrip)
       const existing = await getUser(email);
-      if (existing && (typeof existing.password !== 'string' || existing.password.length === 0)) {
+      if (!existing) {
+        return NextResponse.json({ ok: false, error: "Email эсвэл нууц үг буруу байна" }, { status: 401 });
+      }
+
+      if (typeof existing.password !== 'string' || existing.password.length === 0) {
         return NextResponse.json(
           { ok: false, error: "Энэ имэйл дээр нууц үг тохируулаагүй байна. Бүртгүүлэх (Signup) сонголтоор нууц үг үүсгэнэ үү." },
           { status: 400 }
         );
       }
 
-      const user = await verifyUser(email, password);
-      if (!user) {
+      let isValid = false;
+      try {
+        isValid = await bcrypt.compare(password, existing.password);
+      } catch (e) {
+        isValid = false;
+      }
+
+      if (!isValid) {
         return NextResponse.json({ ok: false, error: "Email эсвэл нууц үг буруу байна" }, { status: 401 });
       }
-      sessionUserName = user.name;
-      sessionNickname = user.nickname;
-      sessionRole = user.role as Role;
+
+      sessionUserName = existing.name;
+      sessionNickname = existing.nickname;
+      sessionRole = existing.role as Role;
+      sessionAvatarUrl = existing.avatarUrl;
+      sessionAvatarColor = existing.avatarColor;
     }
 
-    const session: Session = { email, name: sessionUserName, nickname: sessionNickname, role: sessionRole };
+    const session: Session = {
+      email,
+      name: sessionUserName,
+      nickname: sessionNickname,
+      role: sessionRole,
+      avatarUrl: sessionAvatarUrl,
+      avatarColor: sessionAvatarColor,
+    };
     await setSessionCookie(session);
     return NextResponse.json({ ok: true, session });
   } catch (error: any) {
@@ -86,3 +121,4 @@ export async function POST(req: Request) {
     }, { status: 500 });
   }
 }
+

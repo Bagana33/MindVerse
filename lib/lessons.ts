@@ -165,26 +165,40 @@ export async function getAllLessons(includeUnpublished: boolean = false): Promis
   }
 
   const { data: lessonsData, error } = await query;
-  if (error || !lessonsData) return [];
+  if (error || !lessonsData || lessonsData.length === 0) return [];
 
-  const lessons = await Promise.all(
-    lessonsData.map(async (lessonRow) => {
-      const [q, f, s] = await Promise.all([
-        supabase.from('lesson_questions').select('*').eq('lesson_id', lessonRow.id).order('order_index'),
-        supabase.from('lesson_files').select('*').eq('lesson_id', lessonRow.id),
-        supabase.from('lesson_submissions').select('*').eq('lesson_id', lessonRow.id).order('submitted_at', { ascending: false }),
-      ]);
+  const lessonIds = lessonsData.map((l: any) => l.id);
 
-      return dbToLesson(
-        lessonRow,
-        (q.data || []).map(dbToQuestion),
-        (f.data || []).map(dbToFile),
-        (s.data || []).map(dbToSubmission)
-      );
-    })
-  );
+  // Execute 2 fast batch queries in parallel for ALL lessons combined (instead of N*3 queries)
+  const [questionsRes, filesRes] = await Promise.all([
+    supabase.from('lesson_questions').select('*').in('lesson_id', lessonIds).order('order_index'),
+    supabase.from('lesson_files').select('*').in('lesson_id', lessonIds),
+  ]);
 
-  return lessons;
+  const questionsByLesson = new Map<string, Question[]>();
+  for (const q of (questionsRes.data || [])) {
+    if (!questionsByLesson.has(q.lesson_id)) {
+      questionsByLesson.set(q.lesson_id, []);
+    }
+    questionsByLesson.get(q.lesson_id)!.push(dbToQuestion(q));
+  }
+
+  const filesByLesson = new Map<string, LessonFile[]>();
+  for (const f of (filesRes.data || [])) {
+    if (!filesByLesson.has(f.lesson_id)) {
+      filesByLesson.set(f.lesson_id, []);
+    }
+    filesByLesson.get(f.lesson_id)!.push(dbToFile(f));
+  }
+
+  return lessonsData.map((lessonRow: any) => {
+    return dbToLesson(
+      lessonRow,
+      questionsByLesson.get(lessonRow.id) || [],
+      filesByLesson.get(lessonRow.id) || [],
+      []
+    );
+  });
 }
 
 export async function getLesson(id: string): Promise<Lesson | null> {

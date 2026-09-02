@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "../auth/useSession";
 import { useEffect, useState, useCallback, useMemo, Suspense } from "react";
 import { BrandLogo } from "./BrandLogo";
+import { cachedFetch } from "../../lib/fetchCache";
 
 function TopbarInner() {
   const pathname = usePathname();
@@ -44,11 +45,11 @@ function TopbarInner() {
     if (!session) return;
     try {
       setLoadingNotifs(true);
-      const res = await fetch('/api/notifications');
+      const res = await cachedFetch('/api/notifications');
       const data = await res.json();
       if (data.ok) {
-        setNotifications(data.notifications);
-        setUnreadCount(data.unreadCount);
+        setNotifications(data.notifications || []);
+        setUnreadCount(data.unreadCount || 0);
       }
     } catch (e) {
       // silent
@@ -69,7 +70,7 @@ function TopbarInner() {
     async function loadXp() {
       if (!session?.email) { setXp(null); return; }
       try {
-        const res = await fetch(`/api/user?email=${encodeURIComponent(session.email)}`);
+        const res = await cachedFetch(`/api/user?email=${encodeURIComponent(session.email)}`);
         if (!res.ok) { setXp(null); return; }
         const data = await res.json();
         if (active) setXp(data.user?.experience ?? null);
@@ -82,6 +83,7 @@ function TopbarInner() {
   }, [session?.email]);
 
   const markAllRead = useCallback(async () => {
+
     try {
       const res = await fetch('/api/notifications/mark-read', { method: 'POST' });
       const data = await res.json();

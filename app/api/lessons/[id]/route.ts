@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getLesson, updateLesson, deleteLesson } from "../../../../lib/lessons";
 import { getSessionFromCookies } from "../../../../lib/session";
+import { invalidateServerCache } from "../../../../lib/serverCache";
 
 export async function GET(
   req: Request,
@@ -118,6 +119,7 @@ export async function PUT(
     return NextResponse.json({ ok: false, error: "Хичээл олдсонгүй эсвэл засах эрхгүй" }, { status: 404 });
   }
 
+  invalidateServerCache('lessons');
   return NextResponse.json({ ok: true, lesson: updatedLesson });
 }
 
@@ -141,5 +143,7 @@ export async function DELETE(
     return NextResponse.json({ ok: false, error: "Хичээл олдсонгүй эсвэл устгах эрхгүй" }, { status: 404 });
   }
 
+  invalidateServerCache('lessons');
   return NextResponse.json({ ok: true });
 }
+

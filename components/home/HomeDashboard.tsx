@@ -268,42 +268,36 @@ export function HomeDashboard() {
 
   // Fetch posts (first page)
   useEffect(() => {
-    const controller = new AbortController();
     setHasMore(true);
     setIsFilterLoading(true);
-    setLoading(true);
 
     async function fetchPosts() {
       try {
         const gradeParam = selectedGrade !== "all" ? `&grade=${encodeURIComponent(selectedGrade)}` : "";
         const searchParam = searchQuery.trim() ? `&search=${encodeURIComponent(searchQuery.trim())}` : "";
-        const res = await fetch(`/api/posts?limit=10${gradeParam}${searchParam}`, { signal: controller.signal });
+        const res = await cachedFetch(`/api/posts?limit=10${gradeParam}${searchParam}`);
         if (res.ok) {
           const json = await res.json();
           const list = json.posts || [];
           setPosts(list);
-          setCommentCounts({});
-          await fetchCommentCounts(list.map((post: UserPost) => post.id));
           setHasMore(list.length >= 10);
-        }
-      } catch (err) {
-        if ((err as Error).name !== "AbortError") {
-          console.error("Failed to fetch posts:", err);
-        }
-      } finally {
-        if (!controller.signal.aborted) {
           setLoading(false);
           setIsFilterLoading(false);
+
+          // Fetch comment counts non-blocking in background
+          fetchCommentCounts(list.map((post: UserPost) => post.id));
         }
+      } catch (err) {
+        console.error("Failed to fetch posts:", err);
+      } finally {
+        setLoading(false);
+        setIsFilterLoading(false);
       }
     }
 
     fetchPosts();
-
-    return () => {
-      controller.abort();
-    };
   }, [selectedGrade, searchQuery]);
+
 
   async function loadOlderPosts() {
     if (loadingOlder || !hasMore || posts.length === 0 || isFilterLoading) return;

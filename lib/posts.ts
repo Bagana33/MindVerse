@@ -135,29 +135,35 @@ export async function getPostsPage(limit = 20, beforeISO?: string, grade?: strin
   }
 
   const { data: fetchedPosts, error: postsError } = await query;
-  if (postsError || !fetchedPosts) return [];
+  if (postsError || !fetchedPosts || fetchedPosts.length === 0) return [];
   posts = fetchedPosts;
 
   const authorEmails = [...new Set(posts.map(p => p.author_email))];
-  const { data: users } = await supabase
-    .from('users')
-    .select('email, name, nickname, grade, avatar_url, avatar_color')
-    .in('email', authorEmails);
-  const userMap = new Map(users?.map(u => [u.email, u]) || []);
-
   const postIds = posts.map(p => p.id);
-  const { data: reactions } = await supabase
-    .from('reactions')
-    .select('*')
-    .in('post_id', postIds);
+
+  // Fetch author details, reactions, and comments in parallel
+  const [usersRes, reactionsRes] = await Promise.all([
+    supabase
+      .from('users')
+      .select('email, name, nickname, grade, avatar_url, avatar_color')
+      .in('email', authorEmails),
+    supabase
+      .from('reactions')
+      .select('*')
+      .in('post_id', postIds),
+  ]);
+
+  const userMap = new Map((usersRes.data || []).map((u: any) => [u.email, u]));
+  const reactions = reactionsRes.data || [];
 
   return posts.map(post => {
-    const postReactions = reactions?.filter(r => r.post_id === post.id) || [];
+    const postReactions = reactions.filter((r: any) => r.post_id === post.id);
     const user = userMap.get(post.author_email);
     const authorName = user?.nickname || user?.name || post.author_email;
     return dbToPost(post, postReactions, authorName, user?.avatar_url, user?.avatar_color);
   });
 }
+
 
 export async function deletePost(postId: string, userEmail: string): Promise<boolean> {
   const { error } = await supabase

@@ -6,6 +6,7 @@ import { useSession } from "../auth/useSession";
 import { ReactNode, useState, useEffect } from "react";
 import StudentAssistant from "../assistant/StudentAssistant";
 import { BrandLogo } from "./BrandLogo";
+import { cachedFetch } from "../../lib/fetchCache";
 
 export function DashboardLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -25,7 +26,7 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
     if (!session) return;
     async function loadNotifs() {
       try {
-        const res = await fetch("/api/notifications");
+        const res = await cachedFetch("/api/notifications");
         if (res.ok) {
           const data = await res.json();
           if (data.ok) setUnreadCount(data.unreadCount || 0);
@@ -36,6 +37,7 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
     const interval = setInterval(loadNotifs, 30000);
     return () => clearInterval(interval);
   }, [session]);
+
 
   const navItems = [
     { href: "/", label: "Home", icon: "home" },

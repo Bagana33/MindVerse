@@ -5,8 +5,10 @@ import { useSession } from "../../components/auth/useSession";
 import { DashboardLayout } from "../../components/layout/DashboardLayout";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { cachedFetch, invalidateCache } from "../../lib/fetchCache";
 
 type Lesson = {
+
   id: string;
   title: string;
   description: string;
@@ -77,13 +79,13 @@ function LessonsContent() {
 
   async function fetchLessons() {
     try {
-      const res = await fetch("/api/lessons");
+      const res = await cachedFetch("/api/lessons");
       if (res.ok) {
         const json = await res.json();
         // Defensive: always array, always targetGrades is array
         const lessonsArr = Array.isArray(json.lessons) ? json.lessons : [];
         setLessons(
-          lessonsArr.map(l => ({
+          lessonsArr.map((l: any) => ({
             ...l,
             targetGrades: Array.isArray(l.targetGrades) ? l.targetGrades : [],
             questions: Array.isArray(l.questions) ? l.questions : [],
@@ -100,6 +102,7 @@ function LessonsContent() {
       setLoading(false);
     }
   }
+
 
   function addQuestion() {
     setQuestions([...questions, { question: "", options: ["", "", "", ""], correctAnswer: 0, explanation: "" }]);
@@ -272,6 +275,7 @@ newFiles.push({
         setLessons([json.lesson, ...lessons]);
       }
 
+      invalidateCache("/api/lessons");
       resetForm();
     } catch (err: any) {
       console.error("Create/update lesson error:", err);
@@ -321,12 +325,14 @@ newFiles.push({
         return;
       }
 
+      invalidateCache("/api/lessons");
       setLessons(lessons.filter(l => l.id !== lessonId));
     } catch (err) {
       console.error("Delete lesson error:", err);
       alert("Сүлжээний алдаа гарлаа");
     }
   }
+
 
   return (
     <DashboardLayout>

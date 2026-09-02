@@ -1,8 +1,10 @@
 // Supabase-based user storage
 import { supabase } from './supabase';
 import bcrypt from 'bcryptjs';
+import { invalidateServerCache } from './serverCache';
 
 export type User = {
+
   email: string;
   password?: string; // Hashed password
   name?: string;
@@ -198,6 +200,9 @@ export async function updateUser(email: string, updates: Partial<Omit<User, 'ema
     return null;
   }
 
+  invalidateServerCache(`user_info:${email.toLowerCase()}`);
+  invalidateServerCache(`user_meta:${email.toLowerCase()}`);
+  invalidateServerCache('leaderboard');
   return dbToUser(data);
 }
 
@@ -219,6 +224,8 @@ export async function addExperience(email: string, points: number): Promise<User
     return null;
   }
 
+  invalidateServerCache(`user_info:${email.toLowerCase()}`);
+  invalidateServerCache('leaderboard');
   return dbToUser(data);
 }
 
@@ -239,10 +246,13 @@ export async function setExperience(email: string, points: number): Promise<User
     return null;
   }
 
+  invalidateServerCache(`user_info:${email.toLowerCase()}`);
+  invalidateServerCache('leaderboard');
   return dbToUser(data);
 }
 
 export async function getAllUsers(limit: number = 100): Promise<User[]> {
+
   const { data, error } = await supabase
     .from('users')
     .select('*')

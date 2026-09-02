@@ -17,7 +17,7 @@ export async function GET(req: Request) {
   const search = searchParams.get('search') || undefined; // Database search term
 
   const cacheKey = `posts:${limit}:${before || ''}:${grade || ''}:${search || ''}:${session ? session.email : 'public'}`;
-  const cachedData = getCached<any>(cacheKey, 3000);
+  const cachedData = getCached<any>(cacheKey, 15_000);
   if (cachedData) {
     return NextResponse.json(cachedData);
   }
@@ -34,6 +34,7 @@ export async function GET(req: Request) {
 
   return NextResponse.json(responseObj);
 }
+
 
 // POST: Create a new post (requires authentication)
 export async function POST(req: Request) {

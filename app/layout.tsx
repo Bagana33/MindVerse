@@ -1,6 +1,7 @@
 import "../styles/globals.css";
 import type { ReactNode } from "react";
 import type { Metadata } from "next";
+import { SessionProvider } from "../components/auth/SessionContext";
 
 export const metadata: Metadata = {
   title: "Mind Verse",
@@ -74,8 +75,11 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
       </head>
       <body className="font-sans text-slate-300 antialiased notranslate bg-dark-950 selection:bg-primary-500 selection:text-white" suppressHydrationWarning>
-        {children}
+        <SessionProvider>
+          {children}
+        </SessionProvider>
       </body>
     </html>
   );
 }
+

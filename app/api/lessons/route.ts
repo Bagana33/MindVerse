@@ -3,12 +3,18 @@ import { getSessionFromCookies } from "../../../lib/session";
 import { createLesson, getAllLessons } from "../../../lib/lessons";
 import { addNotification } from "../../../lib/notifications";
 import { getAllUsers } from "../../../lib/users";
+import { getCached, setCached, invalidateServerCache } from "../../../lib/serverCache";
 
-// GET: Fetch all lessons
+// GET: Fetch all lessons with high-concurrency server cache
 export async function GET() {
   const session = await getSessionFromCookies();
+  const cacheKey = `lessons:${session ? `${session.role}:${session.email}` : 'public'}`;
+  const cached = getCached<any>(cacheKey, 10_000);
+  if (cached) {
+    return NextResponse.json(cached);
+  }
   
-  // Fetch all lessons
+  // Fetch all lessons via batch queries
   const allLessons = await getAllLessons(true);
   
   // Filter lessons based on student grade
@@ -31,8 +37,11 @@ export async function GET() {
     });
   }
   
-  return NextResponse.json({ ok: true, lessons });
+  const resObj = { ok: true, lessons };
+  setCached(cacheKey, resObj);
+  return NextResponse.json(resObj);
 }
+
 
 // POST: Create a new lesson (requires teacher authentication)
 export async function POST(req: Request) {
@@ -187,5 +196,7 @@ export async function POST(req: Request) {
     console.error('Failed to send lesson notifications:', e);
   }
 
+  invalidateServerCache('lessons');
   return NextResponse.json({ ok: true, lesson: newLesson });
 }
+

@@ -5,6 +5,7 @@ import { useSession } from "../../components/auth/useSession";
 import { DashboardLayout } from "../../components/layout/DashboardLayout";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { cachedFetch, invalidateCache } from "../../lib/fetchCache";
 
 type Contest = {
   id: string;
@@ -48,7 +49,7 @@ function ContestsContent() {
   async function fetchContests() {
     try {
       setLoadError(null);
-      const res = await fetch("/api/contests");
+      const res = await cachedFetch("/api/contests");
       const json = await res.json().catch(() => null);
       if (!res.ok) {
         setContests([]);
@@ -63,6 +64,7 @@ function ContestsContent() {
       setLoading(false);
     }
   }
+
 
   async function handleSaveContest(e: React.FormEvent) {
     e.preventDefault();
@@ -91,11 +93,12 @@ function ContestsContent() {
 
       const json = await res.json();
       if (json.ok) {
-      if (editingId) {
-        setContests(contests.map(c => c.id === editingId ? json.contest : c));
-      } else {
-        setContests([json.contest, ...contests]);
-      }
+        if (editingId) {
+          setContests(contests.map(c => c.id === editingId ? json.contest : c));
+        } else {
+          setContests([json.contest, ...contests]);
+        }
+        invalidateCache("/api/contests");
         resetForm();
       } else {
         alert(json.error || "Алдаа гарлаа");
@@ -134,9 +137,10 @@ function ContestsContent() {
     if (!confirm("Устгахдаа итгэлтэй байна уу?")) return;
     try {
       const res = await fetch(`/api/contests/${id}`, { method: "DELETE" });
-        const json = await res.json();
+      const json = await res.json();
       if (json.ok) {
-      setContests(contests.filter(c => c.id !== id));
+        invalidateCache("/api/contests");
+        setContests(contests.filter(c => c.id !== id));
       } else {
         alert(json.error || "Устгах боломжгүй");
       }
@@ -145,6 +149,7 @@ function ContestsContent() {
       alert("Алдаа гарлаа");
     }
   }
+
 
   function toggleGrade(grade: string) {
     setTargetGrades(prev => 

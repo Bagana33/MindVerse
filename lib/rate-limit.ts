@@ -4,18 +4,32 @@
 
 export type RateLimitOptions = {
   windowMs: number; // e.g., 30_000
-  max: number;      // e.g., 5 requests per window
+  max: number;      // e.g., 100 requests per window
 };
 
 type Entry = { count: number; expiresAt: number };
 
 const buckets = new Map<string, Entry>();
 
+// Periodic cleanup of expired entries (runs every 60s)
+let lastCleanup = Date.now();
+function cleanupExpired() {
+  const now = Date.now();
+  if (now - lastCleanup < 60_000) return;
+  lastCleanup = now;
+  for (const [key, entry] of buckets.entries()) {
+    if (entry.expiresAt <= now) {
+      buckets.delete(key);
+    }
+  }
+}
+
 export function rateLimit(key: string, opts: RateLimitOptions): {
   ok: boolean;
   remaining: number;
   retryAfterSec?: number;
 } {
+  cleanupExpired();
   const now = Date.now();
   const entry = buckets.get(key);
   if (!entry || entry.expiresAt <= now) {
@@ -36,3 +50,4 @@ export function getClientKey(req: Request, extra?: string) {
   const ip = fwd.split(',')[0].trim() || 'unknown';
   return extra ? `${ip}:${extra}` : ip;
 }
+

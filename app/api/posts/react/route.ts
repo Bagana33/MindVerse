@@ -3,6 +3,7 @@ import { getSessionFromCookies } from "../../../../lib/session";
 import { toggleReactionWithType, getPostMeta, ReactionType } from "../../../../lib/posts";
 import { addExperience } from "../../../../lib/users";
 import { addNotification } from "../../../../lib/notifications";
+import { invalidateServerCache } from "../../../../lib/serverCache";
 
 export async function POST(req: Request) {
   const session = await getSessionFromCookies();
@@ -39,6 +40,8 @@ export async function POST(req: Request) {
   if (!result.success) {
     return NextResponse.json({ ok: false, error: "Reaction хийхэд алдаа гарлаа" }, { status: 500 });
   }
+
+  invalidateServerCache('posts');
 
   // XP and notifications are executed in parallel to reduce response latency.
   if (result.added) {
@@ -77,3 +80,4 @@ export async function POST(req: Request) {
     updated: result.updated,
   });
 }
+

@@ -1,11 +1,18 @@
 import { NextResponse } from "next/server";
 import { getSessionFromCookies } from "../../../lib/session";
 import { createContest, getAllContests } from "../../../lib/contests";
+import { getCached, setCached, invalidateServerCache } from "../../../lib/serverCache";
 
 // GET: Fetch all contests
 export async function GET() {
   try {
     const session = await getSessionFromCookies();
+    const cacheKey = `contests:${session ? `${session.role}:${session.email}` : 'public'}`;
+    const cached = getCached<any>(cacheKey, 10_000);
+    if (cached) {
+      return NextResponse.json(cached);
+    }
+
     const allContests = await getAllContests();
 
     // Filter contests based on student grade
@@ -27,7 +34,9 @@ export async function GET() {
       });
     }
 
-    return NextResponse.json({ ok: true, contests });
+    const resObj = { ok: true, contests };
+    setCached(cacheKey, resObj);
+    return NextResponse.json(resObj);
   } catch (err: any) {
     console.error("Get contests error:", err);
     return NextResponse.json(
@@ -70,6 +79,7 @@ export async function POST(req: Request) {
       targetGrades: Array.isArray(targetGrades) ? targetGrades : [],
     });
 
+    invalidateServerCache('contests');
     return NextResponse.json({ ok: true, contest });
   } catch (err: any) {
     console.error("Create contest error:", err);
@@ -79,3 +89,4 @@ export async function POST(req: Request) {
     );
   }
 }
+
