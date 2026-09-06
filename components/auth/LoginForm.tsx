@@ -61,9 +61,9 @@ export function LoginForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: cleanEmail }),
       });
-      const json = await res.json();
+      const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.ok) {
-        setError(json.error || "Код илгээхэд алдаа гарлаа");
+        setError(json.error || `Код илгээхэд алдаа гарлаа (${res.status})`);
         return;
       }
 
@@ -115,9 +115,9 @@ export function LoginForm() {
             confirmPassword,
           }),
         });
-        const json = await res.json();
+        const json = await res.json().catch(() => ({}));
         if (!res.ok || !json.ok) {
-          setError(json.error || "Нууц үг солиход алдаа гарлаа");
+          setError(json.error || `Нууц үг солиход алдаа гарлаа (${res.status})`);
           return;
         }
 
@@ -168,9 +168,9 @@ export function LoginForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, name, mode, role, grade: role === "student" ? grade : undefined }),
       });
-      if (!res.ok) {
-        const json = await res.json();
-        setError(json.error ?? "Нэвтрэх амжилтгүй");
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.ok) {
+        setError(json.error || "Email эсвэл нууц үг буруу байна");
         return;
       }
       setStatus("Амжилттай нэвтэрлээ!");

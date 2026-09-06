@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { Role, Session, setSessionCookie } from "../../../../lib/session";
+import { Role, Session, setSessionCookie, encodeSession, COOKIE_NAME, SESSION_COOKIE_OPTIONS } from "../../../../lib/session";
 import { createUser, getUser } from "../../../../lib/users";
 import { getClientKey, rateLimit } from "../../../../lib/rate-limit";
 import bcrypt from "bcryptjs";
@@ -112,7 +112,10 @@ export async function POST(req: Request) {
       avatarColor: sessionAvatarColor,
     };
     await setSessionCookie(session);
-    return NextResponse.json({ ok: true, session });
+    const token = encodeSession(session);
+    const res = NextResponse.json({ ok: true, session });
+    res.cookies.set(COOKIE_NAME, token, SESSION_COOKIE_OPTIONS);
+    return res;
   } catch (error: any) {
     console.error('Login error:', error);
     return NextResponse.json({ 
