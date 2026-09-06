@@ -170,7 +170,13 @@ export function LoginForm() {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.ok) {
-        setError(json.error || "Email эсвэл нууц үг буруу байна");
+        if (json.error) {
+          setError(json.error);
+        } else if (res.status === 401) {
+          setError("Email эсвэл нууц үг буруу байна");
+        } else {
+          setError(`Серверийн алдаа гарлаа (${res.status})`);
+        }
         return;
       }
       setStatus("Амжилттай нэвтэрлээ!");
