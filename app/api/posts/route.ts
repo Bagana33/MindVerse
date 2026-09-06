@@ -17,9 +17,13 @@ export async function GET(req: Request) {
   const search = searchParams.get('search') || undefined; // Database search term
 
   const cacheKey = `posts:${limit}:${before || ''}:${grade || ''}:${search || ''}:${session ? session.email : 'public'}`;
-  const cachedData = getCached<any>(cacheKey, 15_000);
+  const cachedData = getCached<any>(cacheKey, 20_000);
   if (cachedData) {
-    return NextResponse.json(cachedData);
+    return NextResponse.json(cachedData, {
+      headers: {
+        'Cache-Control': 'public, s-maxage=10, stale-while-revalidate=30',
+      },
+    });
   }
 
   const posts = await getPostsPage(limit, before, grade, search);
@@ -30,9 +34,13 @@ export async function GET(req: Request) {
     : posts.filter((p) => p.visibility === 'PUBLIC');
 
   const responseObj = { ok: true, posts: visible };
-  setCached(cacheKey, responseObj);
+  setCached(cacheKey, responseObj, 20_000);
 
-  return NextResponse.json(responseObj);
+  return NextResponse.json(responseObj, {
+    headers: {
+      'Cache-Control': 'public, s-maxage=10, stale-while-revalidate=30',
+    },
+  });
 }
 
 
@@ -96,48 +104,34 @@ export async function POST(req: Request) {
     visibility: visibility === 'PRIVATE' ? 'PRIVATE' : 'PUBLIC',
   });
 
-  // AI automatic critique for public user posts
-  if (visibility === 'PUBLIC' && !['ai-assistant', 'news-bot'].includes(session.email)) {
-    try {
-      const aiCritique = await generateDesignCritique({ title, description, imageUrl });
-
-      await ensureAIUserExists();
-      await createComment({
-        postId: newPost.id,
-        authorEmail: 'ai-assistant',
-        content: aiCritique,
-        isAI: true,
-      });
-
-      await addNotification(
-        session.email,
-        'ai-assistant',
-        'LIKE',
-        '🤖 AI шүүмжлэл таны бүтээлд бэлэн боллоо!'
-      );
-    } catch (aiError) {
-      console.error('AI critique error:', aiError);
-    }
-  }
-
-  // Send notification to all users about new post (non-blocking async batch)
-  if (visibility === 'PUBLIC') {
-    getAllUsers()
-      .then((allUsers) => {
-        const recipientEmails = allUsers
-          .filter((u) => u.email !== session.email)
-          .map((u) => u.email);
-        return addNotificationBatch(
-          recipientEmails,
-          session.email,
-          'LIKE',
-          `🎨 ${session.name || session.email} шинэ пост нийтэллээ: ${title}`
-        );
-      })
-      .catch((e) => console.error('Failed async notification broadcast:', e));
-  }
-
   invalidateServerCache('posts');
+
+  // Background non-blocking task: AI critique and notifications (does not block HTTP response)
+  if (visibility === 'PUBLIC' && !['ai-assistant', 'news-bot'].includes(session.email)) {
+    (async () => {
+      try {
+        const aiCritique = await generateDesignCritique({ title, description, imageUrl });
+        await ensureAIUserExists();
+        await createComment({
+          postId: newPost.id,
+          authorEmail: 'ai-assistant',
+          content: aiCritique,
+          isAI: true,
+        });
+
+        await addNotification(
+          session.email,
+          'ai-assistant',
+          'LIKE',
+          '🤖 AI шүүмжлэл таны бүтээлд бэлэн боллоо!'
+        );
+        invalidateServerCache('posts');
+      } catch (aiError) {
+        console.error('Background AI critique error:', aiError);
+      }
+    })().catch(() => {});
+  }
+
   return NextResponse.json({ ok: true, post: newPost });
 }
 

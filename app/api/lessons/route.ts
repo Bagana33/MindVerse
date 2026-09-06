@@ -9,9 +9,13 @@ import { getCached, setCached, invalidateServerCache } from "../../../lib/server
 export async function GET() {
   const session = await getSessionFromCookies();
   const cacheKey = `lessons:${session ? `${session.role}:${session.email}` : 'public'}`;
-  const cached = getCached<any>(cacheKey, 10_000);
+  const cached = getCached<any>(cacheKey, 60_000);
   if (cached) {
-    return NextResponse.json(cached);
+    return NextResponse.json(cached, {
+      headers: {
+        'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=120',
+      },
+    });
   }
   
   // Fetch all lessons via batch queries
@@ -20,7 +24,6 @@ export async function GET() {
   // Filter lessons based on student grade
   let lessons = allLessons;
   if (session && session.role === "student") {
-    // Get user's grade
     const { getUser } = await import("../../../lib/users");
     const user = await getUser(session.email);
     const userGrade = user?.grade;
@@ -38,8 +41,12 @@ export async function GET() {
   }
   
   const resObj = { ok: true, lessons };
-  setCached(cacheKey, resObj);
-  return NextResponse.json(resObj);
+  setCached(cacheKey, resObj, 60_000);
+  return NextResponse.json(resObj, {
+    headers: {
+      'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=120',
+    },
+  });
 }
 
 

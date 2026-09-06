@@ -7,9 +7,13 @@ export async function GET(req: Request) {
   const gradeParam = searchParams.get('grade') || undefined;
 
   const cacheKey = `leaderboard:${gradeParam || 'all'}`;
-  const cached = getCached<any>(cacheKey, 5000);
+  const cached = getCached<any>(cacheKey, 30_000);
   if (cached) {
-    return NextResponse.json(cached);
+    return NextResponse.json(cached, {
+      headers: {
+        'Cache-Control': 'public, s-maxage=15, stale-while-revalidate=60',
+      },
+    });
   }
 
   const leaderboard = await getLeaderboardLight(gradeParam as any);
@@ -25,7 +29,11 @@ export async function GET(req: Request) {
   }));
 
   const resObj = { ok: true, leaderboard: safe };
-  setCached(cacheKey, resObj);
+  setCached(cacheKey, resObj, 30_000);
 
-  return NextResponse.json(resObj);
+  return NextResponse.json(resObj, {
+    headers: {
+      'Cache-Control': 'public, s-maxage=15, stale-while-revalidate=60',
+    },
+  });
 }

@@ -1,30 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionFromCookies } from "../../../lib/session";
 import { supabase } from "../../../lib/supabase";
+import { getCached, setCached, invalidateServerCache } from "../../../lib/serverCache";
 
 // GET: Get all spinner options
 export async function GET(req: NextRequest) {
   try {
     const session = await getSessionFromCookies();
+    const cacheKey = `spinner:options:${session ? session.email : 'public'}`;
+    const cached = getCached<any>(cacheKey, 10_000);
+    if (cached) {
+      return NextResponse.json(cached);
+    }
     
     const { data, error } = await supabase
       .from('spinner_options')
-      .select('*')
+      .select('option_text')
       .order('created_at', { ascending: true });
 
     if (error) {
-      // If table doesn't exist, return default options
       if (error.code === '42P01' || error.message?.includes('does not exist')) {
-        console.log("spinner_options table doesn't exist yet, returning defaults");
         return NextResponse.json({ 
           ok: true, 
           options: ["Сонголт 1", "Сонголт 2", "Сонголт 3"],
           userOptionCount: 0,
-          warning: "Table not created yet. Please run migration."
         });
       }
-      console.error("Error fetching spinner options:", error);
-      // Return defaults on any error
       return NextResponse.json({ 
         ok: true, 
         options: ["Сонголт 1", "Сонголт 2", "Сонголт 3"],
@@ -44,18 +45,12 @@ export async function GET(req: NextRequest) {
       userOptionCount = count || 0;
     }
     
-    // If no options, return defaults
-    if (options.length === 0) {
-      return NextResponse.json({ 
-        ok: true, 
-        options: ["Сонголт 1", "Сонголт 2", "Сонголт 3"],
-        userOptionCount
-      });
-    }
-    return NextResponse.json({ ok: true, options, userOptionCount });
+    const finalOptions = options.length > 0 ? options : ["Сонголт 1", "Сонголт 2", "Сонголт 3"];
+    const resObj = { ok: true, options: finalOptions, userOptionCount };
+    setCached(cacheKey, resObj, 10_000);
+    return NextResponse.json(resObj);
   } catch (err: any) {
     console.error("Get spinner options error:", err);
-    // Always return defaults on error
     return NextResponse.json({ 
       ok: true, 
       options: ["Сонголт 1", "Сонголт 2", "Сонголт 3"],
@@ -139,6 +134,8 @@ export async function POST(req: Request) {
       .select('*', { count: 'exact', head: true })
       .eq('added_by', session.email);
     
+    invalidateServerCache('spinner');
+
     return NextResponse.json({ 
       ok: true, 
       options,
@@ -197,6 +194,7 @@ export async function DELETE(req: Request) {
       .order('created_at', { ascending: true });
 
     const options = (allOptions || []).map(row => row.option_text);
+    invalidateServerCache('spinner');
     return NextResponse.json({ ok: true, options });
   } catch (err: any) {
     console.error("Delete spinner option error:", err);

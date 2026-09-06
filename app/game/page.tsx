@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { DashboardLayout } from "../../components/layout/DashboardLayout";
 import { useSession } from "../../components/auth/useSession";
+import { cachedFetch } from "../../lib/fetchCache";
 
 type GameImage = {
   id: string;
@@ -71,7 +72,7 @@ export default function GamePage() {
 
   async function fetchLessons() {
     try {
-      const res = await fetch("/api/lessons");
+      const res = await cachedFetch("/api/lessons");
       const json = await res.json();
       if (json.ok) {
         setLessons(json.lessons || []);
@@ -82,8 +83,9 @@ export default function GamePage() {
   }
 
   async function fetchImages() {
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
     try {
-      const res = await fetch("/api/game/images");
+      const res = await cachedFetch("/api/game/images");
       const json = await res.json();
       if (json.ok) {
         // Sort by likes (highest first), then by creation date (newest first)
@@ -93,14 +95,41 @@ export default function GamePage() {
           }
           return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
         });
-        // Force React to re-render by creating a new array reference
-        setImages([...sortedImages]);
-        setGameState({
-          gameEnded: json.gameEnded || false,
-          winner: json.winner || null,
-          rankings: json.rankings || [],
-          lessonId: json.lessonId || null,
-          targetGrade: json.targetGrade || null,
+
+        // Only update state if data actually changed to prevent DOM repainting
+        setImages((prev) => {
+          if (prev.length !== sortedImages.length) return sortedImages;
+          const hasChanged = sortedImages.some((img: GameImage, idx: number) => {
+            const p = prev[idx];
+            return !p || p.id !== img.id || p.likes !== img.likes;
+          });
+          return hasChanged ? sortedImages : prev;
+        });
+
+        setGameState((prev) => {
+          const gameEnded = Boolean(json.gameEnded);
+          const winnerEmail = json.winner?.email ?? null;
+          const lessonId = json.lessonId ?? null;
+          const targetGrade = json.targetGrade ?? null;
+          const rankingsLen = json.rankings?.length ?? 0;
+
+          if (
+            prev.gameEnded === gameEnded &&
+            prev.winner?.email === winnerEmail &&
+            prev.lessonId === lessonId &&
+            prev.targetGrade === targetGrade &&
+            prev.rankings.length === rankingsLen
+          ) {
+            return prev;
+          }
+
+          return {
+            gameEnded,
+            winner: json.winner || null,
+            rankings: json.rankings || [],
+            lessonId,
+            targetGrade,
+          };
         });
       }
     } catch (err) {

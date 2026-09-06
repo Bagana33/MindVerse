@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSessionFromCookies } from "../../../../lib/session";
 import { supabase } from "../../../../lib/supabase";
+import { getCached, setCached, invalidateServerCache } from "../../../../lib/serverCache";
 
 type GameImage = {
   id: string;
@@ -12,41 +12,27 @@ type GameImage = {
 };
 
 async function toClient(images: GameImage[]) {
-  // Get all unique user emails
-  const userEmails = new Set<string>();
-  images.forEach(img => {
-    if (img.added_by) userEmails.add(img.added_by);
-  });
-
-  // Fetch user info for all emails
+  const userEmails = Array.from(new Set(images.map(img => img.added_by).filter(Boolean))) as string[];
   const userInfoMap = new Map<string, { name?: string; nickname?: string }>();
-  if (userEmails.size > 0) {
+
+  if (userEmails.length > 0) {
     try {
-      const { getUser } = await import("../../../../lib/users");
-      const userPromises = Array.from(userEmails).map(async (email) => {
-        try {
-          const user = await getUser(email);
-          if (user) {
-            userInfoMap.set(email, {
-              name: user.name,
-              nickname: user.nickname,
-            });
-          }
-        } catch (err) {
-          console.error(`Error fetching user ${email}:`, err);
-        }
+      const { data: users } = await supabase
+        .from("users")
+        .select("email, name, nickname")
+        .in("email", userEmails);
+
+      (users || []).forEach((u: any) => {
+        userInfoMap.set(u.email, { name: u.name, nickname: u.nickname });
       });
-      await Promise.allSettled(userPromises);
     } catch (err) {
-      console.error("Error fetching users:", err);
+      console.error("Error fetching users for game images:", err);
     }
   }
 
   return images
     .map((img) => {
       const userInfo = img.added_by ? userInfoMap.get(img.added_by) : null;
-      // Use image_urls if available, otherwise fall back to single image_url
-      // Handle both array format and string format from database
       let imageUrls: string[] = [];
       if (img.image_urls) {
         if (Array.isArray(img.image_urls)) {
@@ -64,8 +50,8 @@ async function toClient(images: GameImage[]) {
       
       return {
         id: img.id,
-        imageUrl: imageUrls[0] || img.image_url || '', // Keep for backward compatibility
-        imageUrls: imageUrls, // Array of all images
+        imageUrl: imageUrls[0] || img.image_url || '',
+        imageUrls: imageUrls,
         addedBy: img.added_by,
         studentName: userInfo?.name || null,
         studentNickname: userInfo?.nickname || null,
@@ -78,8 +64,14 @@ async function toClient(images: GameImage[]) {
 }
 
 export async function GET() {
+  const cacheKey = 'game:images_and_state';
+  const cached = getCached<any>(cacheKey, 6_000);
+  if (cached) {
+    return NextResponse.json(cached);
+  }
+
   // Get game state first
-  let gameState = null;
+  let gameState: any = null;
   try {
     const { data: stateData } = await supabase
       .from("game_state")
@@ -88,123 +80,51 @@ export async function GET() {
       .single();
     gameState = stateData;
   } catch (stateError) {
-    // Ignore state errors, game might not have state table yet
+    // Ignore state errors
   }
 
-  // If no lesson selected, return empty
   if (!gameState?.lesson_id) {
-    return NextResponse.json({ 
+    const resObj = { 
       ok: true, 
       images: [],
       gameEnded: false,
       winner: null,
       lessonId: null,
       targetGrade: null,
-    });
+    };
+    setCached(cacheKey, resObj, 6_000);
+    return NextResponse.json(resObj);
   }
 
-  // Get game images (which are linked to lesson submissions)
   const { data, error } = await supabase
     .from("game_images")
     .select("*")
     .order("created_at", { ascending: false });
 
   if (error) {
-    // If table doesn't exist, return empty array
     if (error.code === '42P01' || error.message?.includes('does not exist')) {
-      console.log("game_images table doesn't exist yet, returning empty array");
       return NextResponse.json({ 
         ok: true, 
         images: [],
         gameEnded: false,
         lessonId: gameState?.lesson_id || null,
         targetGrade: gameState?.target_grade || null,
-        warning: "Table not created yet. Please run migration."
       });
     }
-    console.error("Game images fetch error:", error);
     return NextResponse.json({ ok: false, error: "Алдаа гарлаа" }, { status: 500 });
   }
 
-  // Update game_images that don't have image_urls populated
-  // Fetch from submissions if image_urls is missing
-  if (data && data.length > 0) {
-    const imagesNeedingUpdate = data.filter((img: any) => 
-      !img.image_urls || 
-      (Array.isArray(img.image_urls) && img.image_urls.length === 0) ||
-      (img.submission_id && (!img.image_urls || img.image_urls.length === 0))
-    );
-
-    if (imagesNeedingUpdate.length > 0) {
-      // Fetch submissions to get file_urls
-      const submissionIds = imagesNeedingUpdate
-        .map((img: any) => img.submission_id)
-        .filter((id: string) => id);
-      
-      if (submissionIds.length > 0) {
-        const { data: submissions } = await supabase
-          .from("lesson_submissions")
-          .select("id, file_urls, file_url")
-          .in("id", submissionIds);
-
-        if (submissions) {
-          const submissionMap = new Map(submissions.map((s: any) => [s.id, s]));
-          
-          // Update each game_image that needs image_urls
-          for (const img of imagesNeedingUpdate) {
-            if (img.submission_id) {
-              const submission = submissionMap.get(img.submission_id);
-              if (submission) {
-                let fileUrls: string[] = [];
-                if (submission.file_urls) {
-                  if (Array.isArray(submission.file_urls)) {
-                    fileUrls = submission.file_urls;
-                  } else if (typeof submission.file_urls === 'string') {
-                    try {
-                      fileUrls = JSON.parse(submission.file_urls);
-                    } catch {
-                      fileUrls = submission.file_url ? [submission.file_url] : [];
-                    }
-                  }
-                } else if (submission.file_url) {
-                  fileUrls = [submission.file_url];
-                } else if (img.image_url) {
-                  fileUrls = [img.image_url];
-                }
-
-                if (fileUrls.length > 0) {
-                  // Update the game_image record
-                  await supabase
-                    .from("game_images")
-                    .update({ image_urls: fileUrls })
-                    .eq("id", img.id);
-                  
-                  // Update the data array for immediate use
-                  img.image_urls = fileUrls;
-                }
-              }
-            } else if (img.image_url) {
-              // If no submission_id, just use the single image_url
-              await supabase
-                .from("game_images")
-                .update({ image_urls: [img.image_url] })
-                .eq("id", img.id);
-              img.image_urls = [img.image_url];
-            }
-          }
-        }
-      }
-    }
-  }
-
-  // Get winner and rankings info
   let winner = null;
   let rankings: Array<{ email: string; name: string; likes: number; xp: number; rank: number }> = [];
   
   if (gameState?.ended && gameState.winner_email) {
     try {
-      const { getUser } = await import("../../../../lib/users");
-      const winnerUser = await getUser(gameState.winner_email);
+      const { data: winnerUser } = await supabase
+        .from("users")
+        .select("email, name, nickname")
+        .eq("email", gameState.winner_email)
+        .single();
+
       if (winnerUser) {
         winner = {
           email: gameState.winner_email,
@@ -212,32 +132,32 @@ export async function GET() {
         };
       }
       
-      // Get rankings from game_state if available (stored as JSON)
-      // For now, we'll calculate from images
-      const sortedImages = (data || []).sort((a: any, b: any) => {
+      const sortedImages = (data || []).slice().sort((a: any, b: any) => {
         const likesA = a.liked_by?.length || 0;
         const likesB = b.liked_by?.length || 0;
         return likesB - likesA;
       });
       
-      // Award XP based on rank
-      const xpAwards = [5, 3, 2]; // 1st, 2nd, 3rd
-      for (let i = 0; i < Math.min(3, sortedImages.length); i++) {
-        const img = sortedImages[i];
-        if (img.added_by) {
-          try {
-            const user = await getUser(img.added_by);
-            if (user) {
-              rankings.push({
-                email: img.added_by,
-                name: user.nickname || user.name || img.added_by,
-                likes: img.liked_by?.length || 0,
-                xp: xpAwards[i],
-                rank: i + 1,
-              });
-            }
-          } catch (err) {
-            console.error(`Error fetching user ${img.added_by}:`, err);
+      const topEmails = sortedImages.slice(0, 3).map((img: any) => img.added_by).filter(Boolean);
+      if (topEmails.length > 0) {
+        const { data: topUsers } = await supabase
+          .from("users")
+          .select("email, name, nickname")
+          .in("email", topEmails);
+
+        const topUserMap = new Map((topUsers || []).map((u: any) => [u.email, u]));
+        const xpAwards = [5, 3, 2];
+        for (let i = 0; i < Math.min(3, sortedImages.length); i++) {
+          const img = sortedImages[i];
+          if (img.added_by) {
+            const user = topUserMap.get(img.added_by);
+            rankings.push({
+              email: img.added_by,
+              name: user?.nickname || user?.name || img.added_by,
+              likes: img.liked_by?.length || 0,
+              xp: xpAwards[i] || 1,
+              rank: i + 1,
+            });
           }
         }
       }
@@ -246,22 +166,26 @@ export async function GET() {
     }
   }
 
-  return NextResponse.json({ 
+  const clientImages = await toClient(data || []);
+  const resObj = { 
     ok: true, 
-    images: await toClient(data || []),
+    images: clientImages,
     gameEnded: gameState?.ended || false,
     winner,
     rankings,
     lessonId: gameState?.lesson_id || null,
     targetGrade: gameState?.target_grade || null,
-  });
+  };
+
+  setCached(cacheKey, resObj, 6_000);
+  return NextResponse.json(resObj);
 }
 
-// POST is no longer used - images come from lesson submissions via /api/game/setup
 export async function POST(req: Request) {
   return NextResponse.json({ 
     ok: false, 
     error: "Энэ endpoint ашиглахгүй. /api/game/setup ашиглана уу." 
   }, { status: 400 });
 }
+
 

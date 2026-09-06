@@ -45,6 +45,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Тоглоом дахин эхлүүлэхэд алдаа гарлаа" }, { status: 500 });
     }
 
+    const { invalidateServerCache } = await import("../../../../lib/serverCache");
+    invalidateServerCache('game');
+
     return NextResponse.json({
       ok: true,
       message: "Тоглоом амжилттай дахин эхлэв",

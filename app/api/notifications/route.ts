@@ -10,7 +10,7 @@ export async function GET() {
   }
 
   const cacheKey = `notifs:${session.email}`;
-  const cached = getCached<any>(cacheKey, 5000);
+  const cached = getCached<any>(cacheKey, 15_000);
   if (cached) {
     return NextResponse.json(cached);
   }
@@ -18,7 +18,7 @@ export async function GET() {
   const notifications = await getUserNotifications(session.email, 30);
   const unreadCount = notifications.filter(n => !n.read).length;
   const resObj = { ok: true, notifications, unreadCount };
-  setCached(cacheKey, resObj);
+  setCached(cacheKey, resObj, 15_000);
 
   return NextResponse.json(resObj);
 }

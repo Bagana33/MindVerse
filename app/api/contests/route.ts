@@ -8,9 +8,13 @@ export async function GET() {
   try {
     const session = await getSessionFromCookies();
     const cacheKey = `contests:${session ? `${session.role}:${session.email}` : 'public'}`;
-    const cached = getCached<any>(cacheKey, 10_000);
+    const cached = getCached<any>(cacheKey, 60_000);
     if (cached) {
-      return NextResponse.json(cached);
+      return NextResponse.json(cached, {
+        headers: {
+          'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=120',
+        },
+      });
     }
 
     const allContests = await getAllContests();
@@ -35,8 +39,12 @@ export async function GET() {
     }
 
     const resObj = { ok: true, contests };
-    setCached(cacheKey, resObj);
-    return NextResponse.json(resObj);
+    setCached(cacheKey, resObj, 60_000);
+    return NextResponse.json(resObj, {
+      headers: {
+        'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=120',
+      },
+    });
   } catch (err: any) {
     console.error("Get contests error:", err);
     return NextResponse.json(

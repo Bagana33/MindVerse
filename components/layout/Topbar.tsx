@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "../auth/useSession";
-import { useEffect, useState, useCallback, useMemo, Suspense } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef, Suspense } from "react";
 import { BrandLogo } from "./BrandLogo";
 import { cachedFetch } from "../../lib/fetchCache";
 
@@ -18,6 +18,7 @@ function TopbarInner() {
   const [loadingNotifs, setLoadingNotifs] = useState(false);
   const [xp, setXp] = useState<number | null>(null);
   const [searchInput, setSearchInput] = useState("");
+  const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
   // Sync search input with URL search param
   useEffect(() => {
@@ -29,20 +30,24 @@ function TopbarInner() {
 
   const handleSearchChange = (val: string) => {
     setSearchInput(val);
-    const params = new URLSearchParams(searchParams?.toString() || "");
-    if (val.trim()) {
-      params.set("search", val);
-    } else {
-      params.delete("search");
-    }
-    const queryString = params.toString();
-    const targetPath = (pathname === "/" || pathname === "/lessons" || pathname === "/contests" || pathname === "/leaderboard") ? pathname : "/";
-    const newUrl = queryString ? `${targetPath}?${queryString}` : targetPath;
-    router.replace(newUrl);
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      const params = new URLSearchParams(searchParams?.toString() || "");
+      if (val.trim()) {
+        params.set("search", val.trim());
+      } else {
+        params.delete("search");
+      }
+      const queryString = params.toString();
+      const targetPath = (pathname === "/" || pathname === "/lessons" || pathname === "/contests" || pathname === "/leaderboard") ? pathname : "/";
+      const newUrl = queryString ? `${targetPath}?${queryString}` : targetPath;
+      router.replace(newUrl);
+    }, 250);
   };
 
   const fetchNotifications = useCallback(async () => {
     if (!session) return;
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
     try {
       setLoadingNotifs(true);
       const res = await cachedFetch('/api/notifications');
@@ -60,7 +65,7 @@ function TopbarInner() {
 
   useEffect(() => {
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 30000); // poll every 30s
+    const interval = setInterval(fetchNotifications, 60000); // poll every 60s
     return () => clearInterval(interval);
   }, [fetchNotifications]);
 

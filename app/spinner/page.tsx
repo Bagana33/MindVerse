@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { DashboardLayout } from "../../components/layout/DashboardLayout";
 import { useSession } from "../../components/auth/useSession";
+import { cachedFetch } from "../../lib/fetchCache";
 
 export default function SpinnerPage() {
   const { session } = useSession();
@@ -15,54 +16,35 @@ export default function SpinnerPage() {
   const [loading, setLoading] = useState(true);
   const [userOptionCount, setUserOptionCount] = useState(0);
 
-  // Load shared options from API
-  useEffect(() => {
-    async function loadOptions() {
-      try {
-        const res = await fetch('/api/spinner');
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
-        }
-        const json = await res.json();
-        if (json.ok && Array.isArray(json.options) && json.options.length > 0) {
-          setOptions(json.options);
-          setUserOptionCount(json.userOptionCount || 0);
-        } else {
-          // Fallback to default if empty or invalid
-          setOptions(["Сонголт 1", "Сонголт 2", "Сонголт 3"]);
-          setUserOptionCount(0);
-        }
-      } catch (err) {
-        console.error("Failed to fetch spinner options:", err);
-        // Fallback to default on any error
-        setOptions(["Сонголт 1", "Сонголт 2", "Сонголт 3"]);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    loadOptions();
-    // Poll for updates every 10 seconds (бага ачаалал)
-    const interval = setInterval(loadOptions, 10000);
-    return () => clearInterval(interval);
-  }, []);
-
-  async function fetchOptions() {
+  const fetchOptions = useCallback(async () => {
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
     try {
-      const res = await fetch('/api/spinner');
-      if (!res.ok) {
-        return; // Silently fail, keep current options
-      }
+      const res = await cachedFetch("/api/spinner");
+      if (!res.ok) return;
       const json = await res.json();
       if (json.ok && Array.isArray(json.options) && json.options.length > 0) {
-        setOptions(json.options);
+        setOptions((prev) => {
+          if (prev.length === json.options.length && prev.every((v, i) => v === json.options[i])) {
+            return prev;
+          }
+          return json.options;
+        });
         setUserOptionCount(json.userOptionCount || 0);
       }
     } catch (err) {
-      // Silently fail, keep current options
       console.error("Failed to fetch spinner options:", err);
+    } finally {
+      setLoading(false);
     }
-  }
+  }, []);
+
+  // Load shared options from API
+  useEffect(() => {
+    fetchOptions();
+    // Poll for updates every 20 seconds
+    const interval = setInterval(fetchOptions, 20000);
+    return () => clearInterval(interval);
+  }, [fetchOptions]);
 
   const colors = [
     "#8b5cf6", // violet

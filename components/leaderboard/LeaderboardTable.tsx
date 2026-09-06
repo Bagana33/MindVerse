@@ -205,7 +205,7 @@ export function LeaderboardFull() {
       try {
         setLoading(true);
         const url = grade && grade !== 'all' ? `/api/leaderboard?grade=${grade}` : "/api/leaderboard";
-        const res = await fetch(url);
+        const res = await cachedFetch(url);
         if (res.ok) {
           const json = await res.json();
           setUsers(json.leaderboard || []);

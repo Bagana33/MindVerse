@@ -13,6 +13,7 @@ export type UserPost = {
   authorAvatarUrl?: string;
   authorAvatarColor?: string;
   points: number;
+  commentCount?: number;
   createdAt: string;
   imageUrl?: string;
   reactions: PostReaction[]; // One reaction per user
@@ -25,7 +26,8 @@ function dbToPost(
   reactions: any[], 
   authorName?: string,
   authorAvatarUrl?: string,
-  authorAvatarColor?: string
+  authorAvatarColor?: string,
+  commentCount: number = 0
 ): UserPost {
   // Calculate points based on reactions count (each reaction = 1 point)
   const reactionCount = reactions?.length || 0;
@@ -38,9 +40,10 @@ function dbToPost(
     authorAvatarUrl,
     authorAvatarColor,
     points: reactionCount, // Points = number of reactions
+    commentCount,
     createdAt: dbRow.created_at,
     imageUrl: dbRow.image_data,
-    reactions: reactions.map(r => ({ userEmail: r.user_email, type: r.type.toUpperCase() })),
+    reactions: reactions.map(r => ({ userEmail: r.user_email, type: (r.type || 'FIRE').toUpperCase() })),
     visibility: 'PUBLIC',
   };
 }
@@ -76,27 +79,39 @@ export async function getUserPosts(email: string): Promise<UserPost[]> {
     .eq('author_email', email)
     .order('created_at', { ascending: false });
 
-  if (postsError || !posts) return [];
+  if (postsError || !posts || posts.length === 0) return [];
 
-  // Get user info for author name & avatar
-  const { data: user } = await supabase
-    .from('users')
-    .select('email, name, nickname, avatar_url, avatar_color')
-    .eq('email', email)
-    .single();
-
-  // Get reactions for all posts
   const postIds = posts.map(p => p.id);
-  const { data: reactions } = await supabase
-    .from('reactions')
-    .select('*')
-    .in('post_id', postIds);
+
+  // Get user info, reactions, and comments count in parallel
+  const [userRes, reactionsRes, commentsRes] = await Promise.all([
+    supabase
+      .from('users')
+      .select('email, name, nickname, avatar_url, avatar_color')
+      .eq('email', email)
+      .single(),
+    supabase
+      .from('reactions')
+      .select('post_id, user_email, type')
+      .in('post_id', postIds),
+    supabase
+      .from('comments')
+      .select('post_id')
+      .in('post_id', postIds),
+  ]);
+
+  const user = userRes.data;
+  const reactions = reactionsRes.data || [];
+  const commentCounts: Record<string, number> = {};
+  (commentsRes.data || []).forEach((c: any) => {
+    commentCounts[c.post_id] = (commentCounts[c.post_id] || 0) + 1;
+  });
 
   const authorName = user?.nickname || user?.name || email;
 
   return posts.map(post => {
-    const postReactions = reactions?.filter(r => r.post_id === post.id) || [];
-    return dbToPost(post, postReactions, authorName, user?.avatar_url, user?.avatar_color);
+    const postReactions = reactions.filter(r => r.post_id === post.id);
+    return dbToPost(post, postReactions, authorName, user?.avatar_url, user?.avatar_color, commentCounts[post.id] || 0);
   });
 }
 
@@ -141,26 +156,34 @@ export async function getPostsPage(limit = 20, beforeISO?: string, grade?: strin
   const authorEmails = [...new Set(posts.map(p => p.author_email))];
   const postIds = posts.map(p => p.id);
 
-  // Fetch author details, reactions, and comments in parallel
-  const [usersRes, reactionsRes] = await Promise.all([
+  // Fetch author details, reactions, and comments in a single parallel roundtrip
+  const [usersRes, reactionsRes, commentsRes] = await Promise.all([
     supabase
       .from('users')
       .select('email, name, nickname, grade, avatar_url, avatar_color')
       .in('email', authorEmails),
     supabase
       .from('reactions')
-      .select('*')
+      .select('post_id, user_email, type')
+      .in('post_id', postIds),
+    supabase
+      .from('comments')
+      .select('post_id')
       .in('post_id', postIds),
   ]);
 
   const userMap = new Map((usersRes.data || []).map((u: any) => [u.email, u]));
   const reactions = reactionsRes.data || [];
+  const commentCounts: Record<string, number> = {};
+  (commentsRes.data || []).forEach((c: any) => {
+    commentCounts[c.post_id] = (commentCounts[c.post_id] || 0) + 1;
+  });
 
   return posts.map(post => {
     const postReactions = reactions.filter((r: any) => r.post_id === post.id);
     const user = userMap.get(post.author_email);
     const authorName = user?.nickname || user?.name || post.author_email;
-    return dbToPost(post, postReactions, authorName, user?.avatar_url, user?.avatar_color);
+    return dbToPost(post, postReactions, authorName, user?.avatar_url, user?.avatar_color, commentCounts[post.id] || 0);
   });
 }
 

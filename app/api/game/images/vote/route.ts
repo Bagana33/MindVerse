@@ -1,35 +1,24 @@
 import { NextResponse } from "next/server";
 import { getSessionFromCookies } from "../../../../../lib/session";
 import { supabase } from "../../../../../lib/supabase";
+import { invalidateServerCache } from "../../../../../lib/serverCache";
 
 async function toClient(images: any[]) {
-  // Get all unique user emails
-  const userEmails = new Set<string>();
-  images.forEach(img => {
-    if (img.added_by) userEmails.add(img.added_by);
-  });
-
-  // Fetch user info for all emails
+  const userEmails = Array.from(new Set(images.map((img: any) => img.added_by).filter(Boolean))) as string[];
   const userInfoMap = new Map<string, { name?: string; nickname?: string }>();
-  if (userEmails.size > 0) {
+
+  if (userEmails.length > 0) {
     try {
-      const { getUser } = await import("../../../../../lib/users");
-      const userPromises = Array.from(userEmails).map(async (email) => {
-        try {
-          const user = await getUser(email);
-          if (user) {
-            userInfoMap.set(email, {
-              name: user.name,
-              nickname: user.nickname,
-            });
-          }
-        } catch (err) {
-          console.error(`Error fetching user ${email}:`, err);
-        }
+      const { data: users } = await supabase
+        .from("users")
+        .select("email, name, nickname")
+        .in("email", userEmails);
+
+      (users || []).forEach((u: any) => {
+        userInfoMap.set(u.email, { name: u.name, nickname: u.nickname });
       });
-      await Promise.allSettled(userPromises);
     } catch (err) {
-      console.error("Error fetching users:", err);
+      console.error("Error fetching users for game images vote:", err);
     }
   }
 
@@ -131,6 +120,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Санал өгөхөд алдаа" }, { status: 500 });
     }
 
+    invalidateServerCache('game');
     const { data: all, error: fetchError } = await supabase.from("game_images").select("*");
     if (fetchError) {
       console.error("Fetch all images error:", fetchError);

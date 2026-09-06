@@ -25,6 +25,7 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!session) return;
     async function loadNotifs() {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
       try {
         const res = await cachedFetch("/api/notifications");
         if (res.ok) {
@@ -34,7 +35,7 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
       } catch {}
     }
     loadNotifs();
-    const interval = setInterval(loadNotifs, 30000);
+    const interval = setInterval(loadNotifs, 45000);
     return () => clearInterval(interval);
   }, [session]);
 

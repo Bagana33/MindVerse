@@ -177,6 +177,10 @@ export async function POST(req: Request) {
       // Continue even if state update fails
     }
 
+    const { invalidateServerCache } = await import("../../../../lib/serverCache");
+    invalidateServerCache('game');
+    invalidateServerCache('leaderboard');
+
     return NextResponse.json({
       ok: true,
       winner: {

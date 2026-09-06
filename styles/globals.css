@@ -7,11 +7,18 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    scroll-behavior: smooth;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
   body {
-    @apply bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950;
-    background-attachment: fixed;
-    font-family: 'Plus Jakarta Sans', sans-serif;
+    @apply bg-slate-950 text-slate-300;
+    font-family: var(--font-plus-jakarta-sans, 'Plus Jakarta Sans', sans-serif);
     background-color: #050505;
+    overflow-x: hidden;
   }
 }
 

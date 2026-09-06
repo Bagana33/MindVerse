@@ -11,9 +11,13 @@ export async function GET(req: Request) {
   }
 
   const cacheKey = `user_info:${email}`;
-  const cached = getCached<any>(cacheKey, 5000);
+  const cached = getCached<any>(cacheKey, 30_000);
   if (cached) {
-    return NextResponse.json(cached);
+    return NextResponse.json(cached, {
+      headers: {
+        'Cache-Control': 'public, s-maxage=15, stale-while-revalidate=60',
+      },
+    });
   }
 
   const user = await getUser(email);
@@ -35,13 +39,12 @@ export async function GET(req: Request) {
   };
 
   const resObj = { ok: true, user: safe };
-  setCached(cacheKey, resObj);
+  setCached(cacheKey, resObj, 30_000);
 
-  return new NextResponse(JSON.stringify(resObj), {
+  return NextResponse.json(resObj, {
     headers: {
-      'Content-Type': 'application/json',
-      'Cache-Control': 'public, s-maxage=10, stale-while-revalidate=60'
-    }
+      'Cache-Control': 'public, s-maxage=15, stale-while-revalidate=60',
+    },
   });
 }
 

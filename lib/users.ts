@@ -1,7 +1,7 @@
 // Supabase-based user storage
 import { supabase } from './supabase';
 import bcrypt from 'bcryptjs';
-import { invalidateServerCache } from './serverCache';
+import { getCached, setCached, invalidateServerCache } from './serverCache';
 
 export type User = {
 
@@ -171,6 +171,10 @@ export async function resetUserPassword(email: string, newPassword: string): Pro
 export async function getUser(email: string): Promise<User | null> {
   // Normalize email to lowercase for case-insensitive comparison
   const normalizedEmail = normalizeEmail(email);
+  const cacheKey = `user_db:${normalizedEmail}`;
+  const cached = getCached<User>(cacheKey, 30_000);
+  if (cached) return cached;
+
   const { data, error } = await supabase
     .from('users')
     .select('*')
@@ -178,7 +182,9 @@ export async function getUser(email: string): Promise<User | null> {
     .limit(1);
 
   if (error || !data || data.length === 0) return null;
-  return dbToUser(data[0]);
+  const user = dbToUser(data[0]);
+  setCached(cacheKey, user, 30_000);
+  return user;
 }
 
 export async function updateUser(email: string, updates: Partial<Omit<User, 'email' | 'role'>>): Promise<User | null> {
@@ -200,10 +206,14 @@ export async function updateUser(email: string, updates: Partial<Omit<User, 'ema
     return null;
   }
 
-  invalidateServerCache(`user_info:${email.toLowerCase()}`);
-  invalidateServerCache(`user_meta:${email.toLowerCase()}`);
+  const normalized = email.toLowerCase();
+  invalidateServerCache(`user_db:${normalized}`);
+  invalidateServerCache(`user_info:${normalized}`);
+  invalidateServerCache(`user_meta:${normalized}`);
   invalidateServerCache('leaderboard');
-  return dbToUser(data);
+  const user = dbToUser(data);
+  setCached(`user_db:${normalized}`, user, 30_000);
+  return user;
 }
 
 export async function addExperience(email: string, points: number): Promise<User | null> {
@@ -224,9 +234,13 @@ export async function addExperience(email: string, points: number): Promise<User
     return null;
   }
 
-  invalidateServerCache(`user_info:${email.toLowerCase()}`);
+  const normalized = email.toLowerCase();
+  invalidateServerCache(`user_db:${normalized}`);
+  invalidateServerCache(`user_info:${normalized}`);
   invalidateServerCache('leaderboard');
-  return dbToUser(data);
+  const updated = dbToUser(data);
+  setCached(`user_db:${normalized}`, updated, 30_000);
+  return updated;
 }
 
 // Set exact XP amount (for teacher management)
@@ -246,9 +260,13 @@ export async function setExperience(email: string, points: number): Promise<User
     return null;
   }
 
-  invalidateServerCache(`user_info:${email.toLowerCase()}`);
+  const normalized = email.toLowerCase();
+  invalidateServerCache(`user_db:${normalized}`);
+  invalidateServerCache(`user_info:${normalized}`);
   invalidateServerCache('leaderboard');
-  return dbToUser(data);
+  const updated = dbToUser(data);
+  setCached(`user_db:${normalized}`, updated, 30_000);
+  return updated;
 }
 
 export async function getAllUsers(limit: number = 100): Promise<User[]> {

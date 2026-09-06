@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "../auth/useSession";
+import { cachedFetch } from "../../lib/fetchCache";
 
 type UserPost = {
   id: string;
@@ -56,7 +57,7 @@ export function ProfileView() {
       setLoading(true);
       try {
         // Fetch user data (with XP)
-        const userRes = await fetch(`/api/user?email=${encodeURIComponent(targetEmail)}`);
+        const userRes = await cachedFetch(`/api/user?email=${encodeURIComponent(targetEmail)}`);
         if (userRes.ok) {
           const json = await userRes.json();
           setUserData(json.user);
@@ -81,7 +82,7 @@ export function ProfileView() {
         }
 
         // Fetch user's posts directly from user-specific endpoint
-        const postsRes = await fetch(`/api/posts/user/${encodeURIComponent(targetEmail)}`);
+        const postsRes = await cachedFetch(`/api/posts/user/${encodeURIComponent(targetEmail)}`);
         if (postsRes.ok) {
           const json = await postsRes.json();
           console.log('🔍 Profile posts fetch:', {

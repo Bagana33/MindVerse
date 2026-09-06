@@ -2,17 +2,33 @@
 type CacheEntry<T> = {
   data: T;
   timestamp: number;
+  ttlMs: number;
 };
 
 const cache = new Map<string, CacheEntry<any>>();
 
+// Periodic cleanup of stale cache entries
+let lastPurge = Date.now();
+function purgeExpired() {
+  const now = Date.now();
+  if (now - lastPurge < 30_000) return;
+  lastPurge = now;
+  for (const [key, entry] of cache.entries()) {
+    if (now - entry.timestamp > entry.ttlMs) {
+      cache.delete(key);
+    }
+  }
+}
+
 /**
  * Retrieve cached item if valid within TTL
  */
-export function getCached<T>(key: string, ttlMs = 3000): T | null {
+export function getCached<T>(key: string, ttlMs = 15_000): T | null {
+  purgeExpired();
   const entry = cache.get(key);
   if (!entry) return null;
-  if (Date.now() - entry.timestamp > ttlMs) {
+  const maxAge = entry.ttlMs || ttlMs;
+  if (Date.now() - entry.timestamp > maxAge) {
     cache.delete(key);
     return null;
   }
@@ -20,10 +36,10 @@ export function getCached<T>(key: string, ttlMs = 3000): T | null {
 }
 
 /**
- * Store data in server memory
+ * Store data in server memory with TTL
  */
-export function setCached<T>(key: string, data: T): void {
-  cache.set(key, { data, timestamp: Date.now() });
+export function setCached<T>(key: string, data: T, ttlMs = 15_000): void {
+  cache.set(key, { data, timestamp: Date.now(), ttlMs });
 }
 
 /**
@@ -40,3 +56,4 @@ export function invalidateServerCache(prefix?: string): void {
     }
   }
 }
+

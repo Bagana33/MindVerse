@@ -154,6 +154,9 @@ export async function POST(req: Request) {
       console.error("Error updating game state:", stateError);
     }
 
+    const { invalidateServerCache } = await import("../../../../lib/serverCache");
+    invalidateServerCache('game');
+
     return NextResponse.json({
       ok: true,
       message: `${filteredSubmissions.length} ажил олдлоо`,
