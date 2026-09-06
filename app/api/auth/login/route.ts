@@ -72,8 +72,8 @@ export async function POST(req: Request) {
         return NextResponse.json({ ok: false, error: err.message || "Бүртгэл амжилтгүй" }, { status: 400 });
       }
     } else {
-      // Single DB query for signin verification (avoids double roundtrip)
-      const existing = await getUser(email);
+      // Direct DB query for signin verification (bypass cache for accurate auth)
+      const existing = await getUser(email, { bypassCache: true });
       if (!existing) {
         return NextResponse.json({ ok: false, error: "Email эсвэл нууц үг буруу байна" }, { status: 401 });
       }

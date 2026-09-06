@@ -63,8 +63,8 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2. Check if user exists
-    const existing = await getUser(email);
+    // 2. Check if user exists (fresh from DB)
+    const existing = await getUser(email, { bypassCache: true });
     if (!existing) {
       return NextResponse.json(
         { ok: false, error: "Энэ имэйл хаягаар бүртгэлтэй хэрэглэгч олдсонгүй" },

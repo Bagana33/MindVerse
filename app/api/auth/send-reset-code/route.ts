@@ -36,8 +36,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Зөв имэйл хаяг оруулна уу" }, { status: 400 });
     }
 
-    // Check if user exists
-    const user = await getUser(email);
+    // Check if user exists (fresh from DB)
+    const user = await getUser(email, { bypassCache: true });
     if (!user) {
       return NextResponse.json(
         { ok: false, error: "Энэ имэйл хаягаар бүртгэлтэй хэрэглэгч олдсонгүй" },

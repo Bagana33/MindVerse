@@ -413,15 +413,13 @@ export function LoginForm() {
                 </label>
               )}
 
-              {mode !== "forgot" && (
+              {mode === "signup" && (
                 <div className="space-y-3 text-sm">
                   <label className="block font-semibold text-slate-200">
-                    👥 {mode === "signin" ? "Та хэн бэ?" : "Хэрэглэгчийн төрөл"}
+                    👥 Хэрэглэгчийн төрөл
                   </label>
                   <p className="text-xs text-slate-400 -mt-1">
-                    {mode === "signin" 
-                      ? "Та сурагч уу багш уу?"
-                      : "Сурагчид XP цуглуулж, багш нар даалгавар үүсгэнэ"}
+                    Сурагчид XP цуглуулж, багш нар даалгавар үүсгэнэ
                   </p>
                   <div className="grid grid-cols-2 gap-3">
                     <label className={`flex flex-col items-center justify-center gap-2 cursor-pointer rounded-xl border-2 px-4 py-5 transition-all duration-300 ${

@@ -89,6 +89,8 @@ export async function createUser(email: string, password: string, name?: string,
         console.error('Error upgrading existing user with password:', error);
         throw error || new Error('Upgrade failed');
       }
+      invalidateServerCache(`user_db:${normalizedEmail}`);
+      invalidateServerCache(`user_info:${normalizedEmail}`);
       return dbToUser(data);
     }
     throw new Error('Email хаяг аль хэдийн бүртгэлтэй байна');
@@ -116,6 +118,8 @@ export async function createUser(email: string, password: string, name?: string,
     throw error;
   }
 
+  invalidateServerCache(`user_db:${normalizedEmail}`);
+  invalidateServerCache(`user_info:${normalizedEmail}`);
   return dbToUser(data);
 }
 
@@ -143,7 +147,7 @@ export async function verifyUser(email: string, password: string): Promise<User 
 // Reset user password
 export async function resetUserPassword(email: string, newPassword: string): Promise<User> {
   const normalizedEmail = normalizeEmail(email);
-  const existingUser = await getUser(normalizedEmail);
+  const existingUser = await getUser(normalizedEmail, { bypassCache: true });
   if (!existingUser) {
     throw new Error("Ийм бүртгэлтэй хэрэглэгч олдсонгүй");
   }
@@ -165,15 +169,21 @@ export async function resetUserPassword(email: string, newPassword: string): Pro
     throw new Error("Нууц үг шинэчлэхэд алдаа гарлаа");
   }
 
+  invalidateServerCache(`user_db:${normalizedEmail}`);
+  invalidateServerCache(`user_info:${normalizedEmail}`);
+  invalidateServerCache(`user_meta:${normalizedEmail}`);
+
   return dbToUser(data);
 }
 
-export async function getUser(email: string): Promise<User | null> {
+export async function getUser(email: string, options: { bypassCache?: boolean } = {}): Promise<User | null> {
   // Normalize email to lowercase for case-insensitive comparison
   const normalizedEmail = normalizeEmail(email);
   const cacheKey = `user_db:${normalizedEmail}`;
-  const cached = getCached<User>(cacheKey, 30_000);
-  if (cached) return cached;
+  if (!options.bypassCache) {
+    const cached = getCached<User>(cacheKey, 30_000);
+    if (cached) return cached;
+  }
 
   const { data, error } = await supabase
     .from('users')
