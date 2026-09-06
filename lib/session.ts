@@ -39,8 +39,16 @@ function sign(payload: string, secret: string): string {
 }
 
 export function encodeSession(session: Session): string {
+  // CRITICAL: Cookie size must remain small (< 4KB). Never serialize base64 data URIs into cookies.
+  const safeSession: Session = {
+    ...session,
+    avatarUrl:
+      session.avatarUrl && session.avatarUrl.length < 500 && !session.avatarUrl.startsWith("data:")
+        ? session.avatarUrl
+        : undefined,
+  };
   const secret = getSecret();
-  const json = JSON.stringify(session);
+  const json = JSON.stringify(safeSession);
   const b64 = base64url(json);
   const sig = sign(b64, secret);
   return `${b64}.${sig}`;
