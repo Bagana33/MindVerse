@@ -133,6 +133,40 @@ export default function AdminPage() {
     }
   }
 
+  async function handleResetAllXP() {
+    const ok = confirm("АНХААРУУЛГА: Бүх сурагчдын XP-г 0 болгож шинэ улирлын тохиргоо хийх гэж байна.\n\nҮргэлжлүүлэх үү?");
+    if (!ok) return;
+
+    setProcessing(true);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/admin/manage-xp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "set",
+          amount: 0,
+          applyToAll: true,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setMessage({ type: "error", text: json.error || "Алдаа гарлаа" });
+        return;
+      }
+      setMessage({ type: "success", text: "✅ Бүх сурагчдын XP амжилттай 0 боллоо!" });
+      const refreshRes = await fetch("/api/leaderboard");
+      if (refreshRes.ok) {
+        const refreshJson = await refreshRes.json();
+        setStudents(refreshJson.leaderboard || []);
+      }
+    } catch (err: any) {
+      setMessage({ type: "error", text: err.message || "Сүлжээний алдаа гарлаа" });
+    } finally {
+      setProcessing(false);
+    }
+  }
+
   async function handleDeleteStudent(studentEmail: string, studentName?: string) {
     const displayName = studentName || studentEmail;
     if (!confirm(`"${displayName}" сурагчийг бүрмөсөн устгах уу?\n\nЭнэ үйлдлийг буцаах боломжгүй. Сурагчийн:\n- Бүх постууд\n- Сэтгэгдлүүд\n- Reactions\n- Notifications\n\nБүгд устах болно.`)) {
@@ -246,8 +280,21 @@ export default function AdminPage() {
 
         {/* XP Management Form */}
         <div className="rounded-3xl border border-slate-700/50 bg-slate-900/50 px-6 py-6 shadow-xl">
-          <h2 className="text-xl font-bold text-white">XP удирдлага</h2>
-          <p className="mt-1 text-sm text-slate-400">Сурагчдад XP нэмэх эсвэл тогтоох</p>
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-white">XP удирдлага</h2>
+              <p className="mt-1 text-sm text-slate-400">Сурагчдад XP нэмэх эсвэл тогтоох</p>
+            </div>
+            <button
+              type="button"
+              onClick={handleResetAllXP}
+              disabled={processing}
+              className="px-4 py-2 rounded-xl text-xs font-bold border border-rose-500/40 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 hover:border-rose-400 transition-all shadow-[0_0_12px_rgba(244,63,94,0.15)] flex items-center gap-2 disabled:opacity-50"
+            >
+              <span>🔄</span>
+              <span>Бүх сурагчдын XP-г 0 болгох (Reset)</span>
+            </button>
+          </div>
 
           {/* Apply to all students toggle */}
           <div className="mt-4 flex items-center justify-between rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3">

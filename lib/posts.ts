@@ -10,6 +10,7 @@ export type UserPost = {
   description: string;
   author: string;
   authorEmail: string;
+  authorGrade?: string;
   authorAvatarUrl?: string;
   authorAvatarColor?: string;
   points: number;
@@ -27,7 +28,8 @@ function dbToPost(
   authorName?: string,
   authorAvatarUrl?: string,
   authorAvatarColor?: string,
-  commentCount: number = 0
+  commentCount: number = 0,
+  authorGrade?: string
 ): UserPost {
   // Calculate points based on reactions count (each reaction = 1 point)
   const reactionCount = reactions?.length || 0;
@@ -37,6 +39,7 @@ function dbToPost(
     description: dbRow.description || dbRow.text,
     author: authorName || dbRow.author_email, // Use provided name or fallback to email
     authorEmail: dbRow.author_email,
+    authorGrade,
     authorAvatarUrl,
     authorAvatarColor,
     points: reactionCount, // Points = number of reactions
@@ -87,7 +90,7 @@ export async function getUserPosts(email: string): Promise<UserPost[]> {
   const [userRes, reactionsRes, commentsRes] = await Promise.all([
     supabase
       .from('users')
-      .select('email, name, nickname, avatar_url, avatar_color')
+      .select('email, name, nickname, grade, avatar_url, avatar_color')
       .eq('email', email)
       .single(),
     supabase
@@ -111,7 +114,7 @@ export async function getUserPosts(email: string): Promise<UserPost[]> {
 
   return posts.map(post => {
     const postReactions = reactions.filter(r => r.post_id === post.id);
-    return dbToPost(post, postReactions, authorName, user?.avatar_url, user?.avatar_color, commentCounts[post.id] || 0);
+    return dbToPost(post, postReactions, authorName, user?.avatar_url, user?.avatar_color, commentCounts[post.id] || 0, user?.grade);
   });
 }
 
@@ -183,7 +186,7 @@ export async function getPostsPage(limit = 20, beforeISO?: string, grade?: strin
     const postReactions = reactions.filter((r: any) => r.post_id === post.id);
     const user = userMap.get(post.author_email);
     const authorName = user?.nickname || user?.name || post.author_email;
-    return dbToPost(post, postReactions, authorName, user?.avatar_url, user?.avatar_color, commentCounts[post.id] || 0);
+    return dbToPost(post, postReactions, authorName, user?.avatar_url, user?.avatar_color, commentCounts[post.id] || 0, user?.grade);
   });
 }
 

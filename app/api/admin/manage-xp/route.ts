@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionFromCookies } from "../../../../lib/session";
 import { setExperience, addExperience, getUser } from "../../../../lib/users";
 import { supabase } from "../../../../lib/supabase";
+import { invalidateServerCache } from "../../../../lib/serverCache";
 
 // POST: Manage student XP (teacher only)
 export async function POST(req: Request) {
@@ -75,6 +76,9 @@ export async function POST(req: Request) {
       }
 
       const affected = updated?.length || 0;
+      invalidateServerCache('leaderboard');
+      invalidateServerCache('user_db');
+      invalidateServerCache('user_info');
 
       return NextResponse.json({
         ok: true,

@@ -30,6 +30,7 @@ export type UserPost = {
   description: string;
   author: string;
   authorEmail: string;
+  authorGrade?: string;
   authorAvatarUrl?: string;
   authorAvatarColor?: string;
   points: number;
@@ -247,6 +248,11 @@ export const FeedPostCard = React.memo(function FeedPostCard({
                 {post.authorEmail === "news-bot" && (
                   <span className="inline-flex items-center gap-0.5 rounded-full border border-cyan-400/40 bg-black/40 backdrop-blur-sm px-2 py-0.5 text-[10px] text-cyan-300 font-semibold shrink-0">
                     🤖 AI
+                  </span>
+                )}
+                {post.authorGrade === "12" && (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-500/15 backdrop-blur-sm px-2 py-0.5 text-[10px] text-amber-300 font-bold shrink-0 shadow-[0_0_8px_rgba(251,191,36,0.25)]">
+                    🎓 12-р анги · Архив
                   </span>
                 )}
               </div>

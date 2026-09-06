@@ -27,11 +27,11 @@ type LeaderboardUser = {
 
 type GradeFilter = "all" | "10" | "11" | "12";
 
-const gradeFilters: Array<{ value: GradeFilter; label: string; shortLabel: string }> = [
-  { value: "all", label: "All Grades", shortLabel: "All" },
-  { value: "10", label: "10th Grade", shortLabel: "10" },
-  { value: "11", label: "11th Grade", shortLabel: "11" },
-  { value: "12", label: "12th Grade", shortLabel: "12" },
+const gradeFilters: Array<{ value: GradeFilter; label: string; shortLabel: string; isArchive?: boolean }> = [
+  { value: "all", label: "Бүх бүтээл", shortLabel: "Бүгд" },
+  { value: "10", label: "10-р анги", shortLabel: "10-р анги" },
+  { value: "11", label: "11-р анги", shortLabel: "11-р анги" },
+  { value: "12", label: "📦 12-р анги (Архив)", shortLabel: "🎓 12-р анги (Архив)", isArchive: true },
 ];
 
 /** Accurate search matching:
@@ -785,8 +785,12 @@ export function HomeDashboard() {
                     disabled={isFilterLoading && !active}
                     className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all border ${
                       active
-                        ? "bg-gradient-to-r from-primary-500 to-indigo-500 text-white border-primary-400/30 shadow-[0_8px_20px_rgba(99,102,241,0.35)]"
-                        : "bg-dark-800/80 text-slate-300 border-white/10 hover:border-primary-500/40 hover:text-white"
+                        ? grade.isArchive
+                          ? "bg-gradient-to-r from-amber-500 to-orange-500 text-white border-amber-300/40 shadow-[0_8px_20px_rgba(245,158,11,0.35)]"
+                          : "bg-gradient-to-r from-primary-500 to-indigo-500 text-white border-primary-400/30 shadow-[0_8px_20px_rgba(99,102,241,0.35)]"
+                        : grade.isArchive
+                          ? "bg-dark-800/80 text-amber-300/90 border-amber-500/30 hover:border-amber-400/60 hover:text-amber-200 shadow-[0_0_12px_rgba(245,158,11,0.1)]"
+                          : "bg-dark-800/80 text-slate-300 border-white/10 hover:border-primary-500/40 hover:text-white"
                     } disabled:opacity-60 disabled:cursor-not-allowed`}
                   >
                     {grade.shortLabel}
