@@ -290,6 +290,7 @@ export async function getLeaderboard(): Promise<User[]> {
     .from('users')
     .select('*')
     .eq('role', 'student')
+    .in('grade', ['10', '11', '12'])
     .order('experience', { ascending: false });
 
   if (error || !data) {
@@ -306,6 +307,7 @@ export async function getLeaderboardLight(grade?: string, limit: number = 100): 
     .from('users')
     .select('email,name,nickname,avatar_url,avatar_color,role,grade,experience')
     .eq('role', 'student')
+    .in('grade', ['10', '11', '12'])
     .order('experience', { ascending: false })
     .limit(limit);
 

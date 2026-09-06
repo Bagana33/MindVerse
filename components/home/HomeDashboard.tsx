@@ -25,13 +25,14 @@ type LeaderboardUser = {
   experience: number;
 };
 
-type GradeFilter = "all" | "10" | "11" | "12";
+type GradeFilter = "all" | "10" | "11" | "12" | "graduated";
 
 const gradeFilters: Array<{ value: GradeFilter; label: string; shortLabel: string; isArchive?: boolean }> = [
   { value: "all", label: "Бүх бүтээл", shortLabel: "Бүгд" },
   { value: "10", label: "10-р анги", shortLabel: "10-р анги" },
   { value: "11", label: "11-р анги", shortLabel: "11-р анги" },
-  { value: "12", label: "📦 12-р анги (Архив)", shortLabel: "🎓 12-р анги (Архив)", isArchive: true },
+  { value: "12", label: "12-р анги", shortLabel: "12-р анги" },
+  { value: "graduated", label: "🎓 Төгсөгчдийн архив", shortLabel: "🎓 Төгсөгчид (Архив)", isArchive: true },
 ];
 
 /** Accurate search matching:
