@@ -50,11 +50,11 @@ function TopbarInner() {
     if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
     try {
       setLoadingNotifs(true);
-      const res = await cachedFetch('/api/notifications');
+      const res = await fetch('/api/notifications', { cache: 'no-store' });
       const data = await res.json();
       if (data.ok) {
         setNotifications(data.notifications || []);
-        setUnreadCount(data.unreadCount || 0);
+        setUnreadCount(data.unreadCount ?? 0);
       }
     } catch (e) {
       // silent
@@ -65,7 +65,7 @@ function TopbarInner() {
 
   useEffect(() => {
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 60000); // poll every 60s
+    const interval = setInterval(fetchNotifications, 30000); // poll every 30s
     return () => clearInterval(interval);
   }, [fetchNotifications]);
 
@@ -87,14 +87,27 @@ function TopbarInner() {
     return () => { active = false; };
   }, [session?.email]);
 
-  const markAllRead = useCallback(async () => {
+  const markOneRead = useCallback(async (id: string) => {
+    try {
+      const res = await fetch('/api/notifications/mark-read', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setNotifications(prev => prev.map(n => (n.id === id ? { ...n, read: true } : n)));
+        setUnreadCount(prev => Math.max(0, prev - 1));
+      }
+    } catch {}
+  }, []);
 
+  const markAllRead = useCallback(async () => {
     try {
       const res = await fetch('/api/notifications/mark-read', { method: 'POST' });
       const data = await res.json();
       if (data.ok) {
         setUnreadCount(0);
-        // Update local notifications as read
         setNotifications(prev => prev.map(n => ({ ...n, read: true })));
       }
     } catch {}
@@ -267,7 +280,11 @@ function TopbarInner() {
               <div className="inline-flex items-center gap-2">
                 <div className="relative">
                   <button
-                    onClick={() => setOpen(o => !o)}
+                    onClick={() => setOpen(o => {
+                      const next = !o;
+                      if (next) fetchNotifications();
+                      return next;
+                    })}
                     className="relative rounded-full w-10 h-10 flex items-center justify-center glass-panel hover:bg-slate-800/60 transition-all"
                     aria-label="Notifications"
                   >
@@ -279,13 +296,17 @@ function TopbarInner() {
                     )}
                   </button>
                   {open && (
-                    <div className="absolute right-0 mt-2 w-72 max-h-96 overflow-auto rounded-2xl glass-panel backdrop-blur-xl border border-slate-700/40 shadow-xl p-3 z-50 animate-fade-in">
+                    <div className="absolute right-0 mt-2 w-80 max-h-96 overflow-auto rounded-2xl glass-panel backdrop-blur-xl border border-slate-700/40 shadow-xl p-3 z-50 animate-fade-in">
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-semibold text-slate-300">Мэдэгдэл</span>
-                        <div className="flex items-center gap-2">
-                          <button onClick={fetchNotifications} className="text-[10px] px-2 py-1 rounded-full bg-slate-800/50 hover:bg-slate-700/60 text-slate-300">↻</button>
-                          <button onClick={markAllRead} className="text-[10px] px-2 py-1 rounded-full bg-violet-600/40 hover:bg-violet-600 text-violet-100">Уншсан</button>
-                          <button onClick={clearAll} className="text-[10px] px-2 py-1 rounded-full bg-red-600/40 hover:bg-red-600 text-red-100">Устгах</button>
+                        <div className="flex items-center gap-1.5">
+                          <button onClick={fetchNotifications} title="Шинэчлэх" className="text-[10px] px-2 py-1 rounded-full bg-slate-800/50 hover:bg-slate-700/60 text-slate-300">↻</button>
+                          {unreadCount > 0 && (
+                            <button onClick={markAllRead} className="text-[10px] px-2 py-1 rounded-full bg-violet-600/40 hover:bg-violet-600 text-violet-100">Уншсан</button>
+                          )}
+                          {notifications.length > 0 && (
+                            <button onClick={clearAll} className="text-[10px] px-2 py-1 rounded-full bg-red-600/40 hover:bg-red-600 text-red-100">Устгах</button>
+                          )}
                         </div>
                       </div>
                       {loadingNotifs && notifications.length === 0 && (
@@ -295,25 +316,49 @@ function TopbarInner() {
                         <div className="text-xs text-slate-500 py-4 text-center">Мэдэгдэл алга</div>
                       )}
                       <ul className="space-y-2">
-                        {notifications.map(n => (
-                          <li key={n.id} className={[
-                            "rounded-xl px-3 py-2 text-xs flex flex-col gap-1 border transition-all",
-                            n.read ? "border-slate-700/40 bg-slate-800/40" : "border-violet-500/40 bg-violet-950/60 shadow-[0_0_0_1px_rgba(139,92,246,0.4)]"
-                          ].join(" ")}> 
-                            <div className="flex items-center justify-between">
-                              <span className="font-medium text-slate-200">
-                                {n.type === 'LIKE' && '👍 Like'}
-                                {n.type === 'GRADE' && '📝 Grade'}
-                                {n.type === 'CONTEST_WIN' && '🏆 Winner'}
-                              </span>
-                              <span className="text-[10px] text-slate-400">
-                                {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                              </span>
-                            </div>
-                            <span className="text-[11px] text-slate-300 leading-snug">{n.message}</span>
-                          </li>
-                        ))}
+                        {notifications.map(n => {
+                          const type = n.type || 'LIKE';
+                          const badge = {
+                            LIKE: { label: '❤️ Реакц', color: 'text-rose-400 bg-rose-500/15 border-rose-500/30' },
+                            COMMENT: { label: '💬 Сэтгэгдэл', color: 'text-sky-400 bg-sky-500/15 border-sky-500/30' },
+                            GRADE: { label: '📝 Үнэлгээ', color: 'text-amber-400 bg-amber-500/15 border-amber-500/30' },
+                            CONTEST_WIN: { label: '🏆 Уралдаан', color: 'text-purple-400 bg-purple-500/15 border-purple-500/30' },
+                            LESSON: { label: '📚 Хичээл', color: 'text-emerald-400 bg-emerald-500/15 border-emerald-500/30' },
+                          }[type as string] || { label: '🔔 Мэдэгдэл', color: 'text-violet-400 bg-violet-500/15 border-violet-500/30' };
+
+                          return (
+                            <li
+                              key={n.id}
+                              onClick={() => {
+                                if (!n.read) markOneRead(n.id);
+                              }}
+                              className={[
+                                "rounded-xl px-3 py-2 text-xs flex flex-col gap-1 border transition-all cursor-pointer",
+                                n.read ? "border-slate-700/40 bg-slate-800/40" : "border-violet-500/40 bg-violet-950/60 shadow-[0_0_0_1px_rgba(139,92,246,0.4)]"
+                              ].join(" ")}
+                            > 
+                              <div className="flex items-center justify-between">
+                                <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border ${badge.color}`}>
+                                  {badge.label}
+                                </span>
+                                <span className="text-[10px] text-slate-400">
+                                  {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              </div>
+                              <span className="text-[11px] text-slate-300 leading-snug">{n.message}</span>
+                            </li>
+                          );
+                        })}
                       </ul>
+                      <div className="mt-2 pt-2 border-t border-slate-700/40 text-center">
+                        <Link
+                          href="/profile?tab=notifications"
+                          onClick={() => setOpen(false)}
+                          className="text-[10px] text-violet-300 hover:text-white"
+                        >
+                          Бүх мэдэгдлийг үзэх →
+                        </Link>
+                      </div>
                     </div>
                   )}
                 </div>

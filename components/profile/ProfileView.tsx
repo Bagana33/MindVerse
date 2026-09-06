@@ -47,6 +47,87 @@ export function ProfileView() {
   const viewingUserEmail = userParam ? userParam.trim() || null : null;
   const isOwnProfile = !viewingUserEmail || (session && viewingUserEmail === session.email);
 
+  // Tabs: Posts vs Notifications
+  const [activeTab, setActiveTab] = useState<"posts" | "notifications">("posts");
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [unreadNotifsCount, setUnreadNotifsCount] = useState(0);
+  const [loadingNotifs, setLoadingNotifs] = useState(false);
+  const [notifFilter, setNotifFilter] = useState<"all" | "unread">("all");
+
+  useEffect(() => {
+    const tabParam = searchParams.get("tab");
+    if (tabParam === "notifications") {
+      setActiveTab("notifications");
+    } else {
+      setActiveTab("posts");
+    }
+  }, [searchParams]);
+
+  const fetchProfileNotifications = async () => {
+    if (!isOwnProfile || !session?.email) return;
+    try {
+      setLoadingNotifs(true);
+      const res = await fetch("/api/notifications", { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.ok) {
+          setNotifications(data.notifications || []);
+          setUnreadNotifsCount(data.unreadCount ?? 0);
+        }
+      }
+    } catch {
+      // silent
+    } finally {
+      setLoadingNotifs(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isOwnProfile && session?.email) {
+      fetchProfileNotifications();
+    }
+  }, [isOwnProfile, session?.email]);
+
+  const handleMarkNotifRead = async (id: string) => {
+    try {
+      const res = await fetch("/api/notifications/mark-read", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setNotifications((prev) =>
+          prev.map((n) => (n.id === id ? { ...n, read: true } : n))
+        );
+        setUnreadNotifsCount((prev) => Math.max(0, prev - 1));
+      }
+    } catch {}
+  };
+
+  const handleMarkAllNotifsRead = async () => {
+    try {
+      const res = await fetch("/api/notifications/mark-read", { method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+        setUnreadNotifsCount(0);
+      }
+    } catch {}
+  };
+
+  const handleClearAllNotifs = async () => {
+    if (!confirm("Бүх мэдэгдлийг устгах уу?")) return;
+    try {
+      const res = await fetch("/api/notifications/clear", { method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        setNotifications([]);
+        setUnreadNotifsCount(0);
+      }
+    } catch {}
+  };
+
   useEffect(() => {
     async function fetchUserData() {
       const targetEmail = viewingUserEmail || session?.email;
@@ -463,25 +544,203 @@ export function ProfileView() {
         </div>
       </section>
 
-      <section className="bg-nc-panel/90 border border-nc-border rounded-2xl px-4 py-5 shadow-nc-soft">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold">
-            {isOwnProfile ? `Your posts (${userPosts.length})` : `${userData?.nickname || userData?.name || 'User'}'s posts (${userPosts.length})`}
-          </h3>
-          {userPosts.length > 0 && (
-            <span className="text-[10px] text-nc-muted">Tap image to view fullscreen</span>
-          )}
+      {/* Tabs for Own Profile */}
+      {isOwnProfile && (
+        <div className="flex items-center gap-2 border-b border-nc-border pb-1">
+          <button
+            onClick={() => {
+              setActiveTab("posts");
+              router.replace("/profile");
+            }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+              activeTab === "posts"
+                ? "bg-violet-600/20 text-violet-300 border border-violet-500/40 shadow-sm"
+                : "text-slate-400 hover:text-white hover:bg-slate-800/50"
+            }`}
+          >
+            <span>🎨 Бүтээлүүд</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400">
+              {userPosts.length}
+            </span>
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab("notifications");
+              router.replace("/profile?tab=notifications");
+              fetchProfileNotifications();
+            }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+              activeTab === "notifications"
+                ? "bg-violet-600/20 text-violet-300 border border-violet-500/40 shadow-sm"
+                : "text-slate-400 hover:text-white hover:bg-slate-800/50"
+            }`}
+          >
+            <span>🔔 Мэдэгдэл</span>
+            {unreadNotifsCount > 0 && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-pink-500 text-white font-bold animate-pulse">
+                {unreadNotifsCount}
+              </span>
+            )}
+          </button>
         </div>
-        {userPosts.length === 0 ? (
-          <p className="text-xs text-nc-muted">
-            {isOwnProfile 
-              ? "No posts yet. Create your first post on the home page!" 
-              : "This user hasn't posted anything yet."}
-          </p>
-        ) : (
-          <PostGrid posts={userPosts} onPostsChange={setUserPosts} isOwnProfile={isOwnProfile} />
-        )}
-      </section>
+      )}
+
+      {/* Tab 1: Posts Grid */}
+      {(!isOwnProfile || activeTab === "posts") && (
+        <section className="bg-nc-panel/90 border border-nc-border rounded-2xl px-4 py-5 shadow-nc-soft">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold">
+              {isOwnProfile ? `Your posts (${userPosts.length})` : `${userData?.nickname || userData?.name || 'User'}'s posts (${userPosts.length})`}
+            </h3>
+            {userPosts.length > 0 && (
+              <span className="text-[10px] text-nc-muted">Tap image to view fullscreen</span>
+            )}
+          </div>
+          {userPosts.length === 0 ? (
+            <p className="text-xs text-nc-muted">
+              {isOwnProfile 
+                ? "No posts yet. Create your first post on the home page!" 
+                : "This user hasn't posted anything yet."}
+            </p>
+          ) : (
+            <PostGrid posts={userPosts} onPostsChange={setUserPosts} isOwnProfile={isOwnProfile} />
+          )}
+        </section>
+      )}
+
+      {/* Tab 2: Notifications List */}
+      {isOwnProfile && activeTab === "notifications" && (
+        <section className="bg-nc-panel/90 border border-nc-border rounded-2xl px-4 py-5 shadow-nc-soft">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold text-white">Бүх Мэдэгдлүүд</h3>
+              {unreadNotifsCount > 0 && (
+                <span className="text-[10px] bg-pink-500/20 text-pink-300 border border-pink-500/40 px-2 py-0.5 rounded-full font-bold">
+                  {unreadNotifsCount} уншаагүй
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="flex rounded-lg bg-slate-800 p-0.5 border border-white/5">
+                <button
+                  onClick={() => setNotifFilter("all")}
+                  className={`text-xs px-2.5 py-1 rounded-md transition-all ${
+                    notifFilter === "all"
+                      ? "bg-violet-600 text-white font-semibold"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  Бүгд ({notifications.length})
+                </button>
+                <button
+                  onClick={() => setNotifFilter("unread")}
+                  className={`text-xs px-2.5 py-1 rounded-md transition-all ${
+                    notifFilter === "unread"
+                      ? "bg-violet-600 text-white font-semibold"
+                      : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  Шинэ ({unreadNotifsCount})
+                </button>
+              </div>
+
+              <button
+                onClick={fetchProfileNotifications}
+                disabled={loadingNotifs}
+                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+                title="Шинэчлэх"
+              >
+                <span className={`material-symbols-outlined text-[18px] ${loadingNotifs ? "animate-spin" : ""}`}>
+                  sync
+                </span>
+              </button>
+
+              {unreadNotifsCount > 0 && (
+                <button
+                  onClick={handleMarkAllNotifsRead}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-violet-600/30 hover:bg-violet-600/50 text-violet-200 border border-violet-500/40 transition-all font-medium"
+                >
+                  Бүгдийг уншсан
+                </button>
+              )}
+
+              {notifications.length > 0 && (
+                <button
+                  onClick={handleClearAllNotifs}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/30 transition-all font-medium"
+                >
+                  Цэвэрлэх
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* List */}
+          {loadingNotifs && notifications.length === 0 ? (
+            <div className="space-y-3">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 animate-pulse h-16" />
+              ))}
+            </div>
+          ) : notifications.length === 0 ? (
+            <div className="py-16 text-center">
+              <div className="text-4xl mb-3">🎉</div>
+              <h4 className="text-sm font-semibold text-slate-300 mb-1">Мэдэгдэл алга байна</h4>
+              <p className="text-xs text-slate-500">
+                Танд шинэ реакц, сэтгэгдэл, үнэлгээ ирэх үед энд автоматаар харагдана.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {notifications
+                .filter((n) => (notifFilter === "unread" ? !n.read : true))
+                .map((n) => {
+                  const type = n.type || "LIKE";
+                  const badgeConfig = {
+                    LIKE: { label: "❤️ Реакц", bg: "bg-rose-500/15 text-rose-300 border-rose-500/30" },
+                    COMMENT: { label: "💬 Сэтгэгдэл", bg: "bg-sky-500/15 text-sky-300 border-sky-500/30" },
+                    GRADE: { label: "📝 Үнэлгээ", bg: "bg-amber-500/15 text-amber-300 border-amber-500/30" },
+                    CONTEST_WIN: { label: "🏆 Уралдаан", bg: "bg-purple-500/15 text-purple-300 border-purple-500/30" },
+                    LESSON: { label: "📚 Хичээл", bg: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" },
+                  }[type as string] || { label: "🔔 Мэдэгдэл", bg: "bg-violet-500/15 text-violet-300 border-violet-500/30" };
+
+                  return (
+                    <div
+                      key={n.id}
+                      onClick={() => {
+                        if (!n.read) handleMarkNotifRead(n.id);
+                      }}
+                      className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-start justify-between gap-3 ${
+                        n.read
+                          ? "bg-slate-900/40 border-slate-800/80 text-slate-400 hover:bg-slate-800/40"
+                          : "bg-violet-950/40 border-violet-500/40 shadow-[0_0_15px_rgba(139,92,246,0.15)] text-slate-200 hover:bg-violet-900/40"
+                      }`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${badgeConfig.bg}`}>
+                            {badgeConfig.label}
+                          </span>
+                          {!n.read && (
+                            <span className="w-2 h-2 rounded-full bg-pink-500 shadow-[0_0_6px_rgba(236,72,153,0.8)]" />
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-200 leading-relaxed font-normal">{n.message}</p>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <span className="text-[10px] text-slate-400">
+                          {new Date(n.createdAt).toLocaleDateString()} {new Date(n.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }

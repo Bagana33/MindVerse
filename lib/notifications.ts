@@ -1,7 +1,8 @@
 // Supabase-based notifications store
 import { supabase } from './supabase';
+import { invalidateServerCache } from './serverCache';
 
-export type NotificationType = "LIKE" | "GRADE" | "CONTEST_WIN";
+export type NotificationType = "LIKE" | "GRADE" | "CONTEST_WIN" | "COMMENT" | "LESSON";
 
 export interface Notification {
   id: string;
@@ -13,9 +14,23 @@ export interface Notification {
   read: boolean;
 }
 
+function inferTypeFromMessage(message: string): NotificationType {
+  const msg = message || '';
+  if (msg.includes('💬') || msg.toLowerCase().includes('сэтгэгдэл')) return 'COMMENT';
+  if (msg.includes('📝') || msg.includes('оноо') || msg.includes('үнэлгээ') || msg.includes('даалгавар') || msg.includes('шалгагч')) return 'GRADE';
+  if (msg.includes('🏆') || msg.includes('яллаа') || msg.includes('Vote game') || msg.includes('🎉') || msg.includes('түрүүл')) return 'CONTEST_WIN';
+  if (msg.includes('📚') || msg.includes('Шинэ хичээл')) return 'LESSON';
+  return 'LIKE';
+}
+
 function dbToNotification(dbRow: any): Notification {
-  const validTypes: NotificationType[] = ['LIKE', 'GRADE', 'CONTEST_WIN'];
-  const type = validTypes.includes(dbRow.type) ? dbRow.type : 'LIKE';
+  const validTypes: NotificationType[] = ['LIKE', 'GRADE', 'CONTEST_WIN', 'COMMENT', 'LESSON'];
+  let type: NotificationType = 'LIKE';
+  if (dbRow.type && validTypes.includes(dbRow.type)) {
+    type = dbRow.type;
+  } else {
+    type = inferTypeFromMessage(dbRow.message || '');
+  }
   return {
     id: dbRow.id,
     userEmail: dbRow.user_email,
@@ -27,38 +42,43 @@ function dbToNotification(dbRow: any): Notification {
   };
 }
 
-export async function addNotification(userEmail: string, actorEmail: string, type: NotificationType, message: string): Promise<Notification> {
+export async function addNotification(
+  userEmail: string,
+  actorEmail: string,
+  type: NotificationType,
+  message: string
+): Promise<Notification> {
   const notifId = `notif-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  const normalizedEmail = userEmail.toLowerCase().trim();
   
-  const rowWithType = {
+  // The notifications table in Supabase schema contains: id, user_email, message, read, created_at
+  const payload = {
     id: notifId,
-    user_email: userEmail,
+    user_email: normalizedEmail,
     message,
     read: false,
-    type,
   };
-  let result = await supabase
+
+  const { data, error } = await supabase
     .from('notifications')
-    .insert([rowWithType])
+    .insert([payload])
     .select()
     .single();
 
-  if (result.error && /column.*type.*does not exist/i.test(String(result.error.message))) {
-    const { type: _t, ...rowWithoutType } = rowWithType;
-    result = await supabase.from('notifications').insert([rowWithoutType]).select().single();
+  if (error) {
+    console.error('Error creating notification:', error);
+    throw error;
   }
-  if (result.error) {
-    console.error('Error creating notification:', result.error);
-    throw result.error;
-  }
-  const data = result.data;
+
+  // Invalidate server cache so recipient gets instant real-time update
+  invalidateServerCache(`notifs:${normalizedEmail}`);
 
   return {
     id: data.id,
-    userEmail,
+    userEmail: normalizedEmail,
     actorEmail,
     type,
-    message,
+    message: data.message,
     createdAt: data.created_at,
     read: false,
   };
@@ -71,19 +91,22 @@ export async function addNotificationBatch(
   message: string
 ): Promise<void> {
   if (!userEmails || userEmails.length === 0) return;
-  const rows = userEmails.map(userEmail => ({
+  const uniqueEmails = [...new Set(userEmails.map(e => e.toLowerCase().trim()))];
+  const rows = uniqueEmails.map(email => ({
     id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-    user_email: userEmail,
+    user_email: email,
     message,
     read: false,
-    type,
   }));
 
   try {
     const { error } = await supabase.from('notifications').insert(rows);
-    if (error && /column.*type.*does not exist/i.test(String(error.message))) {
-      const rowsWithoutType = rows.map(({ type: _t, ...r }) => r);
-      await supabase.from('notifications').insert(rowsWithoutType);
+    if (error) {
+      console.error('Error batch inserting notifications:', error);
+    } else {
+      uniqueEmails.forEach(email => {
+        invalidateServerCache(`notifs:${email}`);
+      });
     }
   } catch (err) {
     console.error('Error batch inserting notifications:', err);
@@ -91,10 +114,11 @@ export async function addNotificationBatch(
 }
 
 export async function getUserNotifications(userEmail: string, limit: number = 50): Promise<Notification[]> {
+  const normalized = userEmail.toLowerCase().trim();
   const { data, error } = await supabase
     .from('notifications')
     .select('*')
-    .eq('user_email', userEmail)
+    .eq('user_email', normalized)
     .order('created_at', { ascending: false })
     .limit(limit);
 
@@ -103,36 +127,53 @@ export async function getUserNotifications(userEmail: string, limit: number = 50
   return data.map(dbToNotification);
 }
 
-export async function markAllNotificationsRead(userEmail: string): Promise<number> {
+export async function markNotificationRead(id: string, userEmail: string): Promise<boolean> {
+  const normalized = userEmail.toLowerCase().trim();
   const { data, error } = await supabase
     .from('notifications')
     .update({ read: true })
-    .eq('user_email', userEmail)
+    .eq('id', id)
+    .eq('user_email', normalized)
+    .select();
+
+  if (error || !data || data.length === 0) return false;
+  invalidateServerCache(`notifs:${normalized}`);
+  return true;
+}
+
+export async function markAllNotificationsRead(userEmail: string): Promise<number> {
+  const normalized = userEmail.toLowerCase().trim();
+  const { data, error } = await supabase
+    .from('notifications')
+    .update({ read: true })
+    .eq('user_email', normalized)
     .eq('read', false)
     .select();
 
   if (error || !data) return 0;
-  
+  invalidateServerCache(`notifs:${normalized}`);
   return data.length;
 }
 
 export async function clearAllNotifications(userEmail: string): Promise<number> {
+  const normalized = userEmail.toLowerCase().trim();
   const { data, error } = await supabase
     .from('notifications')
     .delete()
-    .eq('user_email', userEmail)
+    .eq('user_email', normalized)
     .select();
 
   if (error || !data) return 0;
-  
+  invalidateServerCache(`notifs:${normalized}`);
   return data.length;
 }
 
 export async function getUnreadCount(userEmail: string): Promise<number> {
+  const normalized = userEmail.toLowerCase().trim();
   const { count, error } = await supabase
     .from('notifications')
     .select('*', { count: 'exact', head: true })
-    .eq('user_email', userEmail)
+    .eq('user_email', normalized)
     .eq('read', false);
 
   if (error) return 0;

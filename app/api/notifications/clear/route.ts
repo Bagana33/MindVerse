@@ -11,8 +11,9 @@ export async function POST() {
     return NextResponse.json({ ok: false, error: "Нэвтэрнэ үү" }, { status: 401 });
   }
 
-  const cleared = await clearAllNotifications(session.email);
-  invalidateServerCache(`notifs:${session.email}`);
+  const normalized = session.email.toLowerCase().trim();
+  const cleared = await clearAllNotifications(normalized);
+  invalidateServerCache(`notifs:${normalized}`);
 
   return NextResponse.json({ ok: true, cleared });
 }

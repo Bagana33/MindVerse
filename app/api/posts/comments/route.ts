@@ -73,6 +73,28 @@ export async function POST(req: Request) {
       parentCommentId,
     });
 
+    // Notify post author in the background (if not the commenter themselves)
+    (async () => {
+      try {
+        const { getPostMeta } = await import("../../../../lib/posts");
+        const { addNotification } = await import("../../../../lib/notifications");
+        const postMeta = await getPostMeta(postId);
+        const commenterName = session.nickname || session.name || session.email.split('@')[0];
+        const preview = content.length > 50 ? `${content.slice(0, 50)}...` : content;
+
+        if (postMeta && postMeta.authorEmail.toLowerCase() !== session.email.toLowerCase()) {
+          await addNotification(
+            postMeta.authorEmail,
+            session.email,
+            "COMMENT",
+            `💬 ${commenterName} таны "${postMeta.title}" бүтээлд сэтгэгдэл бичлээ: "${preview}"`
+          );
+        }
+      } catch (notifErr) {
+        console.error("Comment notification error:", notifErr);
+      }
+    })().catch(() => {});
+
     return NextResponse.json({ ok: true, comment });
   } catch (error) {
     console.error("Error creating comment:", error);

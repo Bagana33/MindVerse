@@ -128,68 +128,6 @@ export function HomeDashboard() {
     }));
   }, []);
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
-  const [notifications, setNotifications] = useState<Array<{ id: string; type: string; message: string; createdAt: string; read: boolean }>>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [notifOpen, setNotifOpen] = useState(false);
-  const [loadingNotifs, setLoadingNotifs] = useState(false);
-  const notifRef = useRef<HTMLDivElement>(null);
-
-  const fetchNotifications = useCallback(async () => {
-    if (!session?.email) return;
-    if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
-    try {
-      setLoadingNotifs(true);
-      const res = await cachedFetch("/api/notifications");
-      const data = await res.json();
-      if (data.ok) {
-        setNotifications(data.notifications || []);
-        setUnreadCount(data.unreadCount ?? 0);
-      }
-    } catch {
-      // silent
-    } finally {
-      setLoadingNotifs(false);
-    }
-  }, [session?.email]);
-
-  useEffect(() => {
-    fetchNotifications();
-    const interval = setInterval(fetchNotifications, 60000);
-    return () => clearInterval(interval);
-  }, [fetchNotifications]);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setNotifOpen(false);
-    }
-    if (notifOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [notifOpen]);
-
-  const markAllNotifsRead = useCallback(async () => {
-    try {
-      const res = await fetch("/api/notifications/mark-read", { method: "POST" });
-      const data = await res.json();
-      if (data.ok) {
-        setUnreadCount(0);
-        setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-      }
-    } catch {}
-  }, []);
-
-  const clearAllNotifs = useCallback(async () => {
-    if (!confirm("Бүх мэдэгдлийг устгах уу?")) return;
-    try {
-      const res = await fetch("/api/notifications/clear", { method: "POST" });
-      const data = await res.json();
-      if (data.ok) {
-        setNotifications([]);
-        setUnreadCount(0);
-      }
-    } catch {}
-  }, []);
 
   // Fetch user XP
   useEffect(() => {
