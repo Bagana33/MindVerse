@@ -73,14 +73,16 @@ export async function GET() {
   // Get game state first
   let gameState: any = null;
   try {
-    const { data: stateData } = await supabase
+    const { data: stateData, error: stateError } = await supabase
       .from("game_state")
       .select("*")
       .eq("id", "game-state")
-      .single();
+      .abortSignal(AbortSignal.timeout(10_000)).maybeSingle();
+    if (stateError) throw stateError;
     gameState = stateData;
   } catch (stateError) {
-    // Ignore state errors
+    console.error('Game state read failed:', stateError);
+    return NextResponse.json({ ok: false, error: 'Санал хураалтыг ачаалж чадсангүй. Дахин оролдоно уу.' }, { status: 503 });
   }
 
   if (!gameState?.lesson_id) {
@@ -99,7 +101,7 @@ export async function GET() {
   const { data, error } = await supabase
     .from("game_images")
     .select("*")
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false }).abortSignal(AbortSignal.timeout(10_000));
 
   if (error) {
     if (error.code === '42P01' || error.message?.includes('does not exist')) {
@@ -187,5 +189,4 @@ export async function POST(req: Request) {
     error: "Энэ endpoint ашиглахгүй. /api/game/setup ашиглана уу." 
   }, { status: 400 });
 }
-
 

@@ -1,46 +1,45 @@
 import { NextResponse } from "next/server";
 import { getSessionFromCookies } from "../../../lib/session";
-import { createPost, deletePost, getPostsPage } from "../../../lib/posts";
+import { createPost, deletePost, getPostsPage, updatePostContent } from "../../../lib/posts";
 import { addNotification, addNotificationBatch } from "../../../lib/notifications";
 import { getAllUsers, ensureAIUserExists } from "../../../lib/users";
 import { createComment } from "../../../lib/comments";
 import { generateDesignCritique } from "../../../lib/ai-critique";
-import { getCached, setCached, invalidateServerCache } from "../../../lib/serverCache";
+import { getOrLoadCached, invalidateServerCache } from "../../../lib/serverCache";
 
 // GET: Fetch all posts
 export async function GET(req: Request) {
   const session = await getSessionFromCookies();
   const { searchParams } = new URL(req.url);
-  const limit = Math.max(1, Math.min(200, Number(searchParams.get('limit') || 20))); // Increased max to 200
+  const requestedLimit = Number(searchParams.get('limit') || 20);
+  const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(200, Math.floor(requestedLimit))) : 20;
   const before = searchParams.get('before') || undefined;
   const grade = searchParams.get('grade') || undefined; // Filter by grade
-  const search = searchParams.get('search') || undefined; // Database search term
-
-  const cacheKey = `posts:${limit}:${before || ''}:${grade || ''}:${search || ''}:${session ? session.email : 'public'}`;
-  const cachedData = getCached<any>(cacheKey, 20_000);
-  if (cachedData) {
-    return NextResponse.json(cachedData, {
-      headers: {
-        'Cache-Control': 'public, s-maxage=10, stale-while-revalidate=30',
-      },
-    });
+  const search = searchParams.get('search')?.trim() || undefined;
+  const postId = searchParams.get('id') || undefined;
+  // Visibility is evaluated for each request. Never share a personalized HTTP response.
+  const headers = { 'Cache-Control': 'private, no-store', 'Vary': 'Cookie' };
+  if ((before && !Number.isFinite(Date.parse(before))) || (search && search.length > 200) || (postId && postId.length > 200)) {
+    return NextResponse.json({ ok: false, error: 'Хайлтын утга буруу байна' }, { status: 400, headers });
   }
 
-  const posts = await getPostsPage(limit, before, grade, search);
+  try {
+    // The database read is identical across users; apply authorization after caching it.
+    const cacheKey = `posts:${JSON.stringify(postId ? ['id', postId] : [limit, before || '', grade || '', search || ''])}`;
+    const posts = await getOrLoadCached(cacheKey, () => postId
+      ? getPostsPage(1, undefined, undefined, undefined, postId)
+      : getPostsPage(limit, before, grade, search), 20_000);
+    const visible = session
+      ? posts.filter((p) => p.visibility === 'PUBLIC' || p.authorEmail === session.email)
+      : posts.filter((p) => p.visibility === 'PUBLIC');
 
-  // If user is signed in, include their private posts; otherwise only public posts
-  const visible = session
-    ? posts.filter((p) => p.visibility === 'PUBLIC' || p.authorEmail === session.email)
-    : posts.filter((p) => p.visibility === 'PUBLIC');
-
-  const responseObj = { ok: true, posts: visible };
-  setCached(cacheKey, responseObj, 20_000);
-
-  return NextResponse.json(responseObj, {
-    headers: {
-      'Cache-Control': 'public, s-maxage=10, stale-while-revalidate=30',
-    },
-  });
+    return NextResponse.json({ ok: true, posts: visible }, { headers });
+  } catch (error) {
+    console.error('Error loading posts:', error);
+    return NextResponse.json({ ok: false, error: 'Бүтээлүүдийг ачаалж чадсангүй. Дахин оролдоно уу.' }, {
+      status: 503, headers,
+    });
+  }
 }
 
 
@@ -133,6 +132,32 @@ export async function POST(req: Request) {
   }
 
   return NextResponse.json({ ok: true, post: newPost });
+}
+
+// PATCH: Save an existing post without deleting its discussion or reactions.
+export async function PATCH(req: Request) {
+  const session = await getSessionFromCookies();
+  if (!session) return NextResponse.json({ ok: false, error: 'Нэвтэрнэ үү' }, { status: 401 });
+  const id = new URL(req.url).searchParams.get('id');
+  const body = await req.json().catch(() => null);
+  const title = typeof body?.title === 'string' ? body.title.trim() : '';
+  const description = typeof body?.description === 'string' ? body.description.trim() : '';
+  if (!id || id.length > 200 || title.length < 3 || title.length > 200 || description.length < 10 || description.length > 2000) {
+    return NextResponse.json({ ok: false, error: 'Гарчиг 3–200, тайлбар 10–2000 тэмдэгттэй байна.' }, { status: 400 });
+  }
+  if (body.imageUrl !== undefined && body.imageUrl !== null && (typeof body.imageUrl !== 'string' || body.imageUrl.length > 10_000_000)) {
+    return NextResponse.json({ ok: false, error: 'Зургийн утга буруу эсвэл хэт том байна.' }, { status: 400 });
+  }
+  try {
+    const post = await updatePostContent(id, session.email, { title, description, imageUrl: body.imageUrl });
+    if (!post) return NextResponse.json({ ok: false, error: 'Бүтээл олдсонгүй эсвэл засах эрхгүй байна.' }, { status: 404 });
+    return NextResponse.json({ ok: true, post });
+  } catch (error) {
+    console.error('Post update failed:', error);
+    return NextResponse.json({ ok: false, error: 'Хадгалсныг баталгаажуулж чадсангүй. Бүтээлээ шинэчилж шалгаад дахин оролдоно уу.' }, { status: 503 });
+  } finally {
+    invalidateServerCache('posts');
+  }
 }
 
 // DELETE: Remove a post (requires authentication and ownership)

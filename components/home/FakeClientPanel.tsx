@@ -53,6 +53,15 @@ const CATEGORY_COLORS: Record<string, string> = {
 export function FakeClientPanel() {
   const { session } = useSession();
   const [briefs, setBriefs] = useState<Brief[]>([]);
+  const [shouldLoadBriefs, setShouldLoadBriefs] = useState(false);
+  const [briefsLoading, setBriefsLoading] = useState(true);
+  const [briefsError, setBriefsError] = useState<string | null>(null);
+  const [briefsRetry, setBriefsRetry] = useState(0);
+  const [inputError, setInputError] = useState<string | null>(null);
+  const [imageProcessing, setImageProcessing] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const gradingController = useRef<AbortController | null>(null);
+  const generationRef = useRef(0);
   const [activeBrief, setActiveBrief] = useState<Brief | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -61,32 +70,89 @@ export function FakeClientPanel() {
   const [showAll, setShowAll] = useState(false);
   const [totalXpEarned, setTotalXpEarned] = useState(0);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
+    e.target.value = "";
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      setSelectedImage(event.target?.result as string);
-    };
-    reader.readAsDataURL(file);
+    if (!file.type.startsWith("image/") || file.size > 5 * 1024 * 1024) {
+      setInputError("5 MB-аас бага хэмжээтэй зураг сонгоно уу.");
+      return;
+    }
+    const generation = generationRef.current;
+    setImageProcessing(true);
+    setInputError(null);
+    try {
+      const { compressImageFile } = await import("../../lib/imageCompressor");
+      const image = await compressImageFile(file, 1200, 0.8);
+      if (generation === generationRef.current) setSelectedImage(image);
+    } catch {
+      if (generation === generationRef.current) setInputError("Зургийг уншиж чадсангүй. Өөр зураг сонгоно уу.");
+    } finally {
+      if (generation === generationRef.current) setImageProcessing(false);
+    }
   }
 
   useEffect(() => {
-    fetch("/api/fake-client")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.briefs) setBriefs(data.briefs);
-      })
-      .catch(() => {});
+    const panel = panelRef.current;
+    if (!panel || typeof IntersectionObserver === "undefined") {
+      setShouldLoadBriefs(true);
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setShouldLoadBriefs(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: "240px" });
+    observer.observe(panel);
+    return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    if (!shouldLoadBriefs) return;
+    const controller = new AbortController();
+    let cancelled = false;
+    const timeout = window.setTimeout(() => controller.abort(), 12000);
+    setBriefsLoading(true);
+    setBriefsError(null);
+    fetch("/api/fake-client", { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Briefs unavailable");
+        const data = await response.json();
+        if (!Array.isArray(data.briefs)) throw new Error("Invalid briefs");
+        if (!cancelled) setBriefs(data.briefs);
+      })
+      .catch(() => {
+        if (!cancelled) setBriefsError("Даалгаврыг ачаалж чадсангүй. Дахин оролдоно уу.");
+      })
+      .finally(() => {
+        window.clearTimeout(timeout);
+        if (!cancelled) setBriefsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [shouldLoadBriefs, briefsRetry]);
+
+  useEffect(() => () => {
+    generationRef.current += 1;
+    gradingController.current?.abort();
+  }, []);
+
+  useEffect(() => {
+    const chat = chatRef.current;
+    if (chat) chat.scrollTop = chat.scrollHeight;
+  }, [messages, loading]);
+
+  useEffect(() => {
+    if (activeBrief && !result) textareaRef.current?.focus({ preventScroll: true });
+  }, [activeBrief, result]);
 
   function selectBrief(brief: Brief) {
     setActiveBrief(brief);
@@ -99,26 +165,33 @@ export function FakeClientPanel() {
         text: buildClientMessage(brief),
       },
     ]);
-    setTimeout(() => textareaRef.current?.focus(), 100);
   }
 
   async function handleSubmit() {
-    if (!activeBrief || (!input.trim() && !selectedImage) || loading || result) return;
+    if (!session || !activeBrief || (!input.trim() && !selectedImage) || gradingController.current || imageProcessing || result) return;
 
     const studentText = input.trim();
     const studentImage = selectedImage;
-    setInput("");
-    setSelectedImage(null);
+    setInputError(null);
     setMessages((prev) => [...prev, { from: "student", text: studentText, imageUrl: studentImage }]);
     setLoading(true);
+    const controller = new AbortController();
+    gradingController.current = controller;
+    const generation = generationRef.current;
+    const timeout = window.setTimeout(() => controller.abort(), 35000);
 
     try {
       const res = await fetch("/api/fake-client", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ briefId: activeBrief.id, response: studentText, imageUrl: studentImage }),
+        signal: controller.signal,
       });
       const data = await res.json();
+      if (!res.ok || typeof data.score !== "number") throw new Error(data.error || "Үнэлгээг авч чадсангүй. Дахин оролдоно уу.");
+      if (generation !== generationRef.current) return;
+      setInput("");
+      setSelectedImage(null);
 
       const gradeResult: GradeResult = {
         score: data.score ?? 0,
@@ -135,19 +208,25 @@ export function FakeClientPanel() {
       }
       setMessages((prev) => [...prev, { from: "result", result: gradeResult }]);
     } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          from: "client",
-          text: "Уучлаарай, одоо холбогдох боломжгүй байна. Дараа дахин оролдоно уу.",
-        },
-      ]);
+      if (generation === generationRef.current) {
+        setInputError(controller.signal.aborted
+          ? "Хариу удаж байна. Таны бичсэн зүйл хадгалагдсан; дахин оролдоно уу."
+          : err instanceof Error ? err.message : "Холбогдож чадсангүй. Дахин оролдоно уу.");
+      }
     } finally {
-      setLoading(false);
+      window.clearTimeout(timeout);
+      if (generation === generationRef.current) {
+        gradingController.current = null;
+        setLoading(false);
+      }
     }
   }
 
   function reset() {
+    if (gradingController.current) return;
+    generationRef.current += 1;
+    setImageProcessing(false);
+    setInputError(null);
     setActiveBrief(null);
     setMessages([]);
     setResult(null);
@@ -158,7 +237,7 @@ export function FakeClientPanel() {
   const displayedBriefs = showAll ? briefs : briefs.slice(0, 3);
 
   return (
-    <div className="bg-dark-900 border border-white/5 rounded-3xl overflow-hidden shadow-[0_10px_40px_rgba(0,0,0,0.4)]">
+    <div ref={panelRef} className="bg-dark-900 border border-white/10 rounded-2xl overflow-hidden">
       {/* Header */}
       <div className="relative p-4 border-b border-white/5 bg-gradient-to-r from-violet-900/30 via-purple-900/20 to-dark-900">
         <div className="absolute inset-0 bg-gradient-to-br from-violet-600/10 to-transparent pointer-events-none" />
@@ -168,8 +247,8 @@ export function FakeClientPanel() {
               💼
             </div>
             <div>
-              <h3 className="text-sm font-black text-white">Fake Client</h3>
-              <p className="text-[10px] text-slate-400">Даалгавар гүйцэтгэж XP олоорой</p>
+              <h3 className="text-sm font-black text-white">Захиалагчийн сорилт</h3>
+              <p className="text-xs text-slate-400">Даалгавар гүйцэтгэж XP олоорой</p>
             </div>
           </div>
           {totalXpEarned > 0 && (
@@ -184,15 +263,19 @@ export function FakeClientPanel() {
       {!activeBrief ? (
         /* ── Brief List View ── */
         <div className="p-4 space-y-3">
-          <p className="text-[11px] text-slate-400 font-medium">
-            Клиент сонгоод тэдний захиалгыг биелүүлнэ үү:
+          <p className="text-sm text-slate-400 font-medium">
+            Захиалагч сонгоод даалгаврыг нь гүйцэтгээрэй:
           </p>
 
-          {briefs.length === 0 ? (
-            <div className="text-center py-6 text-slate-500 text-xs">
-              <div className="text-2xl mb-2">⏳</div>
-              Клиентүүд ачаалж байна...
+          {briefsLoading ? (
+            <div role="status" className="py-6 text-center text-sm text-slate-400">Даалгавар ачаалж байна…</div>
+          ) : briefsError ? (
+            <div className="space-y-3 rounded-xl border border-rose-500/20 p-3">
+              <p role="alert" className="text-sm text-slate-300">{briefsError}</p>
+              <button type="button" onClick={() => setBriefsRetry((value) => value + 1)} className="min-h-11 rounded-lg bg-violet-500/15 px-4 text-sm font-semibold text-violet-300">Дахин оролдох</button>
             </div>
+          ) : briefs.length === 0 ? (
+            <p className="py-6 text-center text-sm text-slate-400">Одоогоор шинэ даалгавар алга.</p>
           ) : (
             <>
               {displayedBriefs.map((brief) => {
@@ -206,28 +289,28 @@ export function FakeClientPanel() {
                     <div className="flex items-start gap-3">
                       {/* Client Avatar */}
                       <div
-                        className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 shadow-md"
+                        className="w-11 h-11 rounded-xl flex items-center justify-center text-xl shrink-0 shadow-md"
                         style={{ background: `${brief.clientColor}33`, border: `1.5px solid ${brief.clientColor}55` }}
                       >
                         {brief.clientAvatar}
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-2 mb-1">
-                          <span className="text-xs font-bold text-white truncate">{brief.clientName}</span>
-                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full bg-gradient-to-r ${gradientClass} text-white shrink-0 opacity-80`}>
+                          <span className="text-sm font-semibold text-white truncate">{brief.clientName}</span>
+                          <span className={`text-xs font-bold px-2 py-0.5 rounded-full bg-gradient-to-r ${gradientClass} text-white shrink-0 opacity-80`}>
                             {brief.category}
                           </span>
                         </div>
-                        <p className="text-[11px] text-slate-400 line-clamp-2 leading-relaxed">
+                        <p className="text-xs text-slate-300 line-clamp-2 leading-5">
                           {brief.task}
                         </p>
                       </div>
                     </div>
                     <div className="mt-2.5 flex items-center justify-between">
-                      <span className="text-[10px] text-violet-400 font-semibold group-hover:text-violet-300 transition-colors">
+                      <span className="text-xs text-violet-400 font-semibold group-hover:text-violet-300 transition-colors">
                         Хариулах →
                       </span>
-                      <span className="text-[10px] text-amber-400 font-bold">⚡ XP авах боломж</span>
+                      <span className="text-xs text-amber-400 font-bold">⚡ XP авах боломж</span>
                     </div>
                   </button>
                 );
@@ -236,9 +319,9 @@ export function FakeClientPanel() {
               {briefs.length > 3 && (
                 <button
                   onClick={() => setShowAll(!showAll)}
-                  className="w-full py-2 text-[11px] text-slate-400 hover:text-slate-200 transition-colors font-medium"
+                  className="w-full py-2 text-sm text-slate-400 hover:text-slate-200 transition-colors font-medium"
                 >
-                  {showAll ? "Хаах ↑" : `+${briefs.length - 3} клиент харах ↓`}
+                  {showAll ? "Хаах ↑" : `+${briefs.length - 3} захиалагч харах ↓`}
                 </button>
               )}
             </>
@@ -259,11 +342,12 @@ export function FakeClientPanel() {
               {activeBrief.clientAvatar}
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-xs font-bold text-white truncate">{activeBrief.clientName}</div>
-              <div className="text-[9px] text-slate-400">{activeBrief.category}</div>
+              <div className="text-sm font-semibold text-white truncate">{activeBrief.clientName}</div>
+              <div className="text-xs text-slate-400">{activeBrief.category}</div>
             </div>
             <button
               onClick={reset}
+              disabled={loading || imageProcessing}
               className="text-slate-500 hover:text-slate-300 text-xs transition-colors shrink-0 px-2 py-1 rounded-lg hover:bg-white/5"
             >
               ← Буцах
@@ -271,7 +355,7 @@ export function FakeClientPanel() {
           </div>
 
           {/* Chat Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ minHeight: "220px" }}>
+          <div ref={chatRef} className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-3" style={{ minHeight: "220px" }}>
             {messages.map((msg, i) => {
               if (msg.from === "client") {
                 return (
@@ -283,7 +367,7 @@ export function FakeClientPanel() {
                       {activeBrief.clientAvatar}
                     </div>
                     <div className="bg-dark-800 border border-white/5 rounded-2xl rounded-tl-sm px-3.5 py-2.5 max-w-[85%]">
-                      <div className="text-[11px] text-slate-200 leading-relaxed whitespace-pre-wrap">{msg.text}</div>
+                      <div className="text-sm text-slate-200 leading-6 whitespace-pre-wrap">{msg.text}</div>
                     </div>
                   </div>
                 );
@@ -294,11 +378,11 @@ export function FakeClientPanel() {
                   <div key={i} className="flex items-start gap-2.5 justify-end">
                     <div className="bg-violet-600/30 border border-violet-500/30 rounded-2xl rounded-tr-sm px-3.5 py-2.5 max-w-[85%]">
                       {msg.imageUrl && (
-                        <img src={msg.imageUrl} alt="Student Work" className="rounded-xl w-full object-cover max-h-48 mb-2 border border-white/10" />
+                        <img src={msg.imageUrl} alt="Таны бүтээл" className="rounded-xl w-full object-cover max-h-48 mb-2 border border-white/10" />
                       )}
-                      {msg.text && <div className="text-[11px] text-violet-100 leading-relaxed whitespace-pre-wrap">{msg.text}</div>}
+                      {msg.text && <div className="text-sm text-violet-100 leading-6 whitespace-pre-wrap">{msg.text}</div>}
                     </div>
-                    <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-[11px] font-bold text-white shrink-0 mt-0.5">
+                    <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-sm font-bold text-white shrink-0 mt-0.5">
                       {(session?.email || "U")[0].toUpperCase()}
                     </div>
                   </div>
@@ -318,7 +402,7 @@ export function FakeClientPanel() {
                         {activeBrief.clientAvatar}
                       </div>
                       <div className="bg-dark-800 border border-white/5 rounded-2xl rounded-tl-sm px-3.5 py-2.5 max-w-[85%]">
-                        <p className="text-[11px] text-slate-300 italic leading-relaxed">"{r.clientReaction}"</p>
+                        <p className="text-sm text-slate-300 italic leading-relaxed">"{r.clientReaction}"</p>
                       </div>
                     </div>
 
@@ -347,11 +431,11 @@ export function FakeClientPanel() {
                             />
                           </div>
                           <div className="flex items-center justify-between mt-0.5">
-                            <span className={`text-[9px] font-bold ${r.passed ? "text-emerald-400" : "text-rose-400"}`}>
+                            <span className={`text-xs font-bold ${r.passed ? "text-emerald-400" : "text-rose-400"}`}>
                               {r.passed ? "✅ Тэнцсэн" : "❌ Тэнцээгүй"}
                             </span>
                             {r.xpEarned > 0 && (
-                              <span className="text-[9px] font-extrabold text-amber-400">
+                              <span className="text-xs font-extrabold text-amber-400">
                                 +{r.xpEarned} XP олголоо!
                               </span>
                             )}
@@ -360,7 +444,7 @@ export function FakeClientPanel() {
                       </div>
 
                       {/* AI Feedback */}
-                      <p className="text-[11px] text-slate-300 leading-relaxed">{r.feedback}</p>
+                      <p className="text-sm text-slate-300 leading-6">{r.feedback}</p>
 
                       {/* XP earned animation */}
                       {r.xpEarned > 0 && (
@@ -368,7 +452,7 @@ export function FakeClientPanel() {
                           <span className="text-lg">⚡</span>
                           <div>
                             <div className="text-xs font-black text-amber-300">+{r.xpEarned} XP олголоо!</div>
-                            <div className="text-[9px] text-slate-400">Таны account-д нэмэгдлээ</div>
+                            <div className="text-xs text-slate-400">Таны бүртгэлд нэмэгдлээ</div>
                           </div>
                         </div>
                       )}
@@ -383,18 +467,18 @@ export function FakeClientPanel() {
                             setResult(null);
                             setInput("");
                             setSelectedImage(null);
-                            setTimeout(() => textareaRef.current?.focus(), 100);
+                            setInputError(null);
                           }}
-                          className="flex-1 py-2 rounded-xl text-xs font-bold bg-dark-800 border border-white/10 text-slate-300 hover:text-white hover:border-violet-500/40 transition-all"
+                          className="flex-1 min-h-11 py-2 rounded-xl text-sm font-bold bg-dark-800 border border-white/10 text-slate-300 hover:text-white hover:border-violet-500/40 transition-all"
                         >
                           🔄 Дахин оролдох
                         </button>
                       )}
                       <button
                         onClick={reset}
-                        className="flex-1 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-violet-600 to-purple-600 text-white hover:opacity-90 transition-all shadow-lg"
+                        className="flex-1 min-h-11 py-2 rounded-xl text-sm font-bold bg-gradient-to-r from-violet-600 to-purple-600 text-white hover:opacity-90 transition-all shadow-lg"
                       >
-                        🆕 Шинэ клиент
+                        🆕 Өөр захиалагч
                       </button>
                     </div>
                   </div>
@@ -418,30 +502,35 @@ export function FakeClientPanel() {
                     <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
                     <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
                     <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
-                    <span className="text-[10px] text-slate-500 ml-1">AI шалгаж байна...</span>
+                    <span className="text-xs text-slate-500 ml-1">AI шалгаж байна...</span>
                   </div>
                 </div>
               </div>
             )}
-            <div ref={chatEndRef} />
+
           </div>
 
           {/* Input Area */}
           {!result && (
             <div className="p-3 border-t border-white/5 bg-dark-950/50">
+              {inputError && <p role="alert" className="mb-3 text-sm text-rose-300">{inputError}</p>}
+              {imageProcessing && <p role="status" className="mb-3 text-xs text-slate-300">Зургийг бэлтгэж байна…</p>}
               {!session ? (
-                <div className="text-center text-[11px] text-slate-500 py-2">
-                  Хариулт өгөхийн тулд <span className="text-violet-400 font-semibold">нэвтрэх</span> шаардлагатай
+                <div className="text-center text-sm text-slate-500 py-2">
+                  Хариулт өгөхийн тулд <a href="/login" className="text-violet-400 font-semibold underline">нэвтрэх</a> шаардлагатай
                 </div>
               ) : (
                 <div className="flex gap-2">
                   <div className="flex-1 flex flex-col gap-2">
                     {selectedImage && (
                       <div className="relative w-fit">
-                        <img src={selectedImage} alt="Preview" className="h-16 w-auto rounded-lg border border-white/10 object-cover" />
+                        <img src={selectedImage} alt="Сонгосон зураг" className="h-16 w-auto rounded-lg border border-white/10 object-cover" />
                         <button
+                          type="button"
+                          aria-label="Хавсаргасан зургийг хасах"
+                          disabled={loading}
                           onClick={() => setSelectedImage(null)}
-                          className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-500 flex items-center justify-center text-white text-[10px] shadow-lg hover:bg-rose-600 transition-colors"
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-500 flex items-center justify-center text-white text-xs shadow-lg hover:bg-rose-600 transition-colors"
                         >
                           ✕
                         </button>
@@ -452,24 +541,26 @@ export function FakeClientPanel() {
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
+                        if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                           e.preventDefault();
                           handleSubmit();
                         }
                       }}
+                      aria-label="Даалгаврын хариулт"
                       placeholder="Дизайны ажлаа тайлбарлаарай... (Enter → илгээх)"
                       rows={3}
                       disabled={loading}
-                      className="w-full bg-dark-800 border border-white/5 rounded-xl px-3 py-2 text-xs text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-violet-500/40 resize-none disabled:opacity-50 leading-relaxed"
+                      className="w-full bg-dark-800 border border-white/5 rounded-xl px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/40 resize-none disabled:opacity-50 leading-relaxed"
                     />
                   </div>
                   <div className="flex flex-col gap-2 shrink-0">
                     <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageSelect} className="hidden" />
                     <button
                       onClick={() => fileInputRef.current?.click()}
-                      disabled={loading}
+                      disabled={loading || imageProcessing}
+                      aria-label="Зураг хавсаргах"
                       title="Зураг хавсаргах"
-                      className="w-10 h-10 rounded-xl bg-dark-800 border border-white/5 flex items-center justify-center text-slate-400 hover:text-white hover:border-violet-500/30 transition-all shadow-md disabled:opacity-50"
+                      className="w-11 h-11 rounded-xl bg-dark-800 border border-white/5 flex items-center justify-center text-slate-400 hover:text-white hover:border-violet-500/30 transition-all shadow-md disabled:opacity-50"
                     >
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
@@ -479,8 +570,9 @@ export function FakeClientPanel() {
                     </button>
                     <button
                       onClick={handleSubmit}
-                      disabled={loading || (!input.trim() && !selectedImage)}
-                      className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white disabled:opacity-40 hover:opacity-90 transition-all shadow-lg"
+                      aria-label="Хариулт илгээх"
+                      disabled={loading || imageProcessing || (!input.trim() && !selectedImage)}
+                      className="w-11 h-11 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-white disabled:opacity-40 hover:opacity-90 transition-all shadow-lg"
                     >
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="-rotate-90">
                         <path d="M12 19V5M5 12l7-7 7 7" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />

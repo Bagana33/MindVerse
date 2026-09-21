@@ -1,8 +1,21 @@
 import { NextResponse } from "next/server";
 import { getUser } from "../../../../lib/users";
 import { generatePasswordResetToken } from "../../../../lib/otp";
-import { sendPasswordResetEmail } from "../../../../lib/email";
+import {
+  isEmailConfigured,
+  sendPasswordResetEmail,
+} from "../../../../lib/email";
+import {
+  getSigningKey,
+  SigningConfigurationError,
+} from "../../../../lib/signingKey";
 import { getClientKey, rateLimit } from "../../../../lib/rate-limit";
+
+function privateJson(body: unknown, init: ResponseInit = {}) {
+  const headers = new Headers(init.headers);
+  headers.set("Cache-Control", "private, no-store");
+  return NextResponse.json(body, { ...init, headers });
+}
 
 export async function POST(req: Request) {
   try {
@@ -10,55 +23,123 @@ export async function POST(req: Request) {
     const key = getClientKey(req, "auth-send-reset-code");
     const rl = rateLimit(key, { windowMs: 60_000, max: 4 });
     if (!rl.ok) {
-      return NextResponse.json(
+      return privateJson(
         {
           ok: false,
           error: `Хэт олон хүсэлт илгээлээ. ${rl.retryAfterSec || 30} секундийн дараа дахин оролдоно уу.`,
         },
-        { status: 429, headers: { "Retry-After": String(rl.retryAfterSec || 30) } }
+        {
+          status: 429,
+          headers: { "Retry-After": String(rl.retryAfterSec || 30) },
+        },
       );
     }
 
-    let body: any = {};
+    // Check configuration before reading account data or creating a reset code.
+    getSigningKey("password-reset-token");
+    getSigningKey("password-reset-code");
+    getSigningKey("password-reset-version");
+    if (process.env.NODE_ENV === "production" && !isEmailConfigured()) {
+      return privateJson(
+        {
+          ok: false,
+          error: "Нууц үг сэргээх имэйлийн үйлчилгээ түр боломжгүй байна.",
+        },
+        { status: 503 },
+      );
+    }
+
+    let body: unknown = {};
     try {
       body = await req.json();
     } catch {
-      return NextResponse.json({ ok: false, error: "Буруу форматтай хүсэлт" }, { status: 400 });
+      return privateJson(
+        { ok: false, error: "Буруу форматтай хүсэлт" },
+        { status: 400 },
+      );
     }
 
-    const email = (body?.email ?? "").toString().trim().toLowerCase();
+    const emailValue =
+      body && typeof body === "object" && "email" in body ? body.email : "";
+    const email =
+      typeof emailValue === "string" ? emailValue.trim().toLowerCase() : "";
     if (!email) {
-      return NextResponse.json({ ok: false, error: "Имэйл хаягаа оруулна уу" }, { status: 400 });
+      return privateJson(
+        { ok: false, error: "Имэйл хаягаа оруулна уу" },
+        { status: 400 },
+      );
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return NextResponse.json({ ok: false, error: "Зөв имэйл хаяг оруулна уу" }, { status: 400 });
+    if (email.length > 320 || !emailRegex.test(email)) {
+      return privateJson(
+        { ok: false, error: "Зөв имэйл хаяг оруулна уу" },
+        { status: 400 },
+      );
     }
 
     // Check if user exists (fresh from DB)
     const user = await getUser(email, { bypassCache: true });
     if (!user) {
-      return NextResponse.json(
-        { ok: false, error: "Энэ имэйл хаягаар бүртгэлтэй хэрэглэгч олдсонгүй" },
-        { status: 404 }
+      return privateJson(
+        {
+          ok: false,
+          error: "Энэ имэйл хаягаар бүртгэлтэй хэрэглэгч олдсонгүй",
+        },
+        { status: 404 },
       );
     }
 
-    // Generate OTP code and tamper-proof signed resetToken (valid 10 mins)
-    const { code, token, expiresAt } = generatePasswordResetToken(email, 10);
+    if (!user.password) {
+      return privateJson(
+        {
+          ok: false,
+          error:
+            "Энэ бүртгэлийн нууц үгийг сэргээх боломжгүй байна. Багштай холбоо барина уу.",
+        },
+        { status: 400 },
+      );
+    }
+
+    // Bind the code to the current password so changing it invalidates this reset token.
+    const { code, token, expiresAt } = generatePasswordResetToken(
+      email,
+      user.password,
+      10,
+    );
 
     // Send email
-    const emailResult = await sendPasswordResetEmail(email, code, user.name || user.nickname);
+    const emailResult = await sendPasswordResetEmail(
+      email,
+      code,
+      user.name || user.nickname,
+    );
+    if (
+      emailResult.configurationError ||
+      (process.env.NODE_ENV === "production" && emailResult.devMode)
+    ) {
+      return privateJson(
+        {
+          ok: false,
+          error: "Нууц үг сэргээх имэйлийн үйлчилгээ түр боломжгүй байна.",
+        },
+        { status: 503 },
+      );
+    }
     if (!emailResult.success) {
-      return NextResponse.json(
-        { ok: false, error: emailResult.error || "Имэйл илгээхэд алдаа гарлаа. Дахин оролдоно уу." },
-        { status: 500 }
+      return privateJson(
+        {
+          ok: false,
+          error:
+            emailResult.error ||
+            "Имэйл илгээхэд алдаа гарлаа. Дахин оролдоно уу.",
+        },
+        { status: 502 },
       );
     }
 
     if (emailResult.devMode) {
-      return NextResponse.json({
+      return privateJson({
         ok: true,
         resetToken: token,
         expiresAt,
@@ -68,17 +149,22 @@ export async function POST(req: Request) {
       });
     }
 
-    return NextResponse.json({
+    return privateJson({
       ok: true,
       resetToken: token,
       expiresAt,
       message: `Таны "${email}" имэйл хаяг руу 6 оронтой баталгаажуулах код амжилттай илгээгдлээ. Спам (Junk/Spam) хавтсаа мөн шалгана уу.`,
     });
-  } catch (error: any) {
-    console.error("Send reset code error:", error);
-    return NextResponse.json(
-      { ok: false, error: error.message || "Серверийн алдаа гарлаа" },
-      { status: 500 }
+  } catch (error) {
+    const unavailable = error instanceof SigningConfigurationError;
+    return privateJson(
+      {
+        ok: false,
+        error: unavailable
+          ? "Нууц үг сэргээх үйлчилгээ түр боломжгүй байна."
+          : "Серверийн алдаа гарлаа. Дахин оролдоно уу.",
+      },
+      { status: unavailable ? 503 : 500 },
     );
   }
 }

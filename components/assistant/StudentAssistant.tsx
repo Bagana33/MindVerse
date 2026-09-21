@@ -4,27 +4,48 @@ import { useEffect, useRef, useState } from "react";
 
 type ChatMsg = { role: "user" | "assistant"; content: string; images?: string[] };
 
-export default function StudentAssistant() {
-  const [open, setOpen] = useState(false);
+export default function StudentAssistant({ initiallyOpen = false }: { initiallyOpen?: boolean }) {
+  const [open, setOpen] = useState(initiallyOpen);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [messages, setMessages] = useState<ChatMsg[]>([
     {
       role: "assistant",
-      content:
-        "Сайн байна уу! Би график дизайны туслах. Typography, өнгө, layout, composition, Figma гэх мэтэд тусална. Асуултаа бичээрэй.",
+      content: "Сайн байна уу! Би график дизайны туслах. Үсгийн зохиомж, өнгө, бүтээлийн зохиомж, Figma зэрэг сэдвээр асуултаа бичээрэй.",
     },
   ]);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const messageListRef = useRef<HTMLDivElement>(null);
+  const requestRef = useRef<AbortController | null>(null);
 
-  const endRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, open]);
+    if (open) inputRef.current?.focus({ preventScroll: true });
+  }, [open]);
+
+  useEffect(() => {
+    const list = messageListRef.current;
+    if (!open || !list) return;
+    list.scrollTo({
+      top: list.scrollHeight,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    });
+  }, [messages, busy, open]);
+
+  useEffect(() => () => requestRef.current?.abort(), []);
+
+  const close = () => {
+    setOpen(false);
+    triggerRef.current?.focus({ preventScroll: true });
+  };
 
   async function send() {
     const text = input.trim();
-    if (!text || busy) return;
+    if (!text || requestRef.current) return;
     const next: ChatMsg[] = [...messages, { role: "user", content: text }];
+    const controller = new AbortController();
+    requestRef.current = controller;
+    const timeout = window.setTimeout(() => controller.abort("timeout"), 45000);
     setMessages(next);
     setInput("");
     setBusy(true);
@@ -33,144 +54,104 @@ export default function StudentAssistant() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text, history: next }),
+        signal: controller.signal,
       });
       const json = await res.json();
-      console.log("API Response:", json); // Debug log
-      if (!res.ok || !json.ok) throw new Error(json.error || "Алдаа гарлаа");
-      const answerText = json.answer;
-      setMessages((m) => [...m, { 
-        role: "assistant", 
-        content: answerText,
-        images: json.images || undefined
+      if (!res.ok || !json.ok || typeof json.answer !== "string") {
+        throw new Error(typeof json.error === "string" ? json.error : "Одоогоор хариулах боломжгүй байна. Дахин оролдоно уу.");
+      }
+      setMessages((current) => [...current, {
+        role: "assistant",
+        content: json.answer,
+        images: Array.isArray(json.images) ? json.images.filter((url: unknown): url is string => typeof url === "string") : undefined,
       }]);
-    } catch (e: any) {
-      console.error("Chat error:", e); // Debug log
-      const msg = typeof e?.message === 'string' ? e.message : "Одоогоор хариулах боломжгүй байна.";
-      setMessages((m) => [...m, { role: "assistant", content: msg }]);
+    } catch (error: unknown) {
+      if (controller.signal.aborted && controller.signal.reason !== "timeout") return;
+      const message = controller.signal.reason === "timeout"
+        ? "Хариу хүлээх хугацаа дууслаа. Асуултаа дахин илгээнэ үү."
+        : error instanceof Error ? error.message : "Холболт тасарлаа. Дахин оролдоно уу.";
+      setMessages((current) => [...current, { role: "assistant", content: message }]);
+      setInput((current) => current || text);
     } finally {
-      setBusy(false);
+      window.clearTimeout(timeout);
+      if (requestRef.current === controller) {
+        requestRef.current = null;
+        setBusy(false);
+      }
     }
   }
 
   return (
-    <div className="fixed bottom-4 right-4 lg:bottom-6 lg:right-6 z-[100]">
+    <div className="fixed bottom-4 right-4 z-40 lg:bottom-6 lg:right-6">
       {open && (
-        <div className="mb-3 w-[340px] sm:w-[380px] max-w-[90vw] glass-card rounded-3xl p-5 shadow-2xl border-white/10">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/5">
+        <div
+          id="design-assistant-panel"
+          role="dialog"
+          aria-labelledby="design-assistant-title"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") { event.stopPropagation(); close(); }
+          }}
+          className="mb-3 flex max-h-[calc(100dvh-7rem)] w-[420px] max-w-[calc(100vw-2rem)] lg:w-[460px] flex-col rounded-3xl border border-white/10 bg-slate-950 p-4 shadow-2xl sm:p-5"
+        >
+          <div className="mb-3 flex shrink-0 items-center justify-between gap-2 border-b border-white/10 pb-3">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-primary-500/30">
-                <span className="material-symbols-outlined text-xl">smart_toy</span>
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary-500 to-indigo-600 text-white">
+                <span className="material-symbols-outlined text-xl" aria-hidden="true">smart_toy</span>
               </div>
               <div>
-                <h3 className="font-bold text-white text-sm">Design Assistant</h3>
-                <p className="text-[10px] text-slate-500 font-medium">AI Design Helper</p>
+                <h2 id="design-assistant-title" className="text-base font-bold text-white">Дизайны туслах</h2>
+                <p className="text-xs text-slate-400">Асууж, туршиж, суралцаарай</p>
               </div>
             </div>
-            <button
-              className="text-slate-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-white/5"
-              onClick={() => setOpen(false)}
-              aria-label="Close"
-            >
-              <span className="material-symbols-outlined text-xl">close</span>
+            <button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-white/5 hover:text-white" onClick={close} aria-label="Туслахыг хаах">
+              <span className="material-symbols-outlined text-xl" aria-hidden="true">close</span>
             </button>
           </div>
 
-          {/* Info badge */}
-          <div className="mb-3 px-3 py-1.5 rounded-lg bg-primary-500/10 border border-primary-500/20">
-            <p className="text-[11px] text-primary-400 font-medium">Зөвхөн график дизайны сэдвүүдэд тусална</p>
-          </div>
+          <p className="mb-3 shrink-0 rounded-lg border border-primary-500/20 bg-primary-500/10 px-3 py-2 text-xs leading-relaxed text-violet-300">График дизайны талаар асуугаарай. Хариуг өөрийн бүтээл дээр туршиж үзээрэй.</p>
 
-          {/* Messages */}
-          <div className="max-h-[320px] overflow-y-auto space-y-3 pr-2 mb-4 hide-scrollbar">
-            {messages.map((m, i) => (
-              <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                <div className={`max-w-[85%] whitespace-pre-line rounded-2xl px-4 py-2.5 text-[13px] leading-relaxed ${
-                  m.role === "assistant"
-                    ? "bg-dark-800 border border-white/5 text-slate-200"
-                    : "bg-gradient-to-r from-primary-500/20 to-indigo-500/20 border border-primary-500/30 text-white"
-                }`}>
-                  {m.content}
-                  {m.images && m.images.length > 0 && (
+          <div ref={messageListRef} role="log" aria-label="Дизайны туслахтай харилцсан яриа" aria-live="polite" aria-relevant="additions" className="mb-3 mv-scroll-area min-h-0 max-h-80 lg:max-h-[min(55dvh,520px)] space-y-3 overflow-y-auto overscroll-contain pr-1">
+            {messages.map((message, index) => (
+              <div key={index} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+                <div className={`max-w-[90%] whitespace-pre-line break-words rounded-2xl border px-3 py-2.5 text-sm leading-relaxed ${message.role === "assistant" ? "border-white/10 bg-slate-900 text-slate-200" : "border-primary-500/30 bg-primary-500/15 text-white"}`}>
+                  <span className="sr-only">{message.role === "user" ? "Та: " : "Туслах: "}</span>
+                  {message.content}
+                  {message.images?.length ? (
                     <div className="mt-3 space-y-2">
-                      {m.images.map((imgUrl, idx) => (
-                        <div key={idx} className="rounded-lg overflow-hidden border border-white/10">
-                          <img 
-                            src={imgUrl} 
-                            alt={`Generated image ${idx + 1}`}
-                            className="w-full h-auto max-h-64 object-cover"
-                            loading="lazy"
-                          />
+                      {message.images.map((imageUrl, imageIndex) => (
+                        <div key={imageIndex} className="overflow-hidden rounded-lg border border-white/10">
+                          <img src={imageUrl} alt={`Дизайны жишээ зураг ${imageIndex + 1}`} className="h-auto max-h-64 w-full object-contain" loading="lazy" decoding="async" />
                         </div>
                       ))}
                     </div>
-                  )}
+                  ) : null}
                 </div>
               </div>
             ))}
-            {busy && (
-              <div className="flex justify-start">
-                <div className="bg-dark-800 border border-white/5 rounded-2xl px-4 py-2.5">
-                  <div className="flex gap-1">
-                    <div className="w-2 h-2 rounded-full bg-primary-500 animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                    <div className="w-2 h-2 rounded-full bg-primary-500 animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                    <div className="w-2 h-2 rounded-full bg-primary-500 animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                  </div>
-                </div>
-              </div>
-            )}
-            <div ref={endRef} />
           </div>
+          {busy && <p role="status" className="mb-3 text-xs text-violet-300">Хариулт бэлтгэж байна…</p>}
 
-          {/* Input */}
-          <div className="flex items-center gap-2 pt-3 border-t border-white/5">
+          <form onSubmit={(event) => { event.preventDefault(); void send(); }} className="flex shrink-0 items-center gap-2 border-t border-white/10 pt-3">
+            <label className="sr-only" htmlFor="design-assistant-question">Дизайны асуулт</label>
             <input
+              ref={inputRef}
+              id="design-assistant-question"
               value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  send();
-                }
-              }}
-              placeholder="Асуултаа бичнэ үү..."
-              className="flex-1 rounded-xl border border-white/10 bg-dark-800 px-4 py-2.5 text-sm text-white placeholder:text-slate-500 focus:border-primary-500/50 focus:outline-none focus:ring-2 focus:ring-primary-500/20 transition-all"
+              onChange={(event) => setInput(event.target.value)}
+              maxLength={4000}
+              autoComplete="off"
+              placeholder="Асуултаа бичнэ үү…"
+              className="min-w-0 flex-1 rounded-xl border border-white/10 bg-slate-900 px-3 py-2.5 text-base text-white placeholder:text-slate-400 focus:border-violet-400 focus:outline-none focus:ring-2 focus:ring-violet-500/25"
             />
-            <button
-              onClick={send}
-              disabled={busy || !input.trim()}
-              className="rounded-xl bg-gradient-to-r from-primary-500 to-indigo-600 px-4 py-2.5 text-sm text-white font-medium shadow-[0_4px_16px_rgba(139,92,246,0.4)] hover:shadow-[0_6px_20px_rgba(139,92,246,0.6)] disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-2"
-            >
-              {busy ? (
-                <>
-                  <span className="material-symbols-outlined text-lg animate-spin">sync</span>
-                  <span>...</span>
-                </>
-              ) : (
-                <>
-                  <span>Илгээх</span>
-                  <span className="material-symbols-outlined text-lg">send</span>
-                </>
-              )}
+            <button type="submit" disabled={busy || !input.trim()} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-600 text-white transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50" aria-label="Асуулт илгээх">
+              <span className={`material-symbols-outlined text-xl ${busy ? "animate-spin" : ""}`} aria-hidden="true">{busy ? "sync" : "send"}</span>
             </button>
-          </div>
+          </form>
         </div>
       )}
 
-      {/* Floating Button */}
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className={`h-14 w-14 rounded-2xl bg-gradient-to-br from-primary-500 to-indigo-600 text-white shadow-[0_8px_24px_rgba(139,92,246,0.45)] hover:shadow-[0_12px_32px_rgba(139,92,246,0.6)] transition-all flex items-center justify-center group ${
-          open ? "rotate-90" : ""
-        }`}
-        aria-label="Open design assistant"
-        title="Design Assistant"
-      >
-        {open ? (
-          <span className="material-symbols-outlined text-2xl">close</span>
-        ) : (
-          <span className="material-symbols-outlined text-2xl">smart_toy</span>
-        )}
+      <button ref={triggerRef} type="button" onClick={() => open ? close() : setOpen(true)} className="ml-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-500 to-indigo-600 text-white shadow-lg transition-colors hover:from-primary-400" aria-label={open ? "Туслахыг хаах" : "Дизайны туслах нээх"} aria-expanded={open} aria-controls="design-assistant-panel" title="Дизайны туслах">
+        <span className="material-symbols-outlined text-2xl" aria-hidden="true">{open ? "close" : "smart_toy"}</span>
       </button>
     </div>
   );

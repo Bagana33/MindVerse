@@ -1,20 +1,27 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createClient } from '@supabase/supabase-js';
+import { getSessionFromCookies } from '../../../../lib/session';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
 // Системийн хэрэглэгчийн email
 const SYSTEM_USER_EMAIL = "news-bot";
 
 export async function POST(req: Request) {
+  const session = await getSessionFromCookies();
+  if (session?.role !== 'teacher') {
+    return NextResponse.json({ error: 'Зөвхөн багш мэдээ шинэчлэх боломжтой.' }, { status: 403 });
+  }
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return NextResponse.json({ error: 'Мэдээ үүсгэх үйлчилгээ тохируулагдаагүй байна.' }, { status: 503 });
+  }
+  // Optional AI credentials must not prevent unrelated pages from building.
+  const openai = new OpenAI({ apiKey });
   try {
     // Ensure news-bot user exists
     const { data: existingUser } = await supabase

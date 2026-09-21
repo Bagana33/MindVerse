@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "../auth/useSession";
 
@@ -53,6 +53,11 @@ export function CommentsSection({
   const [loaded, setLoaded] = useState(Array.isArray(comments));
   const [localComments, setLocalComments] = useState<Comment[]>(comments || []);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const automaticLoadAttempted = useRef(false);
+  const requestRef = useRef<Promise<Comment[] | null> | null>(null);
+  const controllerRef = useRef<AbortController | null>(null);
+  const generationRef = useRef(0);
   const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
   const [replySubmitting, setReplySubmitting] = useState<string | null>(null);
   const [collapsedComments, setCollapsedComments] = useState<Record<string, boolean>>({});
@@ -85,6 +90,13 @@ export function CommentsSection({
     setReplyDrafts({});
     setReplySubmitting(null);
     setCollapsedComments({});
+    setLoadError(null);
+    automaticLoadAttempted.current = false;
+    return () => {
+      generationRef.current += 1;
+      controllerRef.current?.abort();
+      requestRef.current = null;
+    };
   }, [postId]);
 
   useEffect(() => {
@@ -93,39 +105,56 @@ export function CommentsSection({
     setLoaded(true);
   }, [comments]);
 
-  const loadComments = useCallback(async () => {
-    if (loaded || loading) return localComments;
+  const loadComments = useCallback((): Promise<Comment[] | null> => {
+    if (loaded) return Promise.resolve(localComments);
+    if (requestRef.current) return requestRef.current;
+    const generation = generationRef.current;
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    const timeout = window.setTimeout(() => controller.abort(), 12000);
     setLoading(true);
-    try {
-      const res = await fetch(`/api/posts/comments?postId=${encodeURIComponent(postId)}`, {
-        cache: "no-store",
-      });
-      const json = await safeJson(res);
-      if (res.ok && json && Array.isArray(json.comments)) {
+    setLoadError(null);
+
+    const request = (async () => {
+      try {
+        const res = await fetch(`/api/posts/comments?postId=${encodeURIComponent(postId)}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const json = await safeJson(res);
+        if (!res.ok || !Array.isArray(json?.comments)) throw new Error("Invalid comments response");
+        if (generation !== generationRef.current) return null;
         const nextComments = json.comments as Comment[];
         setLocalComments(nextComments);
         setLoaded(true);
         return nextComments;
-      } else if (!res.ok) {
-        console.error("Load comments failed:", res.status);
+      } catch {
+        if (generation === generationRef.current) {
+          setLoadError("Сэтгэгдлийг ачаалж чадсангүй. Холболтоо шалгаад дахин оролдоно уу.");
+        }
+        return null;
+      } finally {
+        window.clearTimeout(timeout);
+        if (generation === generationRef.current) {
+          setLoading(false);
+          requestRef.current = null;
+        }
       }
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  }, [loaded, loading, localComments, postId]);
+    })();
+    requestRef.current = request;
+    return request;
+  }, [loaded, localComments, postId]);
 
   useEffect(() => {
-    if (loaded || initialCommentCount <= 0) return;
+    if (loaded || initialCommentCount <= 0 || automaticLoadAttempted.current) return;
+    automaticLoadAttempted.current = true;
     void loadComments();
   }, [initialCommentCount, loaded, loadComments]);
 
   async function submitComment(content: string, parentCommentId?: string) {
     if (!session || !content.trim()) return;
 
-    if (!loaded) {
-      await loadComments();
-    }
+    if (!loaded && (await loadComments()) === null) return;
 
     if (parentCommentId) {
       setReplySubmitting(parentCommentId);
@@ -207,18 +236,21 @@ export function CommentsSection({
   return (
     <div className="mt-4 space-y-3 pt-2">
       {/* Lazy load trigger */}
-      {!loaded && (
+      {!loaded && !loading && (
         <button
-          onClick={loadComments}
+          type="button"
+          onClick={() => void loadComments()}
           className="text-xs font-semibold text-violet-400 hover:text-violet-300 flex items-center gap-2 px-3 py-1.5 rounded-full bg-violet-500/10 border border-violet-500/20 transition-all hover:bg-violet-500/20"
         >
           <span className="material-symbols-outlined text-[16px]">chat_bubble_outline</span>
-          <span>Сэтгэгдлүүдийг дэлгэж харах ({initialCommentCount})</span>
+          <span>{loadError ? "Дахин оролдох" : `Сэтгэгдлүүдийг дэлгэж харах (${initialCommentCount})`}</span>
         </button>
       )}
 
+      {loadError && <p role="alert" className="text-sm text-rose-400">{loadError}</p>}
+
       {loading && (
-        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-dark-900/60 px-4 py-3 text-xs text-slate-400 animate-pulse">
+        <div role="status" className="flex items-center gap-2 rounded-2xl border border-white/10 bg-dark-900/60 px-4 py-3 text-xs text-slate-400 animate-pulse">
           <span className="w-2 h-2 rounded-full bg-violet-400 animate-ping" />
           <span>Сэтгэгдлүүдийг ачаалж байна...</span>
         </div>
@@ -227,7 +259,7 @@ export function CommentsSection({
       {showAIPending && (
         <div className="flex items-center gap-2.5 rounded-2xl border border-cyan-500/30 bg-cyan-950/20 px-4 py-3 text-xs text-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.1)]">
           <span className="text-base animate-bounce">🤖</span>
-          <span>AI Шүүмжлэгч энэ пост дээр 10–20 сек дотор автоматаар шүүмж бичнэ...</span>
+          <span>Одоогоор сэтгэгдэл алга. Та эхний сэтгэгдлийг бичээрэй.</span>
         </div>
       )}
 
@@ -251,7 +283,7 @@ export function CommentsSection({
                 </div>
                 <span className="text-[10px] text-slate-500">{formatRelativeTime(comment.createdAt)}</span>
               </div>
-              <p className="text-xs sm:text-sm text-slate-200 leading-relaxed whitespace-pre-line font-normal">
+              <p className="text-sm text-slate-200 leading-7 whitespace-pre-line font-normal">
                 {comment.content}
               </p>
             </div>
@@ -328,7 +360,7 @@ export function CommentsSection({
 
                 {!isCollapsed && (
                   <>
-                    <p className="text-xs sm:text-sm text-slate-300 leading-relaxed font-normal">{comment.content}</p>
+                    <p className="text-sm text-slate-300 leading-7 font-normal">{comment.content}</p>
                     <div className="flex items-center gap-3 mt-2">
                       <button
                         type="button"

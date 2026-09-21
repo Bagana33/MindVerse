@@ -1,634 +1,217 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useSession } from "../../components/auth/useSession";
+import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useSession } from "../../components/auth/useSession";
+import { DashboardLayout } from "../../components/layout/DashboardLayout";
+import Modal from "../../components/ui/Modal";
+import { invalidateCache } from "../../lib/fetchCache";
 
-type Student = {
-  email: string;
-  name?: string;
-  experience: number;
-  role: string;
-  grade?: string;
-};
+type Student = { email: string; name?: string; nickname?: string; experience: number; role: string; grade?: string };
+type XPPayload = { action: "set" | "add"; amount: number; applyToAll: boolean; studentEmail?: string; targetGrade?: string };
+type Review = { kind: "xp"; payload: XPPayload; label: string } | { kind: "delete"; student: Student } | { kind: "reset" };
+const studentName = (student: Student) => student.nickname || student.name || student.email;
+const numberLabel = (value: number) => Math.round(value || 0).toLocaleString("en-US");
 
 export default function AdminPage() {
   const { session, loading: sessionLoading } = useSession();
   const router = useRouter();
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedStudent, setSelectedStudent] = useState<string>("");
+  const [loadError, setLoadError] = useState("");
+  const [refresh, setRefresh] = useState(0);
+  const [grade, setGrade] = useState("all");
+  const [search, setSearch] = useState("");
+  const [selectedStudent, setSelectedStudent] = useState("");
   const [action, setAction] = useState<"set" | "add">("add");
-  const [amount, setAmount] = useState<string>("");
-  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
-  const [processing, setProcessing] = useState(false);
-  const [deletingStudent, setDeletingStudent] = useState<string | null>(null);
-  const [gradeFilter, setGradeFilter] = useState<string>("all");
+  const [amount, setAmount] = useState("");
   const [applyToAll, setApplyToAll] = useState(false);
-  const [resetModalStudent, setResetModalStudent] = useState<Student | null>(null);
-  const [resetPasswordValue, setResetPasswordValue] = useState("123456");
-  const [resettingPassword, setResettingPassword] = useState(false);
+  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const [review, setReview] = useState<Review | null>(null);
+  const [confirmation, setConfirmation] = useState("");
+  const [reviewError, setReviewError] = useState("");
+  const [resetStudent, setResetStudent] = useState<Student | null>(null);
+  const [password, setPassword] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const [passwordError, setPasswordError] = useState("");
+  const formRef = useRef<HTMLFormElement>(null);
+  const amountRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!sessionLoading && (!session || session.role !== "teacher")) {
-      router.push("/");
-    }
-  }, [session, sessionLoading, router]);
+    if (!sessionLoading && session?.role !== "teacher") router.replace("/");
+  }, [session?.role, sessionLoading, router]);
 
   useEffect(() => {
-    async function fetchStudents() {
+    if (session?.role !== "teacher") return;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15_000);
+    let active = true;
+    setLoading(true);
+    setLoadError("");
+    async function load() {
       try {
-        const url = gradeFilter && gradeFilter !== 'all' ? `/api/leaderboard?grade=${gradeFilter}` : "/api/leaderboard";
-        const res = await fetch(url);
-        if (res.ok) {
-          const json = await res.json();
-          setStudents(json.leaderboard || []);
-        }
-      } catch (err) {
-        console.error("Failed to fetch students:", err);
+        const response = await fetch(`/api/leaderboard${grade === "all" ? "" : `?grade=${grade}`}`, { signal: controller.signal, cache: "no-store" });
+        const json = await response.json();
+        if (!response.ok || !json.ok || !Array.isArray(json.leaderboard)) throw new Error("Жагсаалтыг ачаалж чадсангүй.");
+        if (active) setStudents(json.leaderboard.filter((student: Student) => student.role === "student"));
+      } catch {
+        if (active) setLoadError("Сурагчдын жагсаалтыг ачаалж чадсангүй. Холболтоо шалгаад дахин оролдоно уу.");
       } finally {
-        setLoading(false);
+        clearTimeout(timeout);
+        if (active) setLoading(false);
       }
     }
-    if (session?.role === "teacher") {
-      setLoading(true);
-      fetchStudents();
-    }
-  }, [session, gradeFilter]);
+    void load();
+    return () => { active = false; clearTimeout(timeout); controller.abort(); };
+  }, [session?.role, grade, refresh]);
 
-  async function handleManageXP(e: React.FormEvent) {
-    e.preventDefault();
+  const visibleStudents = useMemo(() => students.filter(student => `${student.name || ""} ${student.nickname || ""} ${student.email}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase())), [students, search]);
+  const selected = students.find(student => student.email === selectedStudent);
+  const refreshList = () => { invalidateCache("/api/leaderboard"); setRefresh(value => value + 1); };
+  const openReview = (value: Review) => { if (busyRef.current) return; setReviewError(""); setConfirmation(""); setReview(value); };
+  const scopeLabel = grade === "all" ? "Бүртгэлтэй бүх сурагч" : `${grade}-р ангийн бүх сурагч`;
+
+  function reviewXP(event: React.FormEvent) {
+    event.preventDefault();
+    if (busyRef.current || loading) return;
     setMessage(null);
-
-    if (!applyToAll && !selectedStudent) {
-      setMessage({ type: "error", text: "Сурагч сонгоно уу" });
-      return;
-    }
-
-    const xpAmount = parseInt(amount);
-    if (isNaN(xpAmount)) {
-      setMessage({ type: "error", text: "XP дүн тоон утга байх ёстой" });
-      return;
-    }
-
-    if (applyToAll) {
-      const scopeText = gradeFilter && gradeFilter !== "all" ? `${gradeFilter} ангийн бүх сурагчид` : "бүх сурагчдад";
-      const confirmText =
-        action === "add"
-          ? `Та ${scopeText} ${xpAmount} XP нэмэх гэж байна. Үргэлжлүүлэх үү?`
-          : `Та ${scopeText} XP-г ${xpAmount} болгож тогтоох гэж байна. Үргэлжлүүлэх үү?`;
-      const ok = confirm(confirmText);
-      if (!ok) {
-        return;
-      }
-    }
-
-    setProcessing(true);
-
-    try {
-      const payload: any = {
-        action,
-        amount: xpAmount,
-        applyToAll,
-      };
-
-      if (!applyToAll) {
-        payload.studentEmail = selectedStudent;
-      }
-
-      if (gradeFilter && gradeFilter !== "all") {
-        payload.targetGrade = gradeFilter;
-      }
-
-      const res = await fetch("/api/admin/manage-xp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const json = await res.json();
-
-      if (!res.ok) {
-        setMessage({ type: "error", text: json.error || "Алдаа гарлаа" });
-        return;
-      }
-
-      setMessage({ type: "success", text: json.message });
-      setAmount("");
-      if (applyToAll) {
-        setSelectedStudent("");
-      }
-      
-      // Refresh students list
-      const refreshUrl = gradeFilter && gradeFilter !== 'all' ? `/api/leaderboard?grade=${gradeFilter}` : "/api/leaderboard";
-      const refreshRes = await fetch(refreshUrl);
-      if (refreshRes.ok) {
-        const refreshJson = await refreshRes.json();
-        setStudents(refreshJson.leaderboard || []);
-      }
-    } catch (err: any) {
-      setMessage({ type: "error", text: err.message || "Сүлжээний алдаа гарлаа" });
-    } finally {
-      setProcessing(false);
-    }
+    const xp = Number(amount);
+    if (!amount.trim() || !Number.isSafeInteger(xp)) { setMessage({ type: "error", text: "XP дүнг бүхэл тоогоор оруулна уу." }); return; }
+    if (action === "set" && xp < 0) { setMessage({ type: "error", text: "Тогтоох XP нь 0 буюу түүнээс их байна." }); return; }
+    if (action === "add" && xp === 0) { setMessage({ type: "error", text: "Нэмэх эсвэл хасах XP дүн 0-ээс ялгаатай байна." }); return; }
+    if (!applyToAll && !selected) { setMessage({ type: "error", text: "Өөрчлөх сурагчаа сонгоно уу." }); return; }
+    openReview({ kind: "xp", payload: { action, amount: xp, applyToAll, ...(!applyToAll ? { studentEmail: selectedStudent } : {}), ...(grade !== "all" ? { targetGrade: grade } : {}) }, label: applyToAll ? scopeLabel : studentName(selected!) });
   }
 
-  async function handleResetAllXP() {
-    const ok = confirm("АНХААРУУЛГА: Бүх сурагчдын XP-г 0 болгож шинэ улирлын тохиргоо хийх гэж байна.\n\nҮргэлжлүүлэх үү?");
-    if (!ok) return;
-
-    setProcessing(true);
+  async function confirmReview() {
+    if (!review || busyRef.current) return;
+    if (review.kind === "delete" && confirmation !== review.student.email) return;
+    if (review.kind === "reset" && confirmation !== "0") return;
+    busyRef.current = true;
+    setBusy(true);
+    setReviewError("");
     setMessage(null);
+    const snapshot = review;
     try {
-      const res = await fetch("/api/admin/manage-xp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "set",
-          amount: 0,
-          applyToAll: true,
-        }),
+      const payload = snapshot.kind === "xp" ? snapshot.payload : snapshot.kind === "reset" ? { action: "set", amount: 0, applyToAll: true } : { studentEmail: snapshot.student.email };
+      const response = await fetch(snapshot.kind === "delete" ? "/api/admin/delete-student" : "/api/admin/manage-xp", {
+        method: snapshot.kind === "delete" ? "DELETE" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal: AbortSignal.timeout(30_000),
       });
-      const json = await res.json();
-      if (!res.ok) {
-        setMessage({ type: "error", text: json.error || "Алдаа гарлаа" });
-        return;
+      const json = await response.json();
+      if (!response.ok || (snapshot.kind === "delete" ? json.success !== true : json.ok !== true)) { setReviewError(json.error || "Өөрчлөлтийг хадгалж чадсангүй."); return; }
+      invalidateCache("/api/leaderboard");
+      invalidateCache("/api/user");
+      if (snapshot.kind === "delete") {
+        setStudents(previous => previous.filter(student => student.email !== snapshot.student.email));
+        if (selectedStudent === snapshot.student.email) setSelectedStudent("");
+      } else if (snapshot.kind === "reset") {
+        setStudents(previous => previous.map(student => ({ ...student, experience: 0 })));
+      } else {
+        const change = snapshot.payload;
+        if (!change.applyToAll) setStudents(previous => previous.map(student => {
+          if ((!change.applyToAll && student.email !== change.studentEmail) || (change.targetGrade && student.grade !== change.targetGrade)) return student;
+          return { ...student, experience: json.user?.email === student.email ? json.user.experience : Math.max(0, change.action === "set" ? change.amount : student.experience + change.amount) };
+        }));
+        setAmount("");
       }
-      setMessage({ type: "success", text: "✅ Бүх сурагчдын XP амжилттай 0 боллоо!" });
-      const refreshRes = await fetch("/api/leaderboard");
-      if (refreshRes.ok) {
-        const refreshJson = await refreshRes.json();
-        setStudents(refreshJson.leaderboard || []);
-      }
-    } catch (err: any) {
-      setMessage({ type: "error", text: err.message || "Сүлжээний алдаа гарлаа" });
+      setMessage({ type: "success", text: json.message || "Өөрчлөлт амжилттай хадгалагдлаа." });
+      setReview(null);
+      // Reload only after confirmed success. The server remains the source of truth.
+      refreshList();
+    } catch {
+      setReview(null);
+      setMessage({ type: "error", text: "Хүсэлтийн үр дүнг баталгаажуулж чадсангүй. Дахин өөрчлөхөөс өмнө жагсаалтыг шинэчилж шалгана уу." });
     } finally {
-      setProcessing(false);
+      busyRef.current = false;
+      setBusy(false);
     }
   }
 
-  async function handleDeleteStudent(studentEmail: string, studentName?: string) {
-    const displayName = studentName || studentEmail;
-    if (!confirm(`"${displayName}" сурагчийг бүрмөсөн устгах уу?\n\nЭнэ үйлдлийг буцаах боломжгүй. Сурагчийн:\n- Бүх постууд\n- Сэтгэгдлүүд\n- Reactions\n- Notifications\n\nБүгд устах болно.`)) {
-      return;
-    }
+  function openPassword(student: Student) {
+    if (busyRef.current) return;
+    setResetStudent(student); setPassword(""); setPasswordConfirm(""); setPasswordVisible(false); setPasswordError("");
+  }
 
-    setDeletingStudent(studentEmail);
-    setMessage(null);
-
+  async function resetPassword(event: React.FormEvent) {
+    event.preventDefault();
+    if (!resetStudent || busyRef.current) return;
+    setPasswordError("");
+    if (password.trim().length < 6 || password !== password.trim()) { setPasswordError("Нууц үг хамгийн багадаа 6 тэмдэгттэй, эхлэл болон төгсгөлдөө зайгүй байна."); return; }
+    if (password !== passwordConfirm) { setPasswordError("Давтан оруулсан нууц үг таарахгүй байна."); return; }
+    busyRef.current = true;
+    setBusy(true);
     try {
-      const res = await fetch("/api/admin/delete-student", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studentEmail }),
-      });
-
-      const json = await res.json();
-
-      if (!res.ok) {
-        setMessage({ type: "error", text: json.error || "Устгахад алдаа гарлаа" });
-        return;
-      }
-
-      setMessage({ type: "success", text: json.message || "Сурагч амжилттай устлаа" });
-      
-      // Remove from local state
-      setStudents(students.filter(s => s.email !== studentEmail));
-      
-      // Clear selection if deleted student was selected
-      if (selectedStudent === studentEmail) {
-        setSelectedStudent("");
-      }
-    } catch (err: any) {
-      setMessage({ type: "error", text: err.message || "Сүлжээний алдаа гарлаа" });
-    } finally {
-      setDeletingStudent(null);
-    }
+      const response = await fetch("/api/admin/reset-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ studentEmail: resetStudent.email, newPassword: password }), signal: AbortSignal.timeout(30_000) });
+      const json = await response.json();
+      if (!response.ok || !json.ok) { setPasswordError(json.error || "Нууц үг шинэчлэгдсэнгүй."); return; }
+      setMessage({ type: "success", text: json.message || "Нууц үг амжилттай шинэчлэгдлээ." });
+      setPassword(""); setPasswordConfirm(""); setResetStudent(null);
+    } catch {
+      setPasswordError("Хүсэлтийн үр дүнг баталгаажуулж чадсангүй. Холболтоо шалгаж, сурагчийн нэвтрэх боломжийг нягтална уу.");
+    } finally { busyRef.current = false; setBusy(false); }
   }
 
-  async function handleResetStudentPassword(e: React.FormEvent) {
-    e.preventDefault();
-    if (!resetModalStudent) return;
-    if (!resetPasswordValue || resetPasswordValue.length < 6) {
-      alert("Шинэ нууц үг хамгийн багадаа 6 тэмдэгт байх ёстой");
-      return;
-    }
-
-    setResettingPassword(true);
-    try {
-      const res = await fetch("/api/admin/reset-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          studentEmail: resetModalStudent.email,
-          newPassword: resetPasswordValue,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok || !json.ok) {
-        alert(json.error || "Нууц үг шинэчлэхэд алдаа гарлаа");
-        return;
-      }
-
-      setMessage({ type: "success", text: json.message || "Нууц үг амжилттай солигдлоо" });
-      setResetModalStudent(null);
-      setResetPasswordValue("123456");
-    } catch (err: any) {
-      alert(err.message || "Сүлжээний алдаа гарлаа");
-    } finally {
-      setResettingPassword(false);
-    }
+  function editStudent(student: Student) {
+    if (busyRef.current) return;
+    setApplyToAll(false); setSelectedStudent(student.email); setAction("add"); setAmount("");
+    formRef.current?.scrollIntoView({ block: "center", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    amountRef.current?.focus({ preventScroll: true });
   }
 
-  if (sessionLoading || loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950">
-        <div className="text-center">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-violet-500 border-r-transparent"></div>
-          <p className="mt-4 text-sm text-slate-400">Ачааллаж байна...</p>
-        </div>
-      </div>
-    );
+  function studentActions(student: Student) {
+    return <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+      <button type="button" disabled={busy} onClick={() => editStudent(student)} aria-label={`${studentName(student)} сурагчийн XP өөрчлөх`} className="min-h-11 rounded-xl border border-violet-400/25 px-3 py-2 text-sm font-semibold text-violet-200 hover:bg-violet-500/10 disabled:opacity-50">XP засах</button>
+      <button type="button" disabled={busy} onClick={() => openPassword(student)} aria-label={`${studentName(student)} сурагчийн нууц үг шинэчлэх`} className="min-h-11 rounded-xl border border-white/15 px-3 py-2 text-sm font-semibold text-slate-300 hover:bg-white/5 disabled:opacity-50">Нууц үг</button>
+      <button type="button" disabled={busy} onClick={() => openReview({ kind: "delete", student })} aria-label={`${studentName(student)} сурагчийг устгах`} className="min-h-11 rounded-xl border border-rose-500/25 px-3 py-2 text-sm font-semibold text-rose-300 hover:bg-rose-500/10 disabled:opacity-50">Устгах</button>
+    </div>;
   }
 
-  if (!session || session.role !== "teacher") {
-    return null;
-  }
+  if (sessionLoading) return <DashboardLayout><div className="mv-page"><div className="mv-panel p-6" role="status">Хандах эрхийг шалгаж байна…</div></div></DashboardLayout>;
+  if (session?.role !== "teacher") return <DashboardLayout><div className="mv-page"><section className="mv-panel p-6"><h1 className="mv-title">Багшийн хэсэг</h1><p className="mv-subtitle">Энэ хуудсанд багшийн эрхээр нэвтэрнэ.</p><Link href="/" className="mv-button-secondary mt-4">Нүүр хуудас руу</Link></section></div></DashboardLayout>;
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 px-4 py-8">
-      <div className="mx-auto max-w-5xl space-y-6">
-        {/* Header */}
-        <div className="rounded-3xl border border-slate-700/50 bg-slate-900/50 px-6 py-8 shadow-xl">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-violet-200 via-purple-200 to-pink-200 bg-clip-text text-transparent">
-                Багшийн удирдлага
-              </h1>
-              <p className="mt-2 text-sm text-slate-400">
-                Сурагчдын XP удирдаж, тэдний ахиц дэвшлийг хянаарай
-              </p>
-            </div>
-            <button
-              onClick={() => router.push("/")}
-              className="rounded-full border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:border-violet-500/40 hover:bg-slate-800"
-            >
-              ← Буцах
-            </button>
-          </div>
-        </div>
+  return <DashboardLayout><div className="mv-page">
+    <header className="mv-page-header"><div><p className="mv-eyebrow">MINDVERSE · БАГШ</p><h1 className="mv-title">Сурагчдын удирдлага</h1><p className="mv-subtitle">Ахиц, XP болон нэвтрэх эрхийг нэг дор удирдаарай.</p></div><button type="button" onClick={refreshList} disabled={loading || busy} className="mv-button-secondary">{loading ? "Шинэчилж байна…" : "Жагсаалт шинэчлэх"}</button></header>
+    {message && <div role={message.type === "error" ? "alert" : "status"} className={`rounded-2xl border p-4 text-sm leading-6 ${message.type === "success" ? "border-emerald-400/25 bg-emerald-500/10 text-emerald-200" : "border-rose-400/25 bg-rose-500/10 text-rose-200"}`}>{message.text}</div>}
 
-        {/* XP Management Form */}
-        <div className="rounded-3xl border border-slate-700/50 bg-slate-900/50 px-6 py-6 shadow-xl">
-          <div className="flex items-center justify-between flex-wrap gap-4">
-            <div>
-              <h2 className="text-xl font-bold text-white">XP удирдлага</h2>
-              <p className="mt-1 text-sm text-slate-400">Сурагчдад XP нэмэх эсвэл тогтоох</p>
-            </div>
-            <button
-              type="button"
-              onClick={handleResetAllXP}
-              disabled={processing}
-              className="px-4 py-2 rounded-xl text-xs font-bold border border-rose-500/40 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 hover:border-rose-400 transition-all shadow-[0_0_12px_rgba(244,63,94,0.15)] flex items-center gap-2 disabled:opacity-50"
-            >
-              <span>🔄</span>
-              <span>Бүх сурагчдын XP-г 0 болгох (Reset)</span>
-            </button>
-          </div>
+    <section className="mv-panel p-4 sm:p-6 lg:grid lg:grid-cols-[minmax(180px,0.3fr)_minmax(0,1fr)] lg:gap-8 xl:p-7" aria-labelledby="xp-title">
+      <div className="mb-5 lg:mb-0"><p className="mb-3 text-sm font-semibold text-violet-300">Ахиц удирдах</p><h2 id="xp-title" className="text-xl font-bold text-white">XP өөрчлөх</h2><p className="mt-1 text-sm leading-6 text-slate-400">Нэг сурагч эсвэл сонгосон ангийн XP-г өөрчилнө. Хадгалахын өмнө дүнг шалгана.</p></div>
+      <form ref={formRef} onSubmit={reviewXP} className="min-w-0 scroll-mt-24 space-y-4">
+        <fieldset disabled={busy} className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <div><label htmlFor="admin-grade" className="mv-label">Анги</label><select id="admin-grade" value={grade} onChange={event => { setGrade(event.target.value); setSelectedStudent(""); }} className="mv-field"><option value="all">Бүх анги</option>{["9", "10", "11", "12"].map(value => <option key={value} value={value}>{value}-р анги</option>)}</select></div>
+          <div><span className="mv-label">Хамрах хүрээ</span><label className="flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border border-white/15 px-4 py-3 text-sm text-slate-200"><input type="checkbox" checked={applyToAll} onChange={event => { setApplyToAll(event.target.checked); setSelectedStudent(""); }} className="h-4 w-4 accent-violet-500" /><span>{scopeLabel}дад үйлчлэх</span></label></div>
+          <div className="min-w-0 sm:col-span-2 xl:col-span-1"><label htmlFor="admin-student" className="mv-label">Сурагч</label><select id="admin-student" value={selectedStudent} onChange={event => setSelectedStudent(event.target.value)} disabled={applyToAll || loading || !!loadError} required={!applyToAll} className="mv-field"><option value="">{applyToAll ? scopeLabel : loading ? "Сурагчдыг ачаалж байна…" : "Сурагчаа сонгоно уу"}</option>{students.map(student => <option key={student.email} value={student.email}>{studentName(student)} · {numberLabel(student.experience)} XP</option>)}</select>{selected && !applyToAll && <p className="mt-2 break-all text-sm leading-6 text-slate-400">{selected.email} · Одоогийн XP: {numberLabel(selected.experience)}</p>}</div>
+          <div className="min-w-0 xl:col-span-2"><label htmlFor="admin-xp-action" className="mv-label">Үйлдэл</label><select id="admin-xp-action" value={action} onChange={event => setAction(event.target.value as "set" | "add")} className="mv-field"><option value="add">Одоогийн XP дээр нэмэх / хасах</option><option value="set">XP-г шинэ дүнгээр тогтоох</option></select></div>
+          <div><label htmlFor="admin-xp-amount" className="mv-label">{action === "set" ? "Шинэ XP дүн" : "Нэмэх / хасах XP"}</label><input id="admin-xp-amount" ref={amountRef} type="number" inputMode="numeric" step="1" min={action === "set" ? 0 : undefined} value={amount} onChange={event => setAmount(event.target.value)} required className="mv-field" placeholder={action === "set" ? "Жишээ: 500" : "Жишээ: 100 эсвэл -20"} aria-describedby="xp-amount-help" /></div>
+        </fieldset>
+        <p id="xp-amount-help" className="text-sm leading-6 text-slate-400">{action === "set" ? "Өмнөх оноог оруулсан дүнгээр солино." : "Сөрөг тоо оруулбал одоогийн XP-ээс хасна."}{applyToAll && " Нэрийн хайлт энэ үйлдлийн хамрах хүрээг өөрчлөхгүй."}</p>
+        <button type="submit" disabled={busy || loading || !!loadError || (!applyToAll && !selectedStudent)} className="mv-button-primary w-full justify-center sm:w-auto">Өөрчлөлтийг шалгах →</button>
+      </form>
+    </section>
 
-          {/* Apply to all students toggle */}
-          <div className="mt-4 flex items-center justify-between rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3">
-            <div>
-              <p className="text-sm font-medium text-amber-100">Бүх сурагчдад XP өгөх</p>
-              <p className="text-xs text-amber-200/80 mt-0.5">
-                {gradeFilter === "all"
-                  ? "Бүх ангийн сурагчдад нэг дор XP нэмнэ"
-                  : `${gradeFilter} ангийн бүх сурагчдад XP өгнө`}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                const next = !applyToAll;
-                setApplyToAll(next);
-                if (next) {
-                  setSelectedStudent("");
-                }
-              }}
-              className={`relative inline-flex h-9 w-16 items-center rounded-full border px-1 transition-all ${
-                applyToAll
-                  ? "bg-amber-400/90 border-amber-200 shadow-[0_0_0_3px_rgba(251,191,36,0.15)]"
-                  : "bg-slate-800 border-slate-600"
-              }`}
-              aria-pressed={applyToAll}
-            >
-              <span
-                className={`inline-block h-7 w-7 transform rounded-full bg-white shadow transition ${
-                  applyToAll ? "translate-x-7" : "translate-x-0"
-                }`}
-              />
-            </button>
-          </div>
+    <section className="mv-panel overflow-hidden !p-0" aria-labelledby="students-title">
+      <div className="space-y-4 border-b border-white/10 p-4 sm:p-6 xl:flex xl:items-end xl:justify-between xl:gap-6 xl:space-y-0"><div className="flex min-w-0 flex-1 flex-wrap items-start justify-between gap-3 xl:justify-start"><div><h2 id="students-title" className="text-lg font-bold text-white">Сурагчдын жагсаалт</h2><p className="mt-1 max-w-xl text-sm leading-6 text-slate-400">9–12-р ангийн чансаанд бүртгэлтэй сурагчид. Анги сонголт дээрх XP хэсэгтэй ижил.</p></div><span role="status" className="rounded-full bg-violet-500/10 px-3 py-1.5 text-sm text-violet-200">{visibleStudents.length} / {students.length} сурагч</span></div><div className="w-full shrink-0 xl:w-80"><label htmlFor="admin-search" className="mv-label">Жагсаалтаас хайх</label><input id="admin-search" type="search" value={search} onChange={event => setSearch(event.target.value)} className="mv-field" placeholder="Нэр, хоч эсвэл имэйл" /></div></div>
+      {loading ? <div className="space-y-3 p-5" role="status" aria-busy="true"><p className="text-sm text-slate-300">Жагсаалтыг ачаалж байна…</p>{[0, 1, 2].map(value => <div key={value} className="h-16 rounded-xl bg-slate-800/70 motion-safe:animate-pulse" aria-hidden="true" />)}</div>
+        : loadError ? <div role="alert" className="space-y-4 p-6"><p className="text-sm leading-6 text-rose-200">{loadError}</p><button type="button" onClick={refreshList} className="mv-button-secondary">Дахин оролдох</button></div>
+        : visibleStudents.length === 0 ? <div className="px-5 py-10 text-center"><h3 className="text-base font-semibold text-white">Сурагч олдсонгүй</h3><p className="mt-2 text-sm text-slate-400">{search ? "Нэр эсвэл имэйлээ өөрчлөөд дахин хайгаарай." : "Өөр анги сонгох эсвэл жагсаалтыг шинэчилнэ үү."}</p>{search && <button type="button" className="mv-button-secondary mt-4" onClick={() => setSearch("")}>Хайлт цэвэрлэх</button>}</div>
+        : <><ul className="divide-y divide-white/10 xl:hidden">{visibleStudents.map(student => <li key={student.email} className="space-y-4 p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><Link href={`/profile?user=${encodeURIComponent(student.email)}`} className="block break-words text-sm font-semibold text-slate-100 hover:text-violet-300">{studentName(student)}</Link><p className="mt-1 break-all text-sm leading-6 text-slate-400">{student.email}</p><p className="mt-1 text-sm text-slate-400">{student.grade ? `${student.grade}-р анги` : "Анги тохируулаагүй"}</p></div><span className="shrink-0 text-sm font-bold tabular-nums text-violet-200">{numberLabel(student.experience)} XP</span></div>{studentActions(student)}</li>)}</ul>
+        <table className="hidden w-full table-fixed text-left xl:table"><caption className="sr-only">Сурагчид, анги, XP болон удирдах үйлдлүүд</caption><thead className="bg-slate-950/35 text-sm font-medium text-slate-400"><tr><th scope="col" className="px-5 py-3">Сурагч</th><th scope="col" className="w-20 py-3">Анги</th><th scope="col" className="w-24 py-3 text-right">XP</th><th scope="col" className="w-[340px] px-5 py-4 text-right">Үйлдэл</th></tr></thead><tbody className="divide-y divide-white/5">{visibleStudents.map(student => <tr key={student.email} className="hover:bg-white/[0.025]"><th scope="row" className="px-5 py-4 font-normal"><Link href={`/profile?user=${encodeURIComponent(student.email)}`} className="block break-words text-sm font-semibold text-white hover:text-violet-300">{studentName(student)}</Link><span className="mt-1 block break-all text-sm leading-6 text-slate-400">{student.email}</span></th><td className="py-4 text-sm text-slate-300">{student.grade || "—"}</td><td className="py-4 text-right text-base font-semibold tabular-nums text-violet-200">{numberLabel(student.experience)}</td><td className="px-5 py-4">{studentActions(student)}</td></tr>)}</tbody></table></>}
+    </section>
 
-          {/* Grade Filter */}
-          <div className="mt-4">
-            <label className="block text-xs text-slate-400 mb-2 font-medium">🎒 Ангиар шүүх</label>
-            <div className="flex flex-wrap gap-2">
-              {[
-                { id: "all", label: "Бүгд" },
-                { id: "10", label: "10 анги" },
-                { id: "11", label: "11 анги" },
-                { id: "12", label: "12 анги" },
-              ].map((g) => (
-                <button
-                  key={g.id}
-                  type="button"
-                  onClick={() => setGradeFilter(g.id)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                    gradeFilter === g.id
-                      ? "bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-[0_4px_12px_rgba(34,197,94,0.4)]"
-                      : "bg-slate-900/60 border border-slate-700 text-slate-300 hover:border-green-500/40 hover:text-slate-100"
-                  }`}
-                >
-                  {g.label}
-                </button>
-              ))}
-            </div>
-            <p className="text-[10px] text-slate-500 mt-1">
-              {gradeFilter === 'all' ? 'Бүх ангийн сурагчид' : `${gradeFilter} ангийн сурагчид`} харагдаж байна
-            </p>
-          </div>
+    <section className="rounded-2xl border border-rose-500/20 bg-rose-500/[0.025] p-4 sm:p-6" aria-labelledby="season-reset-title"><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><h2 id="season-reset-title" className="text-base font-bold text-rose-200">Шинэ улирал эхлүүлэх</h2><p className="mt-1 max-w-2xl text-sm leading-6 text-slate-400">Бүртгэлтэй бүх сурагчийн XP-г 0 болгоно. Сонгосон анги болон нэрийн хайлтаас үл хамаарна.</p></div><button type="button" onClick={() => openReview({ kind: "reset" })} disabled={busy || loading} className="min-h-11 shrink-0 rounded-xl border border-rose-500/35 px-4 py-3 text-sm font-semibold text-rose-200 hover:bg-rose-500/10 disabled:opacity-50">Бүх XP-г шинэчлэх</button></div></section>
 
-          <form onSubmit={handleManageXP} className="mt-6 space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">
-                Сурагч сонгох
-              </label>
-              <select
-                value={applyToAll ? "" : selectedStudent}
-                onChange={(e) => setSelectedStudent(e.target.value)}
-                className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-slate-200 focus:border-violet-500/40 focus:outline-none"
-                required={!applyToAll}
-                disabled={applyToAll}
-              >
-                <option value="">{applyToAll ? "Бүх сурагчдад XP өгөх" : "-- Сурагч сонгох --"}</option>
-                {!applyToAll &&
-                  students.map((student) => (
-                    <option key={student.email} value={student.email}>
-                      {student.name || student.email} (Одоогийн XP: {student.experience})
-                    </option>
-                  ))}
-              </select>
-              {applyToAll && (
-                <p className="mt-1 text-xs text-amber-200/80">
-                  Одоогийн анги сонголт: {gradeFilter === "all" ? "бүх анги" : `${gradeFilter} анги`}
-                </p>
-              )}
-            </div>
+    <Modal open={!!review} onClose={() => { if (!busyRef.current) setReview(null); }} title={review?.kind === "delete" ? "Сурагчийг бүрмөсөн устгах" : review?.kind === "reset" ? "Бүх сурагчийн XP-г 0 болгох" : "XP өөрчлөлтөө шалгах"} busy={busy} footer={<><button type="button" onClick={() => setReview(null)} disabled={busy} className="mv-button-secondary">Болих</button><button type="button" onClick={confirmReview} disabled={busy || (review?.kind === "delete" && confirmation !== review.student.email) || (review?.kind === "reset" && confirmation !== "0")} className={review?.kind === "xp" ? "mv-button-primary" : "min-h-11 rounded-xl bg-rose-600 px-4 py-3 text-sm font-semibold text-white hover:bg-rose-500 disabled:opacity-50"}>{busy ? "Хадгалж байна…" : review?.kind === "delete" ? "Бүрмөсөн устгах" : "Баталгаажуулах"}</button></>}>
+      <div className="space-y-5">{review?.kind === "xp" && <><dl className="space-y-4 rounded-2xl border border-white/10 p-4"><div><dt className="text-sm text-slate-400">Хэнд үйлчлэх</dt><dd className="mt-1 break-words text-base font-semibold text-white">{review.label}</dd>{review.payload.studentEmail && <dd className="mt-1 break-all text-sm leading-6 text-slate-400">{review.payload.studentEmail}</dd>}</div><div><dt className="text-sm text-slate-400">Өөрчлөлт</dt><dd className="mt-1 text-xl font-bold text-violet-200">{review.payload.action === "set" ? `${numberLabel(review.payload.amount)} XP болгож тогтоох` : `${review.payload.amount > 0 ? "+" : ""}${numberLabel(review.payload.amount)} XP`}</dd></div></dl><p className="text-sm leading-6 text-slate-300">{review.payload.action === "set" ? "Одоогийн XP дүн солигдоно." : "Одоогийн XP дээр энэ өөрчлөлт нэмэгдэнэ."}{review.payload.applyToAll && " Хамрах хүрээний бүх сурагчид үйлчилнэ."}</p></>}
+      {review?.kind === "delete" && <><p className="break-words text-base font-semibold text-white">{studentName(review.student)}</p><p className="text-sm leading-7 text-slate-300">Энэ сурагчийн бүртгэл, бүтээл, сэтгэгдэл, үнэлгээ, мэдэгдэл болон илгээсэн даалгаврууд устна. Үйлдлийг буцаах боломжгүй.</p><div><label htmlFor="delete-confirm" className="mv-label">Баталгаажуулахын тулд сурагчийн имэйлийг бичнэ үү</label><p className="mb-2 select-all break-all text-sm text-rose-200">{review.student.email}</p><input id="delete-confirm" value={confirmation} onChange={event => setConfirmation(event.target.value)} disabled={busy} autoComplete="off" className="mv-field" /></div></>}
+      {review?.kind === "reset" && <><p className="text-sm leading-7 text-slate-300">Бүх ангийн бүх сурагчийн одоогийн XP нь 0 болно. Өмнөх дүнг автоматаар буцаах боломжгүй.</p><div><label htmlFor="reset-confirm" className="mv-label">Баталгаажуулахын тулд 0 гэж бичнэ үү</label><input id="reset-confirm" value={confirmation} onChange={event => setConfirmation(event.target.value)} disabled={busy} inputMode="numeric" autoComplete="off" className="mv-field" /></div></>}
+      {reviewError && <p role="alert" className="rounded-xl bg-rose-500/10 p-3 text-sm leading-6 text-rose-200">{reviewError}</p>}</div>
+    </Modal>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Үйлдэл
-                </label>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setAction("add")}
-                    className={`flex-1 rounded-xl px-4 py-3 text-sm font-medium transition-all ${
-                      action === "add"
-                        ? "bg-violet-500 text-white shadow-lg"
-                        : "border border-slate-700 bg-slate-900 text-slate-400 hover:text-slate-200"
-                    }`}
-                  >
-                    + Нэмэх
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAction("set")}
-                    className={`flex-1 rounded-xl px-4 py-3 text-sm font-medium transition-all ${
-                      action === "set"
-                        ? "bg-violet-500 text-white shadow-lg"
-                        : "border border-slate-700 bg-slate-900 text-slate-400 hover:text-slate-200"
-                    }`}
-                  >
-                    = Тогтоох
-                  </button>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  XP дүн
-                </label>
-                <input
-                  type="number"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="Жишээ: 100"
-                  className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-slate-200 placeholder:text-slate-500 focus:border-violet-500/40 focus:outline-none"
-                  required
-                />
-              </div>
-            </div>
-
-            {message && (
-              <div
-                className={`rounded-xl px-4 py-3 text-sm ${
-                  message.type === "success"
-                    ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-300"
-                    : "bg-red-500/10 border border-red-500/30 text-red-300"
-                }`}
-              >
-                {message.text}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={processing}
-              className="w-full rounded-xl bg-gradient-to-r from-violet-500 to-purple-500 px-6 py-3 text-sm font-semibold text-white shadow-lg hover:shadow-xl disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {processing ? "Боловсруулж байна..." : action === "add" ? "XP нэмэх" : "XP тогтоох"}
-            </button>
-          </form>
-        </div>
-
-        {/* Students List */}
-        <div className="rounded-3xl border border-slate-700/50 bg-slate-900/50 px-6 py-6 shadow-xl">
-          <h2 className="text-xl font-bold text-white">Сурагчдын жагсаалт</h2>
-          <p className="mt-1 text-sm text-slate-400 mb-4">
-            Нийт {students.length} сурагч {gradeFilter !== 'all' && <span className="text-green-400">(анги: {gradeFilter})</span>}
-          </p>
-
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-slate-800">
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                    #
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                    Нэр
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                    Email
-                  </th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                    АнгИ
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                    XP
-                  </th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                    Үйлдэл
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800">
-                {students.map((student, index) => (
-                  <tr
-                    key={student.email}
-                    className="hover:bg-slate-800/30 transition-colors"
-                  >
-                    <td className="px-4 py-3 text-sm text-slate-500">
-                      {index + 1}
-                    </td>
-                    <td className="px-4 py-3 text-sm font-medium text-slate-200">
-                      {student.name || "—"}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-slate-400">
-                      {student.email}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-slate-300">
-                      {student.grade ? (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-green-500/40 bg-green-500/10 px-2 py-0.5 text-[10px] text-green-300 font-medium">
-                          🎒 {student.grade}
-                        </span>
-                      ) : (
-                        <span className="text-slate-500 text-xs">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-500/10 border border-violet-500/30 px-3 py-1 text-xs font-semibold text-violet-300">
-                        {student.experience} XP
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => {
-                            setResetModalStudent(student);
-                            setResetPasswordValue("123456");
-                          }}
-                          className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-xs text-amber-300 hover:bg-amber-500/20 hover:border-amber-500/50 transition-colors"
-                          title="Нууц үг шинэчлэх"
-                        >
-                          🔑 Нууц үг
-                        </button>
-                        <button
-                          onClick={() => setSelectedStudent(student.email)}
-                          className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-300 hover:border-violet-500/40 hover:text-violet-300 transition-colors"
-                          title="XP засах"
-                        >
-                          ✏️ Засах
-                        </button>
-                        <button
-                          onClick={() => handleDeleteStudent(student.email, student.name)}
-                          disabled={deletingStudent === student.email}
-                          className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs text-red-300 hover:bg-red-500/20 hover:border-red-500/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                          title="Сурагч устгах"
-                        >
-                          {deletingStudent === student.email ? "⏳" : "🗑️"} Устгах
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      {/* Password Reset Modal */}
-      {resetModalStudent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="relative w-full max-w-md rounded-3xl border border-slate-700/60 bg-slate-900 p-6 shadow-2xl space-y-5">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 text-lg">
-                  🔑
-                </div>
-                <div>
-                  <h3 className="font-bold text-white text-base">Нууц үг шинэчлэх</h3>
-                  <p className="text-xs text-slate-400">{resetModalStudent.name || resetModalStudent.email}</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setResetModalStudent(null)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/5 transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleResetStudentPassword} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                  Сурагчийн имэйл
-                </label>
-                <input
-                  type="text"
-                  readOnly
-                  value={resetModalStudent.email}
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950 px-4 py-2.5 text-sm text-slate-400 cursor-not-allowed"
-                />
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-semibold text-slate-300">
-                    Шинэ нууц үг (хамгийн багадаа 6 тэмдэгт)
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setResetPasswordValue("123456")}
-                    className="text-[11px] text-amber-400 hover:text-amber-300 underline font-medium"
-                  >
-                    "123456" болгох
-                  </button>
-                </div>
-                <input
-                  type="text"
-                  required
-                  value={resetPasswordValue}
-                  onChange={(e) => setResetPasswordValue(e.target.value)}
-                  placeholder="Шинэ нууц үг оруулах..."
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-2.5 text-sm text-white placeholder:text-slate-600 focus:border-amber-500/50 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
-                />
-              </div>
-
-              <div className="flex items-center gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setResetModalStudent(null)}
-                  className="flex-1 rounded-xl border border-slate-700 py-2.5 text-sm font-semibold text-slate-300 hover:bg-slate-800 transition-colors"
-                >
-                  Болих
-                </button>
-                <button
-                  type="submit"
-                  disabled={resettingPassword}
-                  className="flex-1 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 py-2.5 text-sm font-bold text-white shadow-lg hover:shadow-amber-500/30 hover:scale-[1.02] disabled:opacity-60 transition-all"
-                >
-                  {resettingPassword ? "Хадгалж байна..." : "Шинэчлэх"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+    <Modal open={!!resetStudent} onClose={() => { if (!busyRef.current) { setResetStudent(null); setPassword(""); setPasswordConfirm(""); } }} title="Сурагчийн нууц үг шинэчлэх" busy={busy}>
+      {resetStudent && <form onSubmit={resetPassword} className="space-y-5"><div className="rounded-xl border border-white/10 p-3"><p className="break-words text-sm font-semibold text-white">{studentName(resetStudent)}</p><p className="mt-1 break-all text-sm leading-6 text-slate-400">{resetStudent.email}</p></div><fieldset disabled={busy} className="space-y-4"><div><label htmlFor="student-new-password" className="mv-label">Шинэ нууц үг</label><input id="student-new-password" type={passwordVisible ? "text" : "password"} value={password} onChange={event => setPassword(event.target.value)} minLength={6} maxLength={72} autoComplete="new-password" required className="mv-field" aria-describedby="student-password-help" /></div><div><label htmlFor="student-confirm-password" className="mv-label">Нууц үгээ давтан оруулах</label><input id="student-confirm-password" type={passwordVisible ? "text" : "password"} value={passwordConfirm} onChange={event => setPasswordConfirm(event.target.value)} minLength={6} maxLength={72} autoComplete="new-password" required className="mv-field" /></div><label className="flex min-h-11 cursor-pointer items-center gap-3 text-sm text-slate-300"><input type="checkbox" checked={passwordVisible} onChange={event => setPasswordVisible(event.target.checked)} className="h-4 w-4 accent-violet-500" />Нууц үгийг харуулах</label></fieldset><p id="student-password-help" className="text-sm leading-6 text-slate-400">6–72 тэмдэгттэй шинэ нууц үг оруулна. Хуучин нууц үг солигдоно.</p>{passwordError && <p role="alert" className="rounded-xl bg-rose-500/10 p-3 text-sm leading-6 text-rose-200">{passwordError}</p>}<div className="flex flex-wrap justify-end gap-2 border-t border-white/10 pt-4"><button type="button" onClick={() => { setResetStudent(null); setPassword(""); setPasswordConfirm(""); }} disabled={busy} className="mv-button-secondary">Болих</button><button type="submit" disabled={busy} className="mv-button-primary">{busy ? "Шинэчилж байна…" : "Нууц үг шинэчлэх"}</button></div></form>}
+    </Modal>
+  </div></DashboardLayout>;
 }

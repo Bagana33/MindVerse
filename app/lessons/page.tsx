@@ -1,14 +1,14 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import { useSession } from "../../components/auth/useSession";
 import { DashboardLayout } from "../../components/layout/DashboardLayout";
 import Link from "next/link";
+import Modal from "../../components/ui/Modal";
 import { useSearchParams } from "next/navigation";
 import { cachedFetch, invalidateCache } from "../../lib/fetchCache";
 
 type Lesson = {
-
   id: string;
   title: string;
   description: string;
@@ -45,9 +45,23 @@ function normalizeDescription(text: string): string {
 function LessonsContent() {
   const { session } = useSession();
   const searchParams = useSearchParams();
-  const searchQuery = (searchParams?.get("search") || "").trim().toLowerCase();
+  const [searchInput, setSearchInput] = useState(
+    searchParams?.get("search") || "",
+  );
+  const searchQuery = searchInput.trim().toLowerCase();
+  useEffect(() => {
+    setSearchInput(searchParams?.get("search") || "");
+  }, [searchParams]);
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const loadRequestRef = useRef(0);
+  const mutationRef = useRef(false);
+  const uploadRef = useRef(false);
+  const [deleteTarget, setDeleteTarget] = useState<Lesson | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const [notice, setNotice] = useState("");
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingLessonId, setEditingLessonId] = useState<string | null>(null);
 
@@ -57,55 +71,76 @@ function LessonsContent() {
           l.title.toLowerCase().includes(searchQuery) ||
           l.description.toLowerCase().includes(searchQuery) ||
           l.authorName.toLowerCase().includes(searchQuery) ||
-          l.authorEmail.toLowerCase().includes(searchQuery)
+          l.authorEmail.toLowerCase().includes(searchQuery),
       )
     : lessons;
-  
+
   // Form state
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [targetGrades, setTargetGrades] = useState<string[]>([]); // [] means all grades
   const [questions, setQuestions] = useState<QuestionInput[]>([
-    { question: "", options: ["", "", "", ""], correctAnswer: 0, explanation: "" }
+    {
+      question: "",
+      options: ["", "", "", ""],
+      correctAnswer: 0,
+      explanation: "",
+    },
   ]);
   const [files, setFiles] = useState<FileInput[]>([]);
   const [creating, setCreating] = useState(false);
   const [uploadingFiles, setUploadingFiles] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchLessons();
-  }, []);
-
-  async function fetchLessons() {
+  const fetchLessons = useCallback(async () => {
+    const requestId = ++loadRequestRef.current;
+    setLoading(true);
+    setLoadError(null);
     try {
+      // The shared GET cache bounds the request at 15 seconds.
       const res = await cachedFetch("/api/lessons");
-      if (res.ok) {
-        const json = await res.json();
+      if (!res.ok) throw new Error("lessons-unavailable");
+      const json = await res.json();
+      if (!json.ok || !Array.isArray(json.lessons))
+        throw new Error("invalid-lessons-response");
+      if (loadRequestRef.current === requestId) {
         // Defensive: always array, always targetGrades is array
-        const lessonsArr = Array.isArray(json.lessons) ? json.lessons : [];
         setLessons(
-          lessonsArr.map((l: any) => ({
+          json.lessons.map((l: any) => ({
             ...l,
             targetGrades: Array.isArray(l.targetGrades) ? l.targetGrades : [],
             questions: Array.isArray(l.questions) ? l.questions : [],
             files: Array.isArray(l.files) ? l.files : [],
-          }))
+          })),
         );
-      } else {
-        setLessons([]);
       }
-    } catch (err) {
-      console.error("Failed to fetch lessons:", err);
-      setLessons([]);
+    } catch {
+      if (loadRequestRef.current === requestId)
+        setLoadError(
+          "Хичээлүүдийг ачаалж чадсангүй. Холболтоо шалгаад дахин оролдоно уу.",
+        );
     } finally {
-      setLoading(false);
+      if (loadRequestRef.current === requestId) setLoading(false);
     }
-  }
+  }, []);
 
+  useEffect(() => {
+    void fetchLessons();
+    return () => {
+      loadRequestRef.current += 1;
+    };
+  }, [fetchLessons]);
 
   function addQuestion() {
-    setQuestions([...questions, { question: "", options: ["", "", "", ""], correctAnswer: 0, explanation: "" }]);
+    setQuestions([
+      ...questions,
+      {
+        question: "",
+        options: ["", "", "", ""],
+        correctAnswer: 0,
+        explanation: "",
+      },
+    ]);
   }
 
   function removeQuestion(index: number) {
@@ -114,21 +149,41 @@ function LessonsContent() {
     }
   }
 
-  function updateQuestion(index: number, field: keyof QuestionInput, value: any) {
+  function updateQuestion(
+    index: number,
+    field: keyof QuestionInput,
+    value: any,
+  ) {
     const updated = [...questions];
     updated[index] = { ...updated[index], [field]: value };
     setQuestions(updated);
   }
 
   function updateOption(qIndex: number, optIndex: number, value: string) {
-    const updated = [...questions];
-    updated[qIndex].options[optIndex] = value;
-    setQuestions(updated);
+    setQuestions((current) =>
+      current.map((question, index) =>
+        index === qIndex
+          ? {
+              ...question,
+              options: question.options.map((option, optionIndex) =>
+                optionIndex === optIndex ? value : option,
+              ),
+            }
+          : question,
+      ),
+    );
   }
 
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const uploadedFiles = e.target.files;
-    if (!uploadedFiles || uploadedFiles.length === 0) return;
+    if (
+      !uploadedFiles ||
+      uploadedFiles.length === 0 ||
+      uploadRef.current ||
+      mutationRef.current
+    )
+      return;
+    uploadRef.current = true;
 
     setError(null);
 
@@ -155,13 +210,19 @@ function LessonsContent() {
         try {
           const signRes = await fetch("/api/uploads/sign", {
             method: "POST",
+            signal: AbortSignal.timeout(15000),
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ folder: "neoncanvas/lessons" }),
           });
 
           if (signRes.ok) {
             const signJson = await signRes.json();
-            if (signJson?.ok && signJson.cloudName && signJson.apiKey && signJson.signature) {
+            if (
+              signJson?.ok &&
+              signJson.cloudName &&
+              signJson.apiKey &&
+              signJson.signature
+            ) {
               const form = new FormData();
               form.append("file", file);
               form.append("api_key", signJson.apiKey);
@@ -172,7 +233,11 @@ function LessonsContent() {
               // Use raw upload endpoint to avoid image-size caps on PSD/ZIP/etc.
               const uploadRes = await fetch(
                 `https://api.cloudinary.com/v1_1/${signJson.cloudName}/raw/upload`,
-                { method: "POST", body: form }
+                {
+                  method: "POST",
+                  body: form,
+                  signal: AbortSignal.timeout(90000),
+                },
               );
 
               if (!uploadRes.ok) {
@@ -184,15 +249,15 @@ function LessonsContent() {
                 throw new Error("No secure_url returned");
               }
 
-newFiles.push({
-  ...baseInfo,
-  fileType:
-    file.type ||
-    (uploadJson.resource_type && uploadJson.format
-      ? `${uploadJson.resource_type}/${uploadJson.format}`
-      : "application/octet-stream"),
-  fileUrl: uploadJson.secure_url,
-});
+              newFiles.push({
+                ...baseInfo,
+                fileType:
+                  file.type ||
+                  (uploadJson.resource_type && uploadJson.format
+                    ? `${uploadJson.resource_type}/${uploadJson.format}`
+                    : "application/octet-stream"),
+                fileUrl: uploadJson.secure_url,
+              });
               continue;
             }
           }
@@ -201,7 +266,9 @@ newFiles.push({
         } catch (cloudErr) {
           // Avoid pushing large base64 bodies to the API (causes 413). Require Cloudinary for >0 files.
           console.error("Cloudinary upload failed:", cloudErr);
-          setError("Файл байршуулж чадсангүй. Cloudinary тохиргоогоо шалгана уу эсвэл файлаа багасгаарай.");
+          setError(
+            "Файл байршуулж чадсангүй. Холболтоо шалгах эсвэл файлын хэмжээг багасгаад дахин оролдоорой.",
+          );
           continue;
         }
       }
@@ -210,6 +277,7 @@ newFiles.push({
         setFiles((prev) => [...prev, ...newFiles]);
       }
     } finally {
+      uploadRef.current = false;
       setUploadingFiles(false);
       // Allow uploading the same file again if needed
       e.target.value = "";
@@ -217,26 +285,37 @@ newFiles.push({
   }
 
   function removeFile(fileId: string) {
-    setFiles(files.filter(f => f.id !== fileId));
+    setFiles(files.filter((f) => f.id !== fileId));
   }
 
   async function handleCreateLesson(e: React.FormEvent) {
     e.preventDefault();
+    if (mutationRef.current) return;
     if (uploadingFiles) {
       setError("Файл байршиж байна, түр хүлээгээд дахин оролдоно уу.");
       return;
     }
+    mutationRef.current = true;
     setError(null);
     setCreating(true);
 
     try {
-      const endpoint = editingLessonId ? `/api/lessons/${editingLessonId}` : "/api/lessons";
+      const endpoint = editingLessonId
+        ? `/api/lessons/${editingLessonId}`
+        : "/api/lessons";
       const method = editingLessonId ? "PUT" : "POST";
 
       const res = await fetch(endpoint, {
         method,
+        signal: AbortSignal.timeout(30000),
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, description, targetGrades, questions, files }),
+        body: JSON.stringify({
+          title,
+          description,
+          targetGrades,
+          questions,
+          files,
+        }),
       });
 
       const contentType = res.headers.get("content-type") || "";
@@ -246,7 +325,9 @@ newFiles.push({
       } else {
         const text = await res.text();
         if (res.status === 413) {
-          setError("Илгээсэн өгөгдөл хэт том байна. Cloudinary тохиргоогоо шалгаад дахин оролдох эсвэл файлаа 50MB-аас багасгаарай.");
+          setError(
+            "Илгээсэн өгөгдөл хэт том байна. Cloudinary тохиргоогоо шалгаад дахин оролдох эсвэл файлаа 50MB-аас багасгаарай.",
+          );
         } else {
           console.error("Non-JSON response from /api/lessons:", {
             status: res.status,
@@ -262,25 +343,42 @@ newFiles.push({
         return;
       }
 
-      if (!res.ok) {
+      if (!res.ok || !json.ok || !json.lesson) {
         setError(json.error || "Алдаа гарлаа");
         return;
       }
 
       if (editingLessonId) {
         // Update existing lesson
-        setLessons(lessons.map(l => l.id === editingLessonId ? json.lesson : l));
+        setLessons((current) =>
+          current.map((l) => (l.id === editingLessonId ? json.lesson : l)),
+        );
       } else {
         // Add new lesson
-        setLessons([json.lesson, ...lessons]);
+        setLessons((current) => [json.lesson, ...current]);
       }
 
+      loadRequestRef.current += 1;
+      setLoading(false);
+      setLoadError(null);
       invalidateCache("/api/lessons");
+      setNotice(
+        editingLessonId
+          ? "Хичээлийн өөрчлөлтийг хадгаллаа."
+          : "Шинэ хичээл нэмэгдлээ.",
+      );
       resetForm();
     } catch (err: any) {
       console.error("Create/update lesson error:", err);
-      setError(err.message || "Сүлжээний алдаа гарлаа");
+      setError(
+        ["TimeoutError", "TypeError", "AbortError", "SyntaxError"].includes(
+          err?.name,
+        )
+          ? "Хариу ирсэнгүй. Дахин илгээхээс өмнө хичээлийн жагсаалтаа шинэчилж шалгана уу."
+          : err.message || "Сүлжээний алдаа гарлаа",
+      );
     } finally {
+      mutationRef.current = false;
       setCreating(false);
     }
   }
@@ -289,7 +387,14 @@ newFiles.push({
     setTitle("");
     setDescription("");
     setTargetGrades([]);
-    setQuestions([{ question: "", options: ["", "", "", ""], correctAnswer: 0, explanation: "" }]);
+    setQuestions([
+      {
+        question: "",
+        options: ["", "", "", ""],
+        correctAnswer: 0,
+        explanation: "",
+      },
+    ]);
     setFiles([]);
     setShowCreateForm(false);
     setEditingLessonId(null);
@@ -297,99 +402,174 @@ newFiles.push({
   }
 
   function startEditLesson(lesson: Lesson) {
+    setError(null);
     setEditingLessonId(lesson.id);
     setTitle(lesson.title);
     setDescription(lesson.description);
     setTargetGrades((lesson as any).targetGrades || []);
-    setQuestions(lesson.questions.map(q => ({
-      question: q.question,
-      options: [...q.options],
-      correctAnswer: q.correctAnswer,
-      explanation: q.explanation || ""
-    })));
+    setQuestions(
+      lesson.questions.map((q) => ({
+        question: q.question,
+        options: [...q.options],
+        correctAnswer: q.correctAnswer,
+        explanation: q.explanation || "",
+      })),
+    );
     setFiles(lesson.files || []);
     setShowCreateForm(true);
   }
 
-  async function handleDeleteLesson(lessonId: string) {
-    if (!confirm("Энэ хичээлийг устгах уу?")) return;
-
+  async function handleDeleteLesson() {
+    if (!deleteTarget || mutationRef.current) return;
+    mutationRef.current = true;
+    setDeleting(true);
+    setDeleteError("");
     try {
-      const res = await fetch(`/api/lessons/${lessonId}`, {
+      const response = await fetch(`/api/lessons/${deleteTarget.id}`, {
         method: "DELETE",
+        signal: AbortSignal.timeout(30000),
       });
-
-      if (!res.ok) {
-        const json = await res.json();
-        alert(json.error || "Алдаа гарлаа");
-        return;
-      }
-
+      const json = await response.json();
+      if (!response.ok || !json.ok)
+        throw new Error(json.error || "Хичээлийг устгаж чадсангүй.");
+      loadRequestRef.current += 1;
+      setLoading(false);
+      setLoadError(null);
       invalidateCache("/api/lessons");
-      setLessons(lessons.filter(l => l.id !== lessonId));
-    } catch (err) {
-      console.error("Delete lesson error:", err);
-      alert("Сүлжээний алдаа гарлаа");
+      setLessons((current) =>
+        current.filter((lesson) => lesson.id !== deleteTarget.id),
+      );
+      setDeleteTarget(null);
+      setNotice("Хичээлийг устгалаа.");
+    } catch {
+      setDeleteError(
+        "Устгалын хариу ирсэнгүй. Жагсаалтаа шинэчилж шалгана уу.",
+      );
+    } finally {
+      mutationRef.current = false;
+      setDeleting(false);
     }
   }
 
-
   return (
     <DashboardLayout>
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Хичээлүүд</h1>
+      <div className="mv-page space-y-6 xl:space-y-8">
+        <header className="mv-page-header">
+          <div>
+            <p className="mv-eyebrow">СУРАЛЦАХ ОРОН ЗАЙ</p>
+            <h1 className="mv-title">Хичээлүүд</h1>
+            <p className="mv-subtitle">
+              Сэдвээ ойлгож, мэдлэгээ сорьж, өөрийн бүтээл дээр туршаарай.
+            </p>
+          </div>
           {session && session.role === "teacher" && !showCreateForm && (
             <button
-              onClick={() => setShowCreateForm(true)}
-              className="px-4 py-2 rounded-lg bg-gradient-to-r from-violet-500 to-purple-500 text-white text-sm font-medium shadow-[0_4px_16px_rgba(139,92,246,0.4)] hover:shadow-[0_6px_20px_rgba(139,92,246,0.6)] transition-all"
+              onClick={() => {
+                resetForm();
+                setShowCreateForm(true);
+              }}
+              className="mv-button-primary"
             >
               + Хичээл нэмэх
             </button>
           )}
+        </header>
+        {notice && (
+          <p
+            role="status"
+            className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3 text-sm text-emerald-200"
+          >
+            {notice}
+          </p>
+        )}
+        <div className="mv-panel flex flex-col gap-4 p-4 sm:p-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="w-full min-w-0 lg:max-w-xl">
+            <label htmlFor="lesson-search" className="mv-label">
+              Хичээл хайх
+            </label>
+            <input
+              id="lesson-search"
+              type="search"
+              className="mv-field min-w-0"
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              placeholder="Хичээлийн нэр, сэдэв, багш…"
+            />
+          </div>
+          <p
+            className="shrink-0 text-sm leading-6 text-slate-400 lg:pb-3"
+            aria-live="polite"
+          >
+            {loading ? (
+              "Хичээлүүдийг ачаалж байна…"
+            ) : (
+              <>
+                <span className="font-semibold text-slate-100">
+                  {filteredLessons.length}
+                </span>{" "}
+                хичээл {searchQuery ? "олдлоо" : "үзэх боломжтой"}
+              </>
+            )}
+          </p>
         </div>
 
-        {showCreateForm && session && session.role === "teacher" && (
-          <div className="bg-slate-900/40 border border-slate-800 rounded-2xl px-6 py-5 shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
-            <h2 className="text-lg font-semibold mb-4">
-              {editingLessonId ? "Хичээл засах" : "Шинэ хичээл үүсгэх"}
-            </h2>
-            <form onSubmit={handleCreateLesson} className="space-y-4">
+        <Modal
+          open={showCreateForm && session?.role === "teacher"}
+          onClose={resetForm}
+          title={editingLessonId ? "Хичээл засах" : "Шинэ хичээл"}
+          wide
+          busy={creating || uploadingFiles}
+        >
+          <form onSubmit={handleCreateLesson} className="space-y-5">
+            <fieldset disabled={creating} className="space-y-5">
               <div>
-                <label className="block text-sm font-medium mb-2">Гарчиг</label>
+                <label htmlFor="lesson-title" className="mv-label">
+                  Гарчиг *
+                </label>
                 <input
                   type="text"
                   required
+                  id="lesson-title"
+                  maxLength={200}
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  className="w-full rounded-lg bg-slate-950/60 border border-slate-700 px-4 py-2 text-sm focus:outline-none focus:border-violet-500"
-                  placeholder="Жишээ нь: React Basics"
+                  className="mv-field min-w-0"
+                  placeholder="Жишээ нь: Өнгөний зохицол"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">Тайлбар</label>
+                <label htmlFor="lesson-description" className="mv-label">
+                  Тайлбар *
+                </label>
                 <textarea
                   required
+                  id="lesson-description"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   rows={3}
-                  className="w-full rounded-lg bg-slate-950/60 border border-slate-700 px-4 py-2 text-sm focus:outline-none focus:border-violet-500 resize-none"
-                  placeholder="Хичээлийн товч тайлбар"
+                  className="mv-field min-w-0"
+                  placeholder="Хичээлээр юу сурч, ямар бүтээл хийхийг тайлбарлаарай…"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">🎒 Зорилтот анги</label>
-                <p className="text-xs text-slate-400 mb-3">Хэддүгээр ангийн сурагчдад зориулсан вэ? (Сонголтгүй бол бүх ангид харагдана)</p>
+                <h3 className="mv-label">Хамрагдах анги</h3>
+                <p className="text-sm leading-6 text-slate-400 mb-3">
+                  Хэддүгээр ангийн сурагчдад зориулсан вэ? (Сонголтгүй бол бүх
+                  ангид харагдана)
+                </p>
                 <div className="flex flex-wrap gap-2">
-                  {["10", "11", "12"].map((grade) => (
+                  {["9", "10", "11", "12"].map((grade) => (
                     <button
                       key={grade}
+                      aria-pressed={targetGrades.includes(grade)}
                       type="button"
                       onClick={() => {
                         if (targetGrades.includes(grade)) {
-                          setTargetGrades(targetGrades.filter(g => g !== grade));
+                          setTargetGrades(
+                            targetGrades.filter((g) => g !== grade),
+                          );
                         } else {
                           setTargetGrades([...targetGrades, grade]);
                         }
@@ -405,6 +585,7 @@ newFiles.push({
                   ))}
                   <button
                     type="button"
+                    aria-pressed={targetGrades.length === 0}
                     onClick={() => setTargetGrades([])}
                     className={`px-4 py-2 rounded-lg border-2 text-sm font-semibold transition-all ${
                       targetGrades.length === 0
@@ -418,33 +599,46 @@ newFiles.push({
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">Файлууд (PDF, зураг, video гэх мэт)</label>
+                <h3 className="mv-label">Хавсралт материал</h3>
+                <p className="mb-3 text-sm text-slate-400">
+                  PDF, зураг, видео болон бусад файл. Файл тус бүр 50 MB хүртэл.
+                </p>
                 <div className="space-y-2">
-                  <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-700 hover:border-violet-500 text-sm transition-colors">
-                    📎 Файл нэмэх
+                  <label className="cursor-pointer focus-within:ring-2 focus-within:ring-violet-400 inline-flex min-h-11 items-center gap-2 px-4 py-2 rounded-lg border border-slate-700 hover:border-violet-500 text-sm transition-colors">
+                    Файл сонгох
                     <input
                       type="file"
                       multiple
                       onChange={handleFileUpload}
-                      className="hidden"
+                      className="sr-only"
+                      disabled={uploadingFiles || creating}
                       accept="*/*"
                     />
                   </label>
                   {uploadingFiles && (
-                    <p className="text-xs text-slate-400">Файл байршиж байна...</p>
+                    <p role="status" className="text-xs text-slate-400">
+                      Файл байршиж байна...
+                    </p>
                   )}
                   {files.length > 0 && (
                     <div className="space-y-2 mt-3">
                       {files.map((file) => (
-                        <div key={file.id} className="flex items-center justify-between gap-2 bg-slate-950/60 border border-slate-700 rounded-lg px-3 py-2">
+                        <div
+                          key={file.id}
+                          className="flex items-center justify-between gap-2 bg-slate-950/60 border border-slate-700 rounded-lg px-3 py-2"
+                        >
                           <div className="flex-1 min-w-0">
-                            <p className="text-sm text-slate-300 truncate">{file.fileName}</p>
-                            <p className="text-xs text-slate-500">{(file.fileSize / 1024).toFixed(1)} KB</p>
+                            <p className="text-sm text-slate-300 truncate">
+                              {file.fileName}
+                            </p>
+                            <p className="text-sm text-slate-400">
+                              {(file.fileSize / 1024).toFixed(1)} KB
+                            </p>
                           </div>
                           <button
                             type="button"
                             onClick={() => removeFile(file.id)}
-                            className="text-red-400 hover:text-red-300 text-sm flex-shrink-0"
+                            className="min-h-11 rounded-lg px-3 text-red-400 hover:text-red-300 text-sm flex-shrink-0"
                           >
                             Устгах
                           </button>
@@ -456,27 +650,42 @@ newFiles.push({
               </div>
 
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <label className="block text-sm font-medium">Асуултууд</label>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h3 className="text-base font-semibold text-white">
+                    Асуултууд
+                  </h3>
                   <button
                     type="button"
                     onClick={addQuestion}
-                    className="px-3 py-1 rounded text-xs bg-slate-800 hover:bg-slate-700 transition-colors"
+                    className="min-h-11 px-3 py-2 rounded-lg text-sm bg-slate-800 hover:bg-slate-700 transition-colors"
                   >
                     + Асуулт нэмэх
                   </button>
                 </div>
 
                 {questions.map((q, qIdx) => (
-                  <div key={qIdx} className="border border-slate-700 rounded-lg p-4 space-y-3">
+                  <div
+                    key={qIdx}
+                    className="border border-slate-700 rounded-lg p-4 space-y-3"
+                  >
                     <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1">
+                      <div className="min-w-0 flex-1">
+                        <label
+                          htmlFor={`lesson-question-${qIdx}`}
+                          className="mv-label"
+                        >
+                          Асуулт {qIdx + 1} *
+                        </label>
                         <input
+                          id={`lesson-question-${qIdx}`}
                           type="text"
                           required
+                          aria-label={`Асуулт ${qIdx + 1}`}
                           value={q.question}
-                          onChange={(e) => updateQuestion(qIdx, "question", e.target.value)}
-                          className="w-full rounded bg-slate-950/60 border border-slate-700 px-3 py-2 text-sm focus:outline-none focus:border-violet-500"
+                          onChange={(e) =>
+                            updateQuestion(qIdx, "question", e.target.value)
+                          }
+                          className="mv-field min-w-0"
                           placeholder={`Асуулт ${qIdx + 1}`}
                         />
                       </div>
@@ -484,29 +693,38 @@ newFiles.push({
                         <button
                           type="button"
                           onClick={() => removeQuestion(qIdx)}
-                          className="text-red-400 hover:text-red-300 text-sm"
+                          className="min-h-11 shrink-0 rounded-lg px-3 text-red-400 hover:text-red-300 text-sm"
                         >
                           Устгах
                         </button>
                       )}
                     </div>
 
+                    <p className="text-sm text-slate-400">
+                      Зөв хариултын зүүн талын сонголтыг тэмдэглэнэ үү.
+                    </p>
                     <div className="space-y-2">
                       {q.options.map((opt, optIdx) => (
                         <div key={optIdx} className="flex items-center gap-2">
                           <input
                             type="radio"
+                            aria-label={`Асуулт ${qIdx + 1}: ${optIdx + 1}-р хариултыг зөвөөр тэмдэглэх`}
                             name={`correct-${qIdx}`}
                             checked={q.correctAnswer === optIdx}
-                            onChange={() => updateQuestion(qIdx, "correctAnswer", optIdx)}
-                            className="text-violet-500"
+                            onChange={() =>
+                              updateQuestion(qIdx, "correctAnswer", optIdx)
+                            }
+                            className="h-5 w-5 shrink-0 accent-violet-500"
                           />
                           <input
                             type="text"
                             required
+                            aria-label={`Асуулт ${qIdx + 1}, хариулт ${optIdx + 1}`}
                             value={opt}
-                            onChange={(e) => updateOption(qIdx, optIdx, e.target.value)}
-                            className="flex-1 rounded bg-slate-950/60 border border-slate-700 px-3 py-1.5 text-sm focus:outline-none focus:border-violet-500"
+                            onChange={(e) =>
+                              updateOption(qIdx, optIdx, e.target.value)
+                            }
+                            className="mv-field min-w-0"
                             placeholder={`Хариулт ${optIdx + 1}`}
                           />
                         </div>
@@ -515,120 +733,226 @@ newFiles.push({
 
                     <input
                       type="text"
+                      aria-label={`Асуулт ${qIdx + 1}-ийн тайлбар`}
                       value={q.explanation}
-                      onChange={(e) => updateQuestion(qIdx, "explanation", e.target.value)}
-                      className="w-full rounded bg-slate-950/60 border border-slate-700 px-3 py-1.5 text-sm focus:outline-none focus:border-violet-500"
+                      onChange={(e) =>
+                        updateQuestion(qIdx, "explanation", e.target.value)
+                      }
+                      className="mv-field min-w-0"
                       placeholder="Тайлбар (заавал биш)"
                     />
                   </div>
                 ))}
               </div>
+            </fieldset>
+            {error && (
+              <p
+                role="alert"
+                className="rounded-xl bg-rose-500/10 p-3 text-sm text-rose-200"
+              >
+                {error}
+              </p>
+            )}
 
-              {error && <p className="text-sm text-red-400">{error}</p>}
-
-              <div className="flex gap-2 justify-end">
-                <button
-                  type="button"
-                  onClick={resetForm}
-                  className="px-4 py-2 rounded-lg border border-slate-700 text-sm hover:bg-slate-800 transition-colors"
-                >
-                  Болих
-                </button>
-                <button
-                  type="submit"
-                  disabled={creating || uploadingFiles}
-                  className="px-6 py-2 rounded-lg bg-gradient-to-r from-violet-500 to-purple-500 text-white text-sm font-medium disabled:opacity-60"
-                >
-                  {creating ? (editingLessonId ? "Хадгалж байна..." : "Үүсгэж байна...") : (editingLessonId ? "Хадгалах" : "Хичээл үүсгэх")}
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
+            <div className="flex gap-2 justify-end">
+              <button
+                type="button"
+                onClick={resetForm}
+                disabled={creating || uploadingFiles}
+                className="mv-button-secondary"
+              >
+                Болих
+              </button>
+              <button
+                type="submit"
+                disabled={creating || uploadingFiles}
+                className="mv-button-primary"
+              >
+                {creating
+                  ? editingLessonId
+                    ? "Хадгалж байна..."
+                    : "Үүсгэж байна..."
+                  : editingLessonId
+                    ? "Хадгалах"
+                    : "Хичээл үүсгэх"}
+              </button>
+            </div>
+          </form>
+        </Modal>
 
         {loading ? (
-          <p className="text-slate-400 text-sm">Loading...</p>
+          <p role="status" className="text-slate-400 text-sm">
+            Хичээлүүдийг ачаалж байна…
+          </p>
+        ) : loadError ? (
+          <div
+            role="alert"
+            className="rounded-2xl border border-rose-500/25 bg-rose-500/5 px-6 py-8 text-center"
+          >
+            <p className="text-sm leading-relaxed text-slate-300">
+              {loadError}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                invalidateCache("/api/lessons");
+                void fetchLessons();
+              }}
+              className="mt-4 min-h-11 rounded-xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-violet-500"
+            >
+              Дахин оролдох
+            </button>
+          </div>
         ) : filteredLessons.length === 0 ? (
           <div className="bg-slate-900/40 border border-slate-800 rounded-2xl px-6 py-8 text-center">
             <p className="text-slate-400">
-              {searchQuery ? `"${searchQuery}" хайлтаар хичээл олдсонгүй` : "Одоогоор хичээл байхгүй байна"}
+              {searchQuery
+                ? `"${searchQuery}" хайлтаар хичээл олдсонгүй`
+                : "Одоогоор хичээл байхгүй байна"}
             </p>
+            {searchQuery && (
+              <button
+                type="button"
+                className="mv-button-secondary mt-4"
+                onClick={() => setSearchInput("")}
+              >
+                Хайлт цэвэрлэх
+              </button>
+            )}
           </div>
         ) : (
-          <div className="grid gap-4">
+          <div className="grid items-stretch gap-5 xl:grid-cols-2 2xl:grid-cols-3">
             {filteredLessons.map((lesson) => {
               const isAuthor = session?.email === lesson.authorEmail;
-              
+
               return (
-                <div key={lesson.id} className="bg-slate-900/40 border border-slate-800 rounded-2xl px-6 py-5 hover:border-violet-500/50 transition-all">
-                  <div className="flex items-start justify-between gap-4">
-                    <Link href={`/lessons/${lesson.id}`} className="flex-1">
-                      <h3 className="text-lg font-semibold text-slate-200 mb-2 hover:text-violet-300 transition-colors">{lesson.title}</h3>
-                      <p
-                        className="text-sm text-slate-400 mb-3 whitespace-pre-line break-words overflow-hidden"
-                        style={{ display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" }}
-                      >
-                        {normalizeDescription(lesson.description)}
-                      </p>
-                      <div className="flex items-center gap-4 text-xs text-slate-500">
-                        <span>👤 {lesson.authorName}</span>
-                        <span>📝 {lesson.questions.length} асуулт</span>
-                        {lesson.files && lesson.files.length > 0 && (
-                          <span>📎 {lesson.files.length} файл</span>
-                        )}
-                        <span>{new Date(lesson.createdAt).toLocaleDateString("mn-MN")}</span>
-                      </div>
-                    </Link>
-                    <div className="flex flex-col gap-2">
-                      <Link 
-                        href={`/lessons/${lesson.id}`}
-                        className="text-violet-400 text-sm hover:text-violet-300 transition-colors"
-                      >
-                        →
-                      </Link>
-                      {isAuthor && (
-                        <div className="flex flex-col gap-1">
-                          <button
-                            onClick={(e) => {
-                              e.preventDefault();
-                              startEditLesson(lesson);
-                            }}
-                            className="px-3 py-1 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 text-xs transition-colors"
-                            title="Засах"
-                          >
-                            ✏️
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.preventDefault();
-                              handleDeleteLesson(lesson.id);
-                            }}
-                            className="px-3 py-1 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 text-xs transition-colors"
-                            title="Устгах"
-                          >
-                            🗑️
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                <article
+                  key={lesson.id}
+                  className="mv-panel flex min-w-0 flex-col p-5 transition-colors hover:border-violet-500/40 sm:p-6"
+                >
+                  <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+                    <span className="rounded-lg bg-violet-500/10 px-2.5 py-1 font-medium text-violet-200">
+                      {lesson.questions.length} асуулт
+                    </span>
+                    {!!lesson.files?.length && (
+                      <span className="text-slate-400">
+                        {lesson.files.length} материал
+                      </span>
+                    )}
                   </div>
-                </div>
+                  <Link
+                    href={`/lessons/${lesson.id}`}
+                    className="min-w-0 flex-1"
+                  >
+                    <h2 className="break-words text-xl font-semibold leading-7 tracking-tight text-white transition-colors hover:text-violet-300">
+                      {lesson.title}
+                    </h2>
+                    <p className="mt-3 line-clamp-3 whitespace-pre-line break-words text-sm leading-7 text-slate-300">
+                      {normalizeDescription(lesson.description)}
+                    </p>
+                  </Link>
+                  <dl className="mt-6 grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-t border-white/10 pt-4 text-sm">
+                    <div className="min-w-0">
+                      <dt className="text-slate-400">Багш</dt>
+                      <dd className="mt-1 break-words font-medium text-slate-200">
+                        {lesson.authorName}
+                      </dd>
+                    </div>
+                    <div className="text-right">
+                      <dt className="text-slate-400">Нэмсэн</dt>
+                      <dd className="mt-1 tabular-nums text-slate-300">
+                        {new Date(lesson.createdAt).toLocaleDateString(
+                          "mn-MN",
+                          { year: "numeric", month: "2-digit", day: "2-digit" },
+                        )}
+                      </dd>
+                    </div>
+                  </dl>
+                  <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
+                    <Link
+                      href={`/lessons/${lesson.id}`}
+                      aria-label={`${lesson.title} хичээлийг нээх`}
+                      className="mv-button-secondary"
+                    >
+                      Хичээл үзэх <span aria-hidden="true">→</span>
+                    </Link>
+                    {isAuthor && (
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => startEditLesson(lesson)}
+                          className="min-h-11 rounded-lg px-3 text-sm text-sky-300 transition-colors hover:bg-sky-500/10"
+                          aria-label={`${lesson.title} хичээлийг засах`}
+                        >
+                          Засах
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeleteTarget(lesson);
+                            setDeleteError("");
+                          }}
+                          className="min-h-11 rounded-lg px-3 text-sm text-rose-300 transition-colors hover:bg-rose-500/10"
+                          aria-label={`${lesson.title} хичээлийг устгах`}
+                        >
+                          Устгах
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </article>
               );
             })}
           </div>
         )}
       </div>
+      <Modal
+        open={!!deleteTarget}
+        onClose={() => setDeleteTarget(null)}
+        title="Хичээл устгах"
+        busy={deleting}
+      >
+        <p className="break-words text-slate-300">
+          “{deleteTarget?.title}” хичээлийг устгах уу? Энэ үйлдлийг буцаах
+          боломжгүй.
+        </p>
+        {deleteError && (
+          <p role="alert" className="mt-3 text-sm text-rose-200">
+            {deleteError}
+          </p>
+        )}
+        <div className="mt-6 flex flex-wrap justify-end gap-3">
+          <button
+            type="button"
+            disabled={deleting}
+            className="mv-button-secondary"
+            onClick={() => setDeleteTarget(null)}
+          >
+            Болих
+          </button>
+          <button
+            type="button"
+            disabled={deleting}
+            className="mv-button-primary !bg-rose-600"
+            onClick={() => void handleDeleteLesson()}
+          >
+            {deleting ? "Устгаж байна…" : "Устгах"}
+          </button>
+        </div>
+      </Modal>
     </DashboardLayout>
   );
 }
 
 export default function LessonsPage() {
   return (
-    <Suspense fallback={
-      <DashboardLayout>
-        <div className="p-8 text-slate-400">Ачаалж байна...</div>
-      </DashboardLayout>
-    }>
+    <Suspense
+      fallback={
+        <DashboardLayout>
+          <div className="p-8 text-slate-400">Ачаалж байна...</div>
+        </DashboardLayout>
+      }
+    >
       <LessonsContent />
     </Suspense>
   );

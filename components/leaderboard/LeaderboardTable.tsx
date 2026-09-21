@@ -1,533 +1,553 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import dynamic from "next/dynamic";
+import { useSearchParams } from "next/navigation";
 import { useSession } from "../auth/useSession";
+import { cachedFetch, invalidateCache } from "../../lib/fetchCache";
+import { getPersonalizedTitleShort } from "../../lib/rpgTitleGenerator";
 import Medal3D from "./Medal3D";
-import { cachedFetch } from "../../lib/fetchCache";
-import { RealmMap } from "./RealmMap";
-import { getPersonalizedTitleShort, generatePersonalizedTitle } from "../../lib/rpgTitleGenerator";
+import type { LeaderboardUser } from "./RealmMap";
 
-type LeaderboardUser = {
-  email: string;
-  name?: string;
-  nickname?: string;
-  avatarUrl?: string;
-  avatarColor?: string;
-  role: "student" | "teacher";
-  grade?: string; // Student grade
-  experience: number;
+const RealmMap = dynamic(
+  () => import("./RealmMap").then((module) => module.RealmMap),
+  {
+    loading: () => (
+      <div className="mv-panel min-h-64 p-6" role="status">
+        Газрын зургийг бэлдэж байна…
+      </div>
+    ),
+  },
+);
+
+const RANKS = [
+  { value: "all", label: "Бүх түвшин" },
+  { value: "beginner", label: "Эхлэгч · 0–99 XP" },
+  { value: "intermediate", label: "Дунд · 100–499 XP" },
+  { value: "advanced", label: "Ахисан · 500–999 XP" },
+  { value: "expert", label: "Мэргэжилтэн · 1,000+ XP" },
+];
+const RANK_LABELS = {
+  beginner: "Эхлэгч",
+  intermediate: "Дунд",
+  advanced: "Ахисан",
+  expert: "Мэргэжилтэн",
 };
+const rankOf = (xp: number) =>
+  xp >= 1000
+    ? "expert"
+    : xp >= 500
+      ? "advanced"
+      : xp >= 100
+        ? "intermediate"
+        : "beginner";
+const displayName = (user: LeaderboardUser) =>
+  user.nickname || user.name || user.email.split("@")[0];
+const xpLabel = (xp: number) => Math.round(xp || 0).toLocaleString("en-US");
 
-export function LeaderboardSidebar({ compact = false }: { compact?: boolean }) {
+function useLeaderboard() {
   const [users, setUsers] = useState<LeaderboardUser[]>([]);
   const [loading, setLoading] = useState(true);
-  const { session } = useSession();
-  const router = useRouter();
-
+  const [error, setError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    async function fetchLeaderboard() {
+    let active = true;
+    setLoading(true);
+    setError(false);
+    async function load() {
       try {
-        const res = await cachedFetch("/api/leaderboard");
-        const json = await res.json();
-        const data = json.leaderboard || [];
-        setUsers(compact ? data.slice(0, 5) : data);
-      } catch (err) {
-        console.error("Failed to fetch leaderboard:", err);
+        const response = await cachedFetch("/api/leaderboard");
+        const data = await response.json();
+        if (!response.ok || !data.ok || !Array.isArray(data.leaderboard))
+          throw new Error("invalid-leaderboard");
+        if (active)
+          setUsers(
+            [...data.leaderboard].sort((a, b) => b.experience - a.experience),
+          );
+      } catch {
+        if (active) setError(true);
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     }
-    fetchLeaderboard();
-  }, [compact]);
+    void load();
+    return () => {
+      active = false;
+    };
+  }, [attempt]);
+  return {
+    users,
+    loading,
+    error,
+    retry: () => {
+      invalidateCache("/api/leaderboard");
+      setAttempt((value) => value + 1);
+    },
+  };
+}
 
-  if (loading) {
-    return (
-      <div className="bg-dark-900 border border-white/5 rounded-3xl px-5 py-5">
-        <h2 className="text-base font-bold bg-gradient-to-r from-violet-300 to-purple-300 bg-clip-text text-transparent mb-4">
-          {compact ? "🏆 Top Students" : "🏆 Leaderboard"}
-        </h2>
-        <div className="space-y-2.5">
-          {[...Array(compact ? 5 : 10)].map((_, i) => (
-            <div key={i} className="bg-dark-800 border border-white/5 px-3 py-3 rounded-xl animate-pulse">
-              <div className="h-8 bg-dark-700 rounded-lg"></div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (users.length === 0) {
-    return (
-      <div className="bg-dark-900 border border-white/5 rounded-3xl px-5 py-5">
-        <h2 className="text-base font-bold bg-gradient-to-r from-violet-300 to-purple-300 bg-clip-text text-transparent mb-4">
-          {compact ? "🏆 Top Students" : "🏆 Leaderboard"}
-        </h2>
-        <div className="text-center py-8">
-          <div className="text-4xl mb-3 opacity-50">🎯</div>
-          <p className="text-sm text-slate-400">Одоогоор хэрэглэгч байхгүй байна</p>
-        </div>
-      </div>
-    );
-  }
-
+function Avatar({
+  user,
+  size = "h-11 w-11",
+}: {
+  user: LeaderboardUser;
+  size?: string;
+}) {
   return (
-    <div className="bg-dark-900 border border-white/5 rounded-3xl px-5 py-5">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-base font-bold bg-gradient-to-r from-violet-300 to-purple-300 bg-clip-text text-transparent">
-          {compact ? "🏆 Top Students" : "🏆 Leaderboard"}
-        </h2>
-        {compact && (
-          <span className="text-[10px] text-violet-400 font-semibold uppercase tracking-wider">Live</span>
-        )}
-      </div>
-      <ul className="space-y-2.5 text-xs">
-        {users.map((u, idx) => {
-          const isTop3 = idx < 3;
-          const medals = ["🥇", "🥈", "🥉"];
-          const isMe = session?.email === u.email;
-          const topFrames = [
-            {
-              container: "relative overflow-hidden border-2 border-amber-400/70 bg-gradient-to-br from-amber-500/15 via-amber-300/5 to-amber-500/25 shadow-[0_15px_50px_rgba(251,191,36,0.35)]",
-              badge: "bg-amber-500/20 text-amber-100",
-              glow: "bg-amber-400/30",
-              rankBg: "bg-gradient-to-br from-amber-400 via-yellow-300 to-amber-500",
-              xp: "bg-gradient-to-r from-amber-200 to-yellow-200 bg-clip-text text-transparent",
-              avatarRing: "ring-2 ring-amber-300 shadow-[0_0_25px_rgba(251,191,36,0.45)]"
-            },
-            {
-              container: "relative overflow-hidden border-2 border-slate-200/70 bg-gradient-to-br from-slate-200/20 via-slate-50/5 to-slate-200/30 shadow-[0_15px_50px_rgba(148,163,184,0.35)]",
-              badge: "bg-slate-200/20 text-slate-100",
-              glow: "bg-slate-200/25",
-              rankBg: "bg-gradient-to-br from-slate-100 via-slate-300 to-slate-500",
-              xp: "bg-gradient-to-r from-slate-100 to-slate-200 bg-clip-text text-transparent",
-              avatarRing: "ring-2 ring-slate-200 shadow-[0_0_25px_rgba(148,163,184,0.35)]"
-            },
-            {
-              container: "relative overflow-hidden border-2 border-orange-300/70 bg-gradient-to-br from-orange-400/15 via-orange-200/5 to-orange-500/25 shadow-[0_15px_50px_rgba(249,115,22,0.35)]",
-              badge: "bg-orange-400/20 text-orange-100",
-              glow: "bg-orange-300/30",
-              rankBg: "bg-gradient-to-br from-orange-300 via-orange-400 to-amber-500",
-              xp: "bg-gradient-to-r from-orange-200 to-amber-200 bg-clip-text text-transparent",
-              avatarRing: "ring-2 ring-orange-300 shadow-[0_0_25px_rgba(249,115,22,0.35)]"
-            },
-          ];
-          const frame = isTop3 ? topFrames[idx] : null;
+    <span
+      className={`relative flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-700 text-sm font-bold text-white ${size}`}
+    >
+      <span aria-hidden="true">{displayName(user)[0]?.toUpperCase()}</span>
+      {user.avatarUrl && (
+        <img
+          src={user.avatarUrl}
+          loading="lazy"
+          decoding="async"
+          alt=""
+          width={48}
+          height={48}
+          className="absolute inset-0 h-full w-full object-cover"
+          onError={(event) => {
+            event.currentTarget.style.display = "none";
+          }}
+        />
+      )}
+    </span>
+  );
+}
 
-          return (
-            <li
-              key={u.email}
-              className={`flex items-center justify-between gap-3 px-3 py-3 rounded-xl transition-all duration-300 ${
-                frame
-                  ? `${frame.container}`
-                  : `bg-dark-800 border border-white/5 hover:border-white/10 ${isMe ? 'border-primary-500/50 shadow-[0_0_18px_rgba(139,92,246,0.3)]' : ''}`
-              }`}
-            >
-              {frame && (
-                <>
-                  <div className={`absolute inset-0 blur-2xl opacity-60 ${frame.glow}`} aria-hidden="true"></div>
-                  <div className="absolute inset-0 border border-white/5 rounded-xl pointer-events-none"></div>
-                </>
-              )}
-              <div className="flex items-center gap-3 flex-1 min-w-0 relative z-10">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shadow-lg ${
-                  frame ? "text-slate-900" : "bg-gradient-to-br from-slate-700 to-slate-800 text-slate-300"
-                } ${frame ? frame.rankBg : ""}`}>
-                  {isTop3 ? (idx === 0 ? <Medal3D /> : medals[idx]) : idx + 1}
-                </div>
-                {(u.avatarUrl || u.avatarColor) ? (
-                  <button
-                    type="button"
-                    title={`${(u.nickname || u.name || u.email)}-н profile харах`}
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`/profile?user=${encodeURIComponent(u.email)}`); }}
-                    className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shadow-lg overflow-hidden cursor-pointer hover:ring-2 hover:ring-violet-400/50 ${frame ? frame.avatarRing : ''}`}
-                    style={{ backgroundColor: u.avatarColor || '#1e293b' }}
-                  >
-                    {u.avatarUrl ? (
-                      <img src={u.avatarUrl} alt={u.name || u.email} className="w-full h-full object-cover" />
-                    ) : (
-                      <span className="text-white">{(u.nickname || u.name || u.email)[0]?.toUpperCase()}</span>
-                    )}
-                  </button>
-                ) : null}
-                <div className="flex-1 min-w-0">
-                  <button
-                    type="button"
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`/profile?user=${encodeURIComponent(u.email)}`); }}
-                    className={`font-semibold truncate text-left transition-colors ${frame ? 'text-white drop-shadow' : 'text-slate-200 hover:text-violet-300'}`}
-                    title={`${(u.nickname || u.name || u.email)}-н profile харах`}
-                  >
-                    {u.nickname || u.name || u.email.split('@')[0]} {isMe && <span className="ml-1 text-[10px] text-violet-300">(You)</span>}
-                  </button>
-                  <div className={`text-[10px] ${frame ? 'text-white/80' : 'text-slate-500'}`}>
-                    {u.experience >= 1000 ? "⭐ Expert" : u.experience >= 500 ? "💎 Advanced" : u.experience >= 100 ? "🎯 Intermediate" : "🌱 Beginner"}
-                  </div>
-                </div>
-              </div>
-              <div className={`text-sm font-bold relative z-10 ${
-                frame
-                  ? frame.xp
-                  : "text-slate-400"
-              }`}>
-                {Math.round(u.experience)}
-                <span className="text-[10px] ml-0.5">XP</span>
-              </div>
+function Rank({ position }: { position: number }) {
+  return (
+    <span
+      className="inline-flex h-9 w-9 items-center justify-center text-sm font-semibold tabular-nums text-slate-300"
+      aria-label={`${position}-р байр`}
+    >
+      {position <= 3 ? (
+        <Medal3D
+          variant={
+            position === 1 ? "gold" : position === 2 ? "silver" : "bronze"
+          }
+          size={28}
+        />
+      ) : (
+        position
+      )}
+    </span>
+  );
+}
+
+export function LeaderboardSidebar({ compact = false }: { compact?: boolean }) {
+  const { users, loading, error, retry } = useLeaderboard();
+  const { session } = useSession();
+  return (
+    <section
+      className="mv-panel p-4 sm:p-5"
+      aria-labelledby="sidebar-leaderboard-title"
+    >
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h2
+          id="sidebar-leaderboard-title"
+          className="text-base font-bold text-white"
+        >
+          Тэргүүлэгчид
+        </h2>
+        <Link
+          href="/leaderboard"
+          className="rounded-lg py-2 text-sm font-medium text-violet-300 hover:text-violet-200"
+        >
+          Бүгд →
+        </Link>
+      </div>
+      {loading ? (
+        <p role="status" className="py-6 text-sm text-slate-400">
+          Чансааг ачаалж байна…
+        </p>
+      ) : error ? (
+        <div role="alert" className="space-y-3">
+          <p className="text-sm text-slate-300">Чансааг ачаалж чадсангүй.</p>
+          <button type="button" onClick={retry} className="mv-button-secondary">
+            Дахин оролдох
+          </button>
+        </div>
+      ) : users.length === 0 ? (
+        <p className="py-6 text-sm text-slate-400">
+          Одоогоор чансаанд сурагч алга.
+        </p>
+      ) : (
+        <ol className="space-y-1">
+          {users.slice(0, compact ? 5 : 10).map((user, index) => (
+            <li key={user.email}>
+              <Link
+                href={`/profile?user=${encodeURIComponent(user.email)}`}
+                className={`flex min-h-16 items-center gap-3 rounded-xl px-2 py-2 transition-colors hover:bg-white/5 ${session?.email === user.email ? "bg-violet-500/10" : ""}`}
+              >
+                <Rank position={index + 1} />
+                <Avatar user={user} size="h-9 w-9" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-semibold text-slate-100">
+                    {displayName(user)}
+                    {session?.email === user.email ? " · Та" : ""}
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    {user.grade === "graduated"
+                      ? "Төгсөгч"
+                      : user.grade
+                        ? `${user.grade}-р анги`
+                        : "Сурагч"}
+                  </span>
+                </span>
+                <span className="shrink-0 text-right text-sm font-semibold tabular-nums text-violet-200">
+                  {xpLabel(user.experience)}
+                  <span className="block text-[11px] font-normal text-slate-400">
+                    XP
+                  </span>
+                </span>
+              </Link>
             </li>
-          );
-        })}
-      </ul>
-    </div>
+          ))}
+        </ol>
+      )}
+    </section>
   );
 }
 
 export function LeaderboardFull() {
-  const [users, setUsers] = useState<LeaderboardUser[]>([]);
-  const [filteredUsers, setFilteredUsers] = useState<LeaderboardUser[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [rankFilter, setRankFilter] = useState<string>("all");
-  const [gradeFilter, setGradeFilter] = useState<string>("all"); // New grade filter
-  const [viewMode, setViewMode] = useState<"map" | "table">("map");
+  const { users, loading, error, retry } = useLeaderboard();
   const { session } = useSession();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-
+  const params = useSearchParams();
+  const [search, setSearch] = useState(params.get("search") || "");
+  const [grade, setGrade] = useState("all");
+  const [rank, setRank] = useState("all");
+  const [view, setView] = useState<"table" | "map">("table");
   useEffect(() => {
-    const q = searchParams?.get("search");
-    if (q !== null) {
-      setSearchQuery(q);
-    }
-  }, [searchParams]);
-
-  useEffect(() => {
-    async function fetchLeaderboard(grade?: string) {
-      try {
-        setLoading(true);
-        const url = grade && grade !== 'all' ? `/api/leaderboard?grade=${grade}` : "/api/leaderboard";
-        const res = await cachedFetch(url);
-        if (res.ok) {
-          const json = await res.json();
-          setUsers(json.leaderboard || []);
-          setFilteredUsers(json.leaderboard || []);
-        }
-      } catch (err) {
-        console.error("Failed to fetch leaderboard:", err);
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchLeaderboard(gradeFilter);
-  }, [gradeFilter]);
-
-  useEffect(() => {
-    let filtered = [...users];
-
-    // Filter by search query
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(u => 
-        (u.nickname || u.name || u.email).toLowerCase().includes(query) ||
-        u.email.toLowerCase().includes(query)
-      );
-    }
-
-    // Filter by rank
-    if (rankFilter !== "all") {
-      filtered = filtered.filter(u => {
-        const rank = u.experience >= 1000 ? "expert" :
-                     u.experience >= 500 ? "advanced" :
-                     u.experience >= 100 ? "intermediate" : "beginner";
-        return rank === rankFilter;
-      });
-    }
-
-    // Filter by grade
-    if (gradeFilter !== "all") {
-      filtered = filtered.filter(u => {
-        // Only show users who have explicitly set their grade to the selected value
-        return u.grade !== null && u.grade !== undefined && u.grade === gradeFilter;
-      });
-    }
-
-    setFilteredUsers(filtered);
-  }, [searchQuery, rankFilter, gradeFilter, users]);
-
-  if (loading) {
-    return (
-      <section className="bg-dark-900 border border-white/5 rounded-2xl px-4 py-4">
-        <h2 className="text-sm font-semibold mb-2 font-bold text-white">Mindverse Leaderboard & RPG Realm</h2>
-        <p className="text-xs text-nc-muted">Ачаалж байна...</p>
-      </section>
-    );
-  }
-
-  if (users.length === 0) {
-    return (
-      <section className="bg-dark-900 border border-white/5 rounded-2xl px-4 py-4">
-        <h2 className="text-sm font-semibold mb-2 font-bold text-white">Mindverse Leaderboard & RPG Realm</h2>
-        <p className="text-xs text-nc-muted">Одоогоор сурагчдын мэдээлэл олдсонгүй.</p>
-      </section>
-    );
-  }
+    setSearch(params.get("search") || "");
+  }, [params]);
+  const positions = useMemo(
+    () => new Map(users.map((user, index) => [user.email, index + 1])),
+    [users],
+  );
+  const visible = useMemo(
+    () =>
+      users.filter((user) => {
+        const query = search.trim().toLocaleLowerCase();
+        return (
+          (!query ||
+            `${user.nickname || ""} ${user.name || ""} ${user.email}`
+              .toLocaleLowerCase()
+              .includes(query)) &&
+          (grade === "all" || user.grade === grade) &&
+          (rank === "all" || rankOf(user.experience) === rank)
+        );
+      }),
+    [users, search, grade, rank],
+  );
+  const currentUser = users.find((user) => user.email === session?.email);
+  const hasFilters = !!search || grade !== "all" || rank !== "all";
+  const clearFilters = () => {
+    setSearch("");
+    setGrade("all");
+    setRank("all");
+  };
 
   return (
-    <div className="space-y-6">
-      {/* View Toggle Tabs Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3 glass-panel p-3.5 rounded-3xl border border-purple-500/20 shadow-lg">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setViewMode("map")}
-            className={`px-5 py-2.5 rounded-2xl text-xs font-black transition-all duration-300 flex items-center gap-2 ${
-              viewMode === "map"
-                ? "bg-gradient-to-r from-amber-500 via-purple-600 to-pink-600 text-white shadow-[0_0_25px_rgba(251,191,36,0.4)] scale-105"
-                : "bg-dark-800 text-slate-400 hover:text-white border border-white/5"
-            }`}
-          >
-            <span className="text-base">🗺️</span>
-            <span>Хаант Улсын Мап (RPG World)</span>
-          </button>
-          <button
-            onClick={() => setViewMode("table")}
-            className={`px-5 py-2.5 rounded-2xl text-xs font-black transition-all duration-300 flex items-center gap-2 ${
-              viewMode === "table"
-                ? "bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-[0_0_25px_rgba(139,92,246,0.4)] scale-105"
-                : "bg-dark-800 text-slate-400 hover:text-white border border-white/5"
-            }`}
-          >
-            <span className="text-base">🏆</span>
-            <span>Хүснэгт (Rankings)</span>
-          </button>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-extrabold text-purple-300 px-3 py-1.5 rounded-xl bg-purple-500/10 border border-purple-500/20">
-            👥 Нийт сурагчид: {filteredUsers.length} / {users.length}
-          </span>
-        </div>
-      </div>
-
-      {viewMode === "map" ? (
-        <RealmMap users={filteredUsers} />
-      ) : (
-        <section className="bg-nc-panel/90 border border-nc-border rounded-3xl px-6 py-6 shadow-nc-soft">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-extrabold text-white">🏆 Сурагчдын Чансаа (Leaderboard)</h2>
-          </div>
-
-      {/* Search and Filter Section */}
-      <div className="mb-4 space-y-3">
-        {/* Search Bar */}
-        <div className="relative">
-          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path d="M11 19C15.4183 19 19 15.4183 19 11C19 6.58172 15.4183 3 11 3C6.58172 3 3 6.58172 3 11C3 15.4183 6.58172 19 11 19Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              <path d="M21 21L16.65 16.65" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </div>
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Нэрээр хайх..."
-            className="w-full pl-10 pr-4 py-2 rounded-lg bg-dark-800 border border-white/5 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500/50"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => setSearchQuery("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-              </svg>
-            </button>
-          )}
-        </div>
-
-        {/* Rank Filter */}
-        <div className="flex flex-wrap gap-2">
-          {[
-            { id: "all", label: "Бүгд" },
-            { id: "expert", label: "Expert" },
-            { id: "advanced", label: "Advanced" },
-            { id: "intermediate", label: "Intermediate" },
-            { id: "beginner", label: "Beginner" }
-          ].map(rank => (
-            <button
-              key={rank.id}
-              onClick={() => setRankFilter(rank.id)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                rankFilter === rank.id
-                  ? "bg-gradient-to-r from-violet-500 to-purple-500 text-white shadow-[0_4px_12px_rgba(139,92,246,0.4)]"
-                  : "bg-dark-800 border border-white/5 text-slate-300 hover:border-primary-500/40 hover:text-slate-100"
-              }`}
-            >
-              {rank.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Grade Filter */}
+    <div className="mv-page">
+      <header className="mv-page-header">
         <div>
-          <label className="block text-xs text-slate-400 mb-2 font-medium">🎒 Анги</label>
-          <div className="flex flex-wrap gap-2">
-            {[
-              { id: "all", label: "Бүгд" },
-              { id: "10", label: "10 анги" },
-              { id: "11", label: "11 анги" },
-              { id: "12", label: "12 анги" }
-            ].map(grade => (
-              <button
-                key={grade.id}
-                onClick={() => setGradeFilter(grade.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                  gradeFilter === grade.id
-                    ? "bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-[0_4px_12px_rgba(34,197,94,0.4)]"
-                    : "bg-dark-800 border border-white/5 text-slate-300 hover:border-green-500/40 hover:text-slate-100"
-                }`}
-              >
-                {grade.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {filteredUsers.length === 0 ? (
-        <div className="text-center py-8">
-          <div className="text-4xl mb-3 opacity-50">🔍</div>
-          <p className="text-sm text-slate-400">
-            {searchQuery || rankFilter !== "all" 
-              ? "Хайлтын үр дүн олдсонгүй" 
-              : "Одоогоор хэрэглэгч байхгүй байна"}
+          <p className="mv-eyebrow">MINDVERSE · АХИЦ</p>
+          <h1 className="mv-title">Сурагчдын чансаа</h1>
+          <p className="mv-subtitle">
+            Бүтээл бүрээр ур чадвараа ахиулж, дараагийн түвшинд хүрээрэй.
           </p>
         </div>
-      ) : (
-        <div className="mt-3 space-y-1 text-xs">
-        <div className="grid grid-cols-[40px,1fr,110px,120px] gap-3 px-2 py-2 rounded-xl bg-black/40 border border-nc-accent/30 text-slate-200">
-          <span>#</span>
-          <span>Student</span>
-          <span>Rank</span>
-          <span>Experience</span>
-        </div>
-        {filteredUsers.map((u, idx) => {
-          const rankTitle = 
-            u.experience >= 1000 ? "Expert" :
-            u.experience >= 500 ? "Advanced" :
-            u.experience >= 100 ? "Intermediate" : "Beginner";
-          const isMe = session?.email === u.email;
-          const topFrames = [
-            {
-              container: "relative overflow-hidden border-2 border-amber-400/70 bg-gradient-to-br from-amber-500/12 via-amber-300/6 to-amber-500/18 shadow-[0_15px_50px_rgba(251,191,36,0.25)]",
-              glow: "bg-amber-400/25",
-              rankBg: "bg-gradient-to-br from-amber-400 via-yellow-300 to-amber-500 text-slate-900",
-              avatarRing: "ring-2 ring-amber-300 shadow-[0_0_25px_rgba(251,191,36,0.35)]",
-              xp: "bg-gradient-to-r from-amber-200 to-yellow-200 bg-clip-text text-transparent"
-            },
-            {
-              container: "relative overflow-hidden border-2 border-slate-200/70 bg-gradient-to-br from-slate-200/18 via-slate-100/8 to-slate-200/20 shadow-[0_15px_50px_rgba(148,163,184,0.25)]",
-              glow: "bg-slate-200/20",
-              rankBg: "bg-gradient-to-br from-slate-100 via-slate-300 to-slate-500 text-slate-900",
-              avatarRing: "ring-2 ring-slate-200 shadow-[0_0_25px_rgba(148,163,184,0.35)]",
-              xp: "bg-gradient-to-r from-slate-100 to-slate-200 bg-clip-text text-transparent"
-            },
-            {
-              container: "relative overflow-hidden border-2 border-orange-300/70 bg-gradient-to-br from-orange-400/12 via-orange-200/6 to-orange-500/18 shadow-[0_15px_50px_rgba(249,115,22,0.25)]",
-              glow: "bg-orange-300/25",
-              rankBg: "bg-gradient-to-br from-orange-300 via-orange-400 to-amber-500 text-slate-900",
-              avatarRing: "ring-2 ring-orange-300 shadow-[0_0_25px_rgba(249,115,22,0.35)]",
-              xp: "bg-gradient-to-r from-orange-200 to-amber-200 bg-clip-text text-transparent"
-            },
-          ];
-          const isTop3 = idx < 3;
-          const frame = isTop3 ? topFrames[idx] : null;
-          
-          return (
-            <div
-              key={u.email}
-              className={`grid grid-cols-[40px,1fr,110px,120px] gap-3 items-center px-3 py-3 rounded-xl transition-all ${
-                frame
-                  ? `${frame.container}`
-                  : `border bg-dark-800 hover:bg-dark-700 hover:translate-x-0.5 ${isMe ? 'border-primary-500/50 shadow-[0_0_18px_rgba(139,92,246,0.3)]' : 'border-white/5'}`
-              }`}
-            >
-              {frame && (
-                <>
-                  <div className={`absolute inset-0 blur-2xl opacity-60 ${frame.glow}`} aria-hidden="true"></div>
-                  <div className="absolute inset-0 border border-white/5 rounded-xl pointer-events-none"></div>
-                </>
-              )}
-              <div className="flex items-center justify-center">
-                <div className={`w-7 h-7 rounded-full text-[11px] flex items-center justify-center font-bold shadow-[0_0_16px_rgba(139,92,246,0.6)] ${
-                  frame ? frame.rankBg : 'bg-gradient-to-tr from-nc-accent to-nc-accentB'
-                }`}>
-                  {isTop3 ? (idx === 0 ? <Medal3D /> : idx + 1) : idx + 1}
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {u.avatarUrl ? (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`/profile?user=${encodeURIComponent(u.email)}`); }}
-                    title={`${(u.nickname || u.name || u.email)}-н profile харах`}
-                    className={`w-9 h-9 rounded-full border shadow-sm overflow-hidden cursor-pointer hover:ring-2 hover:ring-violet-400/50 ${frame ? frame.avatarRing : ''}`}
-                    style={{ borderColor: u.avatarColor || '#6366f1' }}
-                  >
-                    <img 
-                      src={u.avatarUrl} 
-                      alt={u.nickname || u.name || u.email}
-                      className="w-full h-full rounded-full object-cover"
-                    />
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`/profile?user=${encodeURIComponent(u.email)}`); }}
-                    title={`${(u.nickname || u.name || u.email)}-н profile харах`}
-                    className={`w-9 h-9 rounded-full border flex items-center justify-center text-[11px] font-semibold shadow-sm cursor-pointer hover:ring-2 hover:ring-violet-400/50 ${frame ? frame.avatarRing : ''}`}
-                    style={{ 
-                      background: `linear-gradient(to top right, ${u.avatarColor || '#6366f1'}, ${u.avatarColor || '#6366f1'}dd)`,
-                      borderColor: u.avatarColor || '#6366f1'
-                    }}
-                  >
-                    {(u.nickname || u.name || u.email)[0]?.toUpperCase()}
-                  </button>
-                )}
-                <div className="min-w-0">
-                  <button
-                    type="button"
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`/profile?user=${encodeURIComponent(u.email)}`); }}
-                    className="font-medium truncate text-left hover:text-violet-300 transition-colors"
-                    title={`${(u.nickname || u.name || u.email)}-н profile харах`}
-                  >
-                    {u.nickname || u.name || u.email}
-                    {isMe && <span className="ml-1 text-[10px] text-violet-300 font-semibold">(You)</span>}
-                  </button>
-                  <div className="text-[10px] text-amber-300 font-semibold">{getPersonalizedTitleShort(u)}</div>
-                  <div className="text-[9px] text-slate-500 italic truncate max-w-[180px]">{generatePersonalizedTitle(u).subtitle}</div>
-                </div>
-              </div>
-              <div className="text-[11px]">
-                <span className="inline-flex items-center gap-1 rounded-full border border-white/5 bg-dark-800 px-2 py-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-violet-400" />
-                  {rankTitle}
+        {currentUser && (
+          <Link
+            href={`/profile?user=${encodeURIComponent(currentUser.email)}`}
+            className="mv-panel flex shrink-0 items-center gap-4 !px-5 !py-4 transition-colors hover:border-violet-400/40"
+          >
+            <Avatar user={currentUser} />
+            <span>
+              <span className="block text-sm text-slate-400">Таны байр</span>
+              <span className="mt-1 block text-xl font-bold tabular-nums text-white">
+                #{positions.get(currentUser.email)}{" "}
+                <span className="text-sm font-medium text-violet-300">
+                  · {xpLabel(currentUser.experience)} XP
                 </span>
-              </div>
-                <div className="text-[11px] flex flex-col items-end gap-1">
-                  <span className={`font-semibold ${frame ? frame.xp : 'bg-gradient-to-r from-nc-accentC to-nc-accent bg-clip-text text-transparent'}`}>
-                    {Math.round(u.experience)} XP
-                  </span>
-                  <span className="text-[10px] text-nc-muted">
-                    {u.experience >= 1000 ? "🏵️ 🎖️ ✨" : u.experience >= 500 ? "🎖️ ✨" : u.experience >= 100 ? "✨" : "🌱"}
-                  </span>
-                </div>
-              </div>
-          );
-        })}
+              </span>
+            </span>
+          </Link>
+        )}
+      </header>
+
+      <section
+        className="mv-panel space-y-4 p-4 sm:p-5"
+        aria-label="Чансаа шүүх"
+      >
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_140px_210px] xl:grid-cols-[minmax(0,1fr)_160px_230px]">
+          <div className="sm:col-span-2 lg:col-span-1">
+            <label htmlFor="leaderboard-search" className="mv-label">
+              Сурагч хайх
+            </label>
+            <input
+              id="leaderboard-search"
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              className="mv-field"
+              placeholder="Нэр, хоч эсвэл имэйл"
+              autoComplete="off"
+            />
+          </div>
+          <div>
+            <label htmlFor="leaderboard-grade" className="mv-label">
+              Анги
+            </label>
+            <select
+              id="leaderboard-grade"
+              value={grade}
+              onChange={(event) => setGrade(event.target.value)}
+              className="mv-field"
+            >
+              <option value="all">Бүх анги</option>
+              {["9", "10", "11", "12"].map((value) => (
+                <option key={value} value={value}>
+                  {value}-р анги
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="leaderboard-rank" className="mv-label">
+              XP түвшин
+            </label>
+            <select
+              id="leaderboard-rank"
+              value={rank}
+              onChange={(event) => setRank(event.target.value)}
+              className="mv-field"
+            >
+              {RANKS.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4">
+          <div
+            role="group"
+            aria-label="Чансааны харагдац"
+            className="flex flex-wrap gap-2"
+          >
+            <button
+              type="button"
+              aria-pressed={view === "table"}
+              onClick={() => setView("table")}
+              className={
+                view === "table" ? "mv-button-primary" : "mv-button-secondary"
+              }
+            >
+              Чансаа
+            </button>
+            <button
+              type="button"
+              aria-pressed={view === "map"}
+              onClick={() => setView("map")}
+              className={
+                view === "map" ? "mv-button-primary" : "mv-button-secondary"
+              }
+            >
+              Аяллын газрын зураг
+            </button>
+          </div>
+          <div className="flex items-center gap-3">
+            <p role="status" className="text-sm text-slate-400">
+              {loading
+                ? "Ачаалж байна…"
+                : `${visible.length} / ${users.length} сурагч`}
+            </p>
+            {hasFilters && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="min-h-11 rounded-lg px-2 text-sm font-medium text-violet-300 hover:text-violet-200"
+              >
+                Цэвэрлэх
+              </button>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {loading ? (
+        <section
+          className="mv-panel p-5"
+          aria-busy="true"
+          aria-label="Чансааг ачаалж байна"
+        >
+          <p role="status" className="mb-4 text-sm text-slate-300">
+            Сурагчдын ахицыг ачаалж байна…
+          </p>
+          <div className="space-y-3" aria-hidden="true">
+            {[0, 1, 2, 3, 4].map((value) => (
+              <div
+                key={value}
+                className="h-16 rounded-xl bg-slate-800/70 motion-safe:animate-pulse"
+              />
+            ))}
+          </div>
+        </section>
+      ) : error ? (
+        <section className="mv-panel p-6" role="alert">
+          <h2 className="text-lg font-bold text-white">
+            Чансааг ачаалж чадсангүй
+          </h2>
+          <p className="mt-2 text-sm text-slate-400">
+            Холболтоо шалгаад дахин оролдоно уу.
+          </p>
+          <button
+            type="button"
+            onClick={retry}
+            className="mv-button-primary mt-4"
+          >
+            Дахин оролдох
+          </button>
+        </section>
+      ) : visible.length === 0 ? (
+        <section className="mv-panel px-6 py-12 text-center">
+          <span aria-hidden="true" className="text-3xl">
+            {users.length ? "🔎" : "🏆"}
+          </span>
+          <h2 className="mt-4 text-lg font-bold text-white">
+            {users.length
+              ? "Тохирох сурагч олдсонгүй"
+              : "Чансаа хараахан бүрдээгүй байна"}
+          </h2>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-400">
+            {users.length
+              ? "Нэр, анги эсвэл XP түвшнээ өөрчлөөд дахин хайгаарай."
+              : "Сурагчдын XP болон ахиц энд харагдана."}
+          </p>
+          {hasFilters && (
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="mv-button-secondary mt-5"
+            >
+              Шүүлтүүр цэвэрлэх
+            </button>
+          )}
+        </section>
+      ) : view === "map" ? (
+        <RealmMap users={visible} />
+      ) : (
+        <section
+          className="mv-panel overflow-hidden !p-0"
+          aria-label="XP чансааны жагсаалт"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 px-4 py-4 sm:px-5">
+            <h2 className="text-base font-bold text-white">XP чансаа</h2>
+            <p className="text-sm leading-6 text-slate-400">
+              Байрлал нь нийт чансааных. Шүүлтүүрээр өөрчлөгдөхгүй.
+            </p>
+          </div>
+          <table className="w-full table-fixed text-left">
+            <caption className="sr-only">
+              Сурагчдын нийт чансааны байр, нэр, анги, түвшин болон XP
+            </caption>
+            <thead className="border-b border-white/10 bg-slate-950/35 text-xs font-semibold text-slate-400 sm:text-sm">
+              <tr>
+                <th scope="col" className="w-14 px-2 py-3 text-center sm:w-20">
+                  Байр
+                </th>
+                <th scope="col" className="py-3 pr-2">
+                  Сурагч
+                </th>
+                <th scope="col" className="hidden w-28 px-3 py-3 xl:table-cell">
+                  Анги
+                </th>
+                <th
+                  scope="col"
+                  className="hidden w-[28%] px-3 py-3 lg:table-cell"
+                >
+                  Түвшин · Цол
+                </th>
+                <th
+                  scope="col"
+                  className="w-24 py-3 pl-2 pr-4 text-right sm:w-32 sm:pr-5"
+                >
+                  XP
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {visible.map((user) => {
+                const position = positions.get(user.email) || 0;
+                const isMe = session?.email === user.email;
+                return (
+                  <tr
+                    key={user.email}
+                    className={`transition-colors hover:bg-white/[0.035] ${isMe ? "bg-violet-500/10" : ""}`}
+                  >
+                    <td className="px-2 py-4 text-center">
+                      <Rank position={position} />
+                    </td>
+                    <th scope="row" className="min-w-0 py-4 pr-2 font-normal">
+                      <Link
+                        href={`/profile?user=${encodeURIComponent(user.email)}`}
+                        className="flex min-h-12 min-w-0 items-center gap-2 rounded-xl sm:gap-3"
+                      >
+                        <Avatar user={user} size="h-9 w-9 sm:h-11 sm:w-11" />
+                        <span className="min-w-0">
+                          <span className="block break-words text-sm font-semibold text-slate-100 sm:text-base">
+                            {displayName(user)}
+                            {isMe && (
+                              <span className="ml-1.5 text-xs font-medium text-violet-300">
+                                Та
+                              </span>
+                            )}
+                          </span>
+                          <span className="mt-1 block text-xs text-slate-400 sm:text-sm xl:hidden">
+                            {user.grade === "graduated"
+                              ? "Төгсөгч"
+                              : user.grade
+                                ? `${user.grade}-р анги`
+                                : "Сурагч"}
+                          </span>
+                          <span className="mt-0.5 block break-words text-xs leading-5 text-violet-300 lg:hidden">
+                            {getPersonalizedTitleShort(user)}
+                          </span>
+                        </span>
+                      </Link>
+                    </th>
+                    <td className="hidden px-3 py-4 text-sm text-slate-300 xl:table-cell">
+                      {user.grade === "graduated"
+                        ? "Төгсөгч"
+                        : user.grade
+                          ? `${user.grade}-р анги`
+                          : "—"}
+                    </td>
+                    <td className="hidden px-3 py-4 lg:table-cell">
+                      <span className="block text-sm font-semibold text-slate-200">
+                        {RANK_LABELS[rankOf(user.experience)]}
+                      </span>
+                      <span className="mt-1 block break-words text-sm leading-6 text-violet-300">
+                        {getPersonalizedTitleShort(user)}
+                      </span>
+                    </td>
+                    <td
+                      className={`py-4 pl-2 pr-4 text-right text-sm font-bold tabular-nums sm:pr-5 sm:text-base ${position <= 3 ? "text-amber-200" : "text-slate-100"}`}
+                    >
+                      {xpLabel(user.experience)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </section>
       )}
-    </section>
-  )}
-</div>
+    </div>
   );
 }

@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
-import crypto from "crypto";
+import crypto from "node:crypto";
+import { getSigningKey, SigningConfigurationError } from "./signingKey";
 
 export type Role = "student" | "teacher";
 export type Session = {
@@ -12,68 +13,99 @@ export type Session = {
 };
 
 export const COOKIE_NAME = "nc_session";
-const DEFAULT_SECRET = "dev-secret-change-me"; // for demo only
+const SESSION_LIFETIME_SECONDS = 60 * 60 * 24 * 30;
+const TOKEN_VERSION = 2;
+const MAX_TOKEN_LENGTH = 4096;
 
 export const SESSION_COOKIE_OPTIONS = {
   httpOnly: true,
   path: "/",
   sameSite: "lax" as const,
   secure: process.env.NODE_ENV === "production",
-  maxAge: 60 * 60 * 24 * 30, // 30 days
+  maxAge: SESSION_LIFETIME_SECONDS,
 };
 
-function getSecret(): string {
-  return process.env.NC_SESSION_SECRET || DEFAULT_SECRET;
-}
-
-function base64url(input: Buffer | string): string {
-  return Buffer.from(input)
-    .toString("base64")
-    .replace(/=/g, "")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_");
-}
-
-function sign(payload: string, secret: string): string {
-  return crypto.createHmac("sha256", secret).update(payload).digest("base64url");
+function sessionFields(data: unknown): Session | null {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  const value = data as Record<string, unknown>;
+  if (
+    typeof value.email !== "string" ||
+    !value.email.trim() ||
+    value.email.length > 320 ||
+    (value.role !== "student" && value.role !== "teacher")
+  )
+    return null;
+  const text = (field: unknown, maximum: number) =>
+    typeof field === "string" && field.length <= maximum ? field : undefined;
+  const avatar = text(value.avatarUrl, 500);
+  return {
+    email: value.email.trim().toLowerCase(),
+    role: value.role,
+    name: text(value.name, 200),
+    nickname: text(value.nickname, 200),
+    avatarUrl: avatar && !avatar.startsWith("data:") ? avatar : undefined,
+    avatarColor: text(value.avatarColor, 64),
+  };
 }
 
 export function encodeSession(session: Session): string {
-  // CRITICAL: Cookie size must remain small (< 4KB). Never serialize base64 data URIs into cookies.
-  const safeSession: Session = {
-    ...session,
-    avatarUrl:
-      session.avatarUrl && session.avatarUrl.length < 500 && !session.avatarUrl.startsWith("data:")
-        ? session.avatarUrl
-        : undefined,
-  };
-  const secret = getSecret();
-  const json = JSON.stringify(safeSession);
-  const b64 = base64url(json);
-  const sig = sign(b64, secret);
-  return `${b64}.${sig}`;
+  const safeSession = sessionFields(session);
+  if (!safeSession) throw new Error("Invalid session payload.");
+  const issuedAt = Math.floor(Date.now() / 1000);
+  const payload = Buffer.from(
+    JSON.stringify({
+      ...safeSession,
+      v: TOKEN_VERSION,
+      iat: issuedAt,
+      exp: issuedAt + SESSION_LIFETIME_SECONDS,
+    }),
+  ).toString("base64url");
+  const signature = crypto
+    .createHmac("sha256", getSigningKey("session"))
+    .update(payload)
+    .digest("base64url");
+  const token = `${payload}.${signature}`;
+  if (token.length > MAX_TOKEN_LENGTH)
+    throw new Error("Session payload is too large.");
+  return token;
 }
 
-export function decodeSession(token: string | undefined | null): Session | null {
-  if (!token) return null;
-  const secret = getSecret();
+export function decodeSession(
+  token: string | undefined | null,
+): Session | null {
+  if (!token || typeof token !== "string" || token.length > MAX_TOKEN_LENGTH)
+    return null;
+  const key = getSigningKey("session");
   const parts = token.split(".");
   if (parts.length !== 2) return null;
-  const [b64, sig] = parts;
-  const expected = sign(b64, secret);
-  if (sig.length !== expected.length) {
+  const [payload, signature] = parts;
+  if (
+    !/^[A-Za-z0-9_-]+$/.test(payload) ||
+    !/^[A-Za-z0-9_-]{43}$/.test(signature)
+  )
     return null;
-  }
-  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) {
+  const actual = Buffer.from(signature, "base64url");
+  const expected = crypto.createHmac("sha256", key).update(payload).digest();
+  if (
+    actual.length !== expected.length ||
+    !crypto.timingSafeEqual(actual, expected)
+  )
     return null;
-  }
   try {
-    const json = Buffer.from(b64.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8");
-    const data = JSON.parse(json) as Session;
-    if (!data || !data.email || (data.role !== "student" && data.role !== "teacher")) {
+    const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    const now = Math.floor(Date.now() / 1000);
+    // Legacy tokens have no enforceable expiry. Require one fresh sign-in during migration.
+    if (
+      data?.v !== TOKEN_VERSION ||
+      !Number.isSafeInteger(data.iat) ||
+      !Number.isSafeInteger(data.exp) ||
+      data.iat > now + 60 ||
+      data.exp <= now ||
+      data.exp <= data.iat ||
+      data.exp - data.iat > SESSION_LIFETIME_SECONDS
+    )
       return null;
-    }
-    return data;
+    return sessionFields(data);
   } catch {
     return null;
   }
@@ -81,30 +113,20 @@ export function decodeSession(token: string | undefined | null): Session | null 
 
 export async function getSessionFromCookies(): Promise<Session | null> {
   try {
-    const c = await cookies();
-    const token = c.get(COOKIE_NAME)?.value;
-    return decodeSession(token);
-  } catch (err) {
-    console.error("Error reading session cookies:", err);
+    const cookieStore = await cookies();
+    return decodeSession(cookieStore.get(COOKIE_NAME)?.value);
+  } catch (error) {
+    if (error instanceof SigningConfigurationError) throw error;
     return null;
   }
 }
 
 export async function setSessionCookie(session: Session): Promise<void> {
-  try {
-    const c = await cookies();
-    const token = encodeSession(session);
-    c.set(COOKIE_NAME, token, SESSION_COOKIE_OPTIONS);
-  } catch (err) {
-    console.error("Error setting session cookie:", err);
-  }
+  const cookieStore = await cookies();
+  cookieStore.set(COOKIE_NAME, encodeSession(session), SESSION_COOKIE_OPTIONS);
 }
 
 export async function clearSessionCookie(): Promise<void> {
-  try {
-    const c = await cookies();
-    c.delete(COOKIE_NAME);
-  } catch (err) {
-    console.error("Error clearing session cookie:", err);
-  }
+  const cookieStore = await cookies();
+  cookieStore.delete(COOKIE_NAME);
 }

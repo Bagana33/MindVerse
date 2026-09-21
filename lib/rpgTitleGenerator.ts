@@ -4,7 +4,7 @@
  * Each student gets a UNIQUE title generated from their:
  * - Name/nickname (first letter, syllables, meaning)
  * - XP level & realm tier
- * - Grade (10, 11, 12)
+ * - Grade (9, 10, 11, 12)
  * - Email domain / patterns
  * - Special combinations
  */
@@ -142,6 +142,7 @@ const INITIAL_TITLES: Record<string, { title: string; emoji: string }> = {
 
 // Grade-specific suffixes
 const GRADE_SUFFIXES: Record<string, string> = {
+  "9": "• 9-р ангийн аянтан",
   "10": "• 10-р ангийн аянтан",
   "11": "• 11-р ангийн дундын захирагч",
   "12": "• 12-р ангийн суурь тавигч",

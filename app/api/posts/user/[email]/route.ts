@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getUserPosts } from "../../../../../lib/posts";
+import { getSessionFromCookies } from "../../../../../lib/session";
 
 // GET: Fetch posts for a specific user
 export async function GET(
@@ -10,9 +11,11 @@ export async function GET(
   const userEmail = decodeURIComponent(params.email);
 
   try {
-    const posts = await getUserPosts(userEmail);
+    const [posts, session] = await Promise.all([getUserPosts(userEmail), getSessionFromCookies()]);
     
-    return NextResponse.json({ ok: true, posts });
+    return NextResponse.json({ ok: true, posts: posts.filter(post => post.visibility === 'PUBLIC' || post.authorEmail === session?.email) }, {
+      headers: { 'Cache-Control': 'private, no-store', 'Vary': 'Cookie' },
+    });
   } catch (error) {
     console.error('Error fetching user posts:', error);
     return NextResponse.json(

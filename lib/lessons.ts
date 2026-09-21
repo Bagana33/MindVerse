@@ -37,7 +37,7 @@ export type Lesson = {
   authorEmail: string;
   authorName: string;
   published: boolean;
-  targetGrades: string[]; // ["10", "11", "12"] or [] for all grades
+  targetGrades: string[]; // ["9", "10", "11", "12"] or [] for all grades
   questions: Question[];
   files: LessonFile[];
   submissions: LessonSubmission[];
@@ -154,26 +154,30 @@ export async function createLesson(data: Omit<Lesson, "id" | "createdAt" | "upda
   return dbToLesson(lessonData, data.questions, data.files, []);
 }
 
-export async function getAllLessons(includeUnpublished: boolean = false): Promise<Lesson[]> {
+export async function getAllLessons(includeUnpublished: boolean = false, signal: AbortSignal = AbortSignal.timeout(10_000)): Promise<Lesson[]> {
   let query = supabase
     .from('lessons')
     .select('*')
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .abortSignal(signal);
 
   if (!includeUnpublished) {
     query = query.eq('published', true);
   }
 
   const { data: lessonsData, error } = await query;
-  if (error || !lessonsData || lessonsData.length === 0) return [];
+  if (error) throw error;
+  if (!lessonsData || lessonsData.length === 0) return [];
 
   const lessonIds = lessonsData.map((l: any) => l.id);
 
   // Execute 2 fast batch queries in parallel for ALL lessons combined (instead of N*3 queries)
   const [questionsRes, filesRes] = await Promise.all([
-    supabase.from('lesson_questions').select('*').in('lesson_id', lessonIds).order('order_index'),
-    supabase.from('lesson_files').select('*').in('lesson_id', lessonIds),
+    supabase.from('lesson_questions').select('*').in('lesson_id', lessonIds).order('order_index').abortSignal(signal),
+    supabase.from('lesson_files').select('*').in('lesson_id', lessonIds).abortSignal(signal),
   ]);
+  if (questionsRes.error) throw questionsRes.error;
+  if (filesRes.error) throw filesRes.error;
 
   const questionsByLesson = new Map<string, Question[]>();
   for (const q of (questionsRes.data || [])) {
@@ -318,75 +322,44 @@ export async function submitToLesson(
   lessonId: string,
   studentEmail: string,
   studentName: string,
-  fileUrls?: string[] // Changed to array, max 2 files
+  fileUrls?: string[]
 ): Promise<LessonSubmission | null> {
-  // Check if submission already exists
-  const { data: existing } = await supabase
-    .from('lesson_submissions')
-    .select('*')
-    .eq('lesson_id', lessonId)
-    .eq('student_email', studentEmail)
-    .single();
-
-  let submissionId: string;
-  let data: any;
-  let error: any;
-
-  // Validate: max 2 files
-  if (fileUrls && fileUrls.length > 2) {
-    console.error("Too many files: max 2 allowed");
-    return null;
-  }
-
-  // Prepare file_urls JSON array (keep file_url for backward compatibility)
-  const fileUrlsJson = fileUrls && fileUrls.length > 0 ? fileUrls : null;
-  const fileUrl = fileUrls && fileUrls.length > 0 ? fileUrls[0] : null; // First file for backward compatibility
+  if (fileUrls !== undefined && (!Array.isArray(fileUrls) || fileUrls.length < 1 || fileUrls.length > 2)) return null;
+  const signal = AbortSignal.timeout(10_000);
+  const { data: existing, error: readError } = await supabase
+    .from('lesson_submissions').select('*')
+    .eq('lesson_id', lessonId).eq('student_email', studentEmail)
+    .abortSignal(signal).maybeSingle();
+  if (readError) throw readError;
 
   if (existing) {
-    // Update existing submission (resubmission)
-    submissionId = existing.id;
-    const { data: updated, error: updateError } = await supabase
-      .from('lesson_submissions')
+    const current = dbToSubmission(existing);
+    // Quiz-only and repeated identical uploads must not delete files or reset a teacher's grade.
+    if (fileUrls === undefined || JSON.stringify(current.fileUrls || []) === JSON.stringify(fileUrls)) return current;
+    const { data, error } = await supabase.from('lesson_submissions')
       .update({
-        file_url: fileUrl, // Keep for backward compatibility
-        file_urls: fileUrlsJson, // New array format
-        student_name: studentName,
-        submitted_at: new Date().toISOString(),
-        // Reset grading when resubmitting
-        score: null,
-        feedback: null,
-        reward_xp: null,
-        graded_at: null,
+        file_url: fileUrls[0], file_urls: fileUrls, student_name: studentName,
+        submitted_at: new Date().toISOString(), score: null, feedback: null, graded_at: null,
+        // reward_xp is the earned high-water mark and survives every resubmission.
       })
-      .eq('id', submissionId)
-      .select()
-      .single();
-    
-    data = updated;
-    error = updateError;
-  } else {
-    // Create new submission
-    submissionId = `sub-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const { data: inserted, error: insertError } = await supabase
-    .from('lesson_submissions')
-    .insert([{
-      id: submissionId,
-      lesson_id: lessonId,
-      student_email: studentEmail,
-      student_name: studentName,
-        file_url: fileUrl, // Keep for backward compatibility
-        file_urls: fileUrlsJson, // New array format
-    }])
-    .select()
-    .single();
-    
-    data = inserted;
-    error = insertError;
+      .eq('id', existing.id).eq('lesson_id', lessonId)
+      .eq('submitted_at', existing.submitted_at)
+      .abortSignal(signal).select().maybeSingle();
+    if (error) throw error;
+    return data ? dbToSubmission(data) : null;
   }
 
-  if (error || !data) return null;
-
-  return dbToSubmission(data);
+  const { data, error } = await supabase.from('lesson_submissions')
+    .insert([{
+      id: `sub-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
+      lesson_id: lessonId, student_email: studentEmail, student_name: studentName,
+      file_url: fileUrls?.[0] || null, file_urls: fileUrls || null,
+    }])
+    .abortSignal(signal).select().single();
+  // The existing unique(lesson_id, student_email) constraint rejects concurrent duplicate creates.
+  if (error?.code === '23505') return null;
+  if (error) throw error;
+  return data ? dbToSubmission(data) : null;
 }
 
 export async function gradeSubmission(
@@ -394,24 +367,23 @@ export async function gradeSubmission(
   submissionId: string,
   score: number,
   rewardXP: number,
-  feedback?: string
+  feedback?: string,
+  expected?: { rewardXP: number | null; submittedAt: string; preserveGrade?: boolean }
 ): Promise<LessonSubmission | null> {
-  const { data, error } = await supabase
-    .from('lesson_submissions')
-    .update({
-      score,
-      reward_xp: rewardXP,
-      feedback,
-      graded_at: new Date().toISOString(),
-    })
-    .eq('id', submissionId)
-    .eq('lesson_id', lessonId)
-    .select()
-    .single();
-
-  if (error || !data) return null;
-
-  return dbToSubmission(data);
+  if (!Number.isFinite(score) || score < 0 || score > 100 || !Number.isInteger(rewardXP) || rewardXP < 0 || rewardXP > 500) return null;
+  const update = expected?.preserveGrade
+    ? { reward_xp: rewardXP }
+    : { score, reward_xp: rewardXP, feedback, graded_at: new Date().toISOString() };
+  let query = supabase.from('lesson_submissions').update(update)
+    .eq('id', submissionId).eq('lesson_id', lessonId);
+  if (expected) {
+    query = query.eq('submitted_at', expected.submittedAt);
+    query = expected.rewardXP === null ? query.is('reward_xp', null) : query.eq('reward_xp', expected.rewardXP);
+  }
+  const { data, error } = await query.abortSignal(AbortSignal.timeout(10_000)).select().maybeSingle();
+  if (error) throw error;
+  // A concurrent grade/reward claim changes reward_xp, so only one caller can award its delta.
+  return data ? dbToSubmission(data) : null;
 }
 
 export async function getSubmission(lessonId: string, studentEmail: string): Promise<LessonSubmission | null> {

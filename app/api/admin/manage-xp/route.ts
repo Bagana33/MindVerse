@@ -117,6 +117,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "XP өөрчлөхөд алдаа гарлаа" }, { status: 500 });
     }
 
+    invalidateServerCache('leaderboard');
+    invalidateServerCache('user_db');
+    invalidateServerCache('user_info');
+
     return NextResponse.json({
       ok: true,
       count: updatedCount,

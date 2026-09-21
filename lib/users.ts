@@ -13,7 +13,7 @@ export type User = {
   avatarUrl?: string; // Profile picture (Base64 or URL)
   avatarColor?: string; // Avatar background color
   role: "student" | "teacher";
-  grade?: string; // Student grade: "10", "11", "12", or "Р"
+  grade?: string; // Student grade: "9", "10", "11", "12", or "Р"
   experience: number; // XP points
 };
 
@@ -145,7 +145,7 @@ export async function verifyUser(email: string, password: string): Promise<User 
 }
 
 // Reset user password
-export async function resetUserPassword(email: string, newPassword: string): Promise<User> {
+export async function resetUserPassword(email: string, newPassword: string, expectedPasswordHash?: string): Promise<User> {
   const normalizedEmail = normalizeEmail(email);
   const existingUser = await getUser(normalizedEmail, { bypassCache: true });
   if (!existingUser) {
@@ -157,12 +157,13 @@ export async function resetUserPassword(email: string, newPassword: string): Pro
   }
 
   const hashedPassword = await bcrypt.hash(newPassword, 10);
-  const { data, error } = await supabase
+  let update = supabase
     .from('users')
     .update({ password: hashedPassword })
-    .eq('email', existingUser.email)
-    .select()
-    .single();
+    .eq('email', existingUser.email);
+  // Only one concurrent reset may consume a token bound to the old password.
+  if (expectedPasswordHash !== undefined) update = update.eq('password', expectedPasswordHash);
+  const { data, error } = await update.select().abortSignal(AbortSignal.timeout(10000)).maybeSingle();
 
   if (error || !data) {
     console.error('Error resetting user password:', error);
@@ -227,30 +228,25 @@ export async function updateUser(email: string, updates: Partial<Omit<User, 'ema
 }
 
 export async function addExperience(email: string, points: number): Promise<User | null> {
-  const user = await getUser(email);
-  if (!user) return null;
-
-  const newExp = user.experience + points;
-
-  const { data, error } = await supabase
-    .from('users')
-    .update({ experience: newExp })
-    .eq('email', user.email)
-    .select()
-    .single();
-
-  if (error || !data) {
-    console.error('Error adding experience:', error);
-    return null;
+  if (!Number.isFinite(points)) return null;
+  // Optimistic compare-and-swap prevents parallel rewards overwriting each other.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const user = await getUser(email, { bypassCache: true });
+    if (!user) return null;
+    let query = supabase.from('users').update({ experience: Math.max(0, user.experience + points) }).eq('email', user.email);
+    query = user.experience === 0 ? query.or('experience.eq.0,experience.is.null') : query.eq('experience', user.experience);
+    const { data, error } = await query.select().abortSignal(AbortSignal.timeout(10000)).maybeSingle();
+    if (error) { console.error('Error adding experience:', error); return null; }
+    if (!data) continue;
+    const normalized = normalizeEmail(email);
+    invalidateServerCache(`user_db:${normalized}`);
+    invalidateServerCache(`user_info:${normalized}`);
+    invalidateServerCache('leaderboard');
+    const updated = dbToUser(data);
+    setCached(`user_db:${normalized}`, updated, 30_000);
+    return updated;
   }
-
-  const normalized = email.toLowerCase();
-  invalidateServerCache(`user_db:${normalized}`);
-  invalidateServerCache(`user_info:${normalized}`);
-  invalidateServerCache('leaderboard');
-  const updated = dbToUser(data);
-  setCached(`user_db:${normalized}`, updated, 30_000);
-  return updated;
+  return null;
 }
 
 // Set exact XP amount (for teacher management)
@@ -300,7 +296,7 @@ export async function getLeaderboard(): Promise<User[]> {
     .from('users')
     .select('*')
     .eq('role', 'student')
-    .in('grade', ['10', '11', '12'])
+    .in('grade', ['9', '10', '11', '12'])
     .order('experience', { ascending: false });
 
   if (error || !data) {
@@ -315,13 +311,14 @@ export async function getLeaderboard(): Promise<User[]> {
 export async function getLeaderboardLight(grade?: string, limit: number = 100): Promise<User[]> {
   let query = supabase
     .from('users')
-    .select('email,name,nickname,avatar_url,avatar_color,role,grade,experience')
+    .select('email,name,nickname,avatar_color,role,grade,experience')
     .eq('role', 'student')
-    .in('grade', ['10', '11', '12'])
+    .in('grade', ['9', '10', '11', '12'])
     .order('experience', { ascending: false })
-    .limit(limit);
+    .limit(limit)
+    .abortSignal(AbortSignal.timeout(10_000));
 
-  if (grade && ['10','11','12'].includes(grade)) {
+  if (grade && ['9','10','11','12'].includes(grade)) {
     query = query.eq('grade', grade);
   }
 
@@ -329,6 +326,7 @@ export async function getLeaderboardLight(grade?: string, limit: number = 100): 
 
   if (error || !data) {
     console.error('Error fetching leaderboard (light):', error);
+    if (error) throw error;
     return [];
   }
 

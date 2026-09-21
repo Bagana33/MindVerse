@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import { useSession } from "../../components/auth/useSession";
 import { DashboardLayout } from "../../components/layout/DashboardLayout";
+import Modal from "../../components/ui/Modal";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { cachedFetch, invalidateCache } from "../../lib/fetchCache";
@@ -18,98 +19,97 @@ type Contest = {
   prize: number;
   targetGrades: string[];
   participants: string[];
-  submissions: any[];
+  submissions: { userName: string; votes: string[] }[];
   status: "upcoming" | "active" | "ended";
   createdAt: string;
+};
+const statusInfo = {
+  active: {
+    label: "Идэвхтэй",
+    heading: "Одоо оролцох уралдаан",
+    color: "border-emerald-500/30 bg-emerald-500/10 text-emerald-300",
+  },
+  upcoming: {
+    label: "Удахгүй",
+    heading: "Удахгүй эхлэх уралдаан",
+    color: "border-sky-500/30 bg-sky-500/10 text-sky-300",
+  },
+  ended: {
+    label: "Дууссан",
+    heading: "Өмнөх уралдаанууд",
+    color: "border-slate-600 bg-slate-800 text-slate-300",
+  },
+};
+const localDateInput = (value: string) => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? ""
+    : new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+        .toISOString()
+        .slice(0, 16);
 };
 
 function ContestsContent() {
   const { session } = useSession();
   const searchParams = useSearchParams();
-  const searchQuery = (searchParams?.get("search") || "").trim().toLowerCase();
+  const [searchInput, setSearchInput] = useState(
+    searchParams?.get("search") || "",
+  );
+  const [statusFilter, setStatusFilter] = useState("all");
   const [contests, setContests] = useState<Contest[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  
-  // Form state
+  const [deleteTarget, setDeleteTarget] = useState<Contest | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [prize, setPrize] = useState(100);
   const [targetGrades, setTargetGrades] = useState<string[]>([]);
-  const [creating, setCreating] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [notice, setNotice] = useState("");
+  const requestRef = useRef(0);
+  const actionRef = useRef(false);
 
   useEffect(() => {
-    fetchContests();
+    setSearchInput(searchParams?.get("search") || "");
+  }, [searchParams]);
+  const fetchContests = useCallback(async () => {
+    const request = ++requestRef.current;
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const response = await cachedFetch("/api/contests");
+      const json = await response.json();
+      if (!response.ok || !json.ok || !Array.isArray(json.contests))
+        throw new Error("unavailable");
+      if (requestRef.current === request)
+        setContests(
+          json.contests.map((contest: Contest) => ({
+            ...contest,
+            participants: contest.participants || [],
+            submissions: contest.submissions || [],
+            targetGrades: contest.targetGrades || [],
+          })),
+        );
+    } catch {
+      if (requestRef.current === request)
+        setLoadError(
+          "Уралдаануудыг ачаалж чадсангүй. Холболтоо шалгаад дахин оролдоно уу.",
+        );
+    } finally {
+      if (requestRef.current === request) setLoading(false);
+    }
   }, []);
-
-  async function fetchContests() {
-    try {
-      setLoadError(null);
-      const res = await cachedFetch("/api/contests");
-      const json = await res.json().catch(() => null);
-      if (!res.ok) {
-        setContests([]);
-        setLoadError(json?.error || "Уралдааныг ачаалахад алдаа гарлаа");
-        return;
-      }
-      setContests(json?.contests || []);
-    } catch (err) {
-      console.error("Failed to fetch contests:", err);
-      setLoadError("Сүлжээний алдаа гарлаа");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-
-  async function handleSaveContest(e: React.FormEvent) {
-    e.preventDefault();
-    if (!title.trim() || !description.trim() || !startDate || !endDate) {
-      alert("Бүх талбарыг бөглөнө үү");
-      return;
-    }
-
-    setCreating(true);
-    try {
-      const endpoint = editingId ? `/api/contests/${editingId}` : "/api/contests";
-      const method = editingId ? "PUT" : "POST";
-
-      const res = await fetch(endpoint, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title,
-          description,
-          startDate,
-          endDate,
-          prize,
-          targetGrades,
-        }),
-      });
-
-      const json = await res.json();
-      if (json.ok) {
-        if (editingId) {
-          setContests(contests.map(c => c.id === editingId ? json.contest : c));
-        } else {
-          setContests([json.contest, ...contests]);
-        }
-        invalidateCache("/api/contests");
-        resetForm();
-      } else {
-        alert(json.error || "Алдаа гарлаа");
-      }
-    } catch (err) {
-      console.error("Failed to save contest:", err);
-      alert("Алдаа гарлаа");
-    } finally {
-      setCreating(false);
-    }
-  }
+  useEffect(() => {
+    void fetchContests();
+    return () => {
+      requestRef.current += 1;
+    };
+  }, [fetchContests]);
 
   function resetForm() {
     setTitle("");
@@ -120,402 +120,588 @@ function ContestsContent() {
     setTargetGrades([]);
     setEditingId(null);
     setShowCreateForm(false);
+    setActionError(null);
   }
-
   function startEdit(contest: Contest) {
     setEditingId(contest.id);
     setTitle(contest.title);
     setDescription(contest.description);
-    setStartDate(contest.startDate.slice(0, 16));
-    setEndDate(contest.endDate.slice(0, 16));
+    setStartDate(localDateInput(contest.startDate));
+    setEndDate(localDateInput(contest.endDate));
     setPrize(contest.prize);
-    setTargetGrades(contest.targetGrades || []);
+    setTargetGrades(contest.targetGrades);
+    setActionError(null);
     setShowCreateForm(true);
   }
-
-  async function handleDelete(id: string) {
-    if (!confirm("Устгахдаа итгэлтэй байна уу?")) return;
+  async function handleSaveContest(event: React.FormEvent) {
+    event.preventDefault();
+    if (actionRef.current) return;
+    if (!title.trim() || !description.trim() || !startDate || !endDate) {
+      setActionError("Заавал бөглөх талбаруудаа шалгана уу.");
+      return;
+    }
+    if (new Date(endDate) <= new Date(startDate)) {
+      setActionError("Дуусах хугацаа эхлэх хугацаанаас хойш байх ёстой.");
+      return;
+    }
+    if (!Number.isFinite(prize) || prize < 0) {
+      setActionError("Шагналын XP нь 0 буюу түүнээс их тоо байна.");
+      return;
+    }
+    actionRef.current = true;
+    setBusy(true);
+    setActionError(null);
     try {
-      const res = await fetch(`/api/contests/${id}`, { method: "DELETE" });
-      const json = await res.json();
-      if (json.ok) {
-        invalidateCache("/api/contests");
-        setContests(contests.filter(c => c.id !== id));
-      } else {
-        alert(json.error || "Устгах боломжгүй");
-      }
-    } catch (err) {
-      console.error("Failed to delete contest:", err);
-      alert("Алдаа гарлаа");
+      const response = await fetch(
+        editingId ? `/api/contests/${editingId}` : "/api/contests",
+        {
+          method: editingId ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(30000),
+          body: JSON.stringify({
+            title: title.trim(),
+            description: description.trim(),
+            startDate: new Date(startDate).toISOString(),
+            endDate: new Date(endDate).toISOString(),
+            prize,
+            targetGrades,
+          }),
+        },
+      );
+      const json = await response.json();
+      if (!response.ok || !json.ok || !json.contest)
+        throw new Error(json.error || "Уралдааныг хадгалж чадсангүй.");
+      // A read started before this write must not replace the confirmed result.
+      requestRef.current += 1;
+      setLoading(false);
+      setLoadError(null);
+      setContests((current) =>
+        editingId
+          ? current.map((contest) =>
+              contest.id === editingId ? json.contest : contest,
+            )
+          : [json.contest, ...current],
+      );
+      invalidateCache("/api/contests");
+      setNotice(
+        editingId
+          ? "Уралдааны өөрчлөлтийг хадгаллаа."
+          : "Шинэ уралдаан үүслээ.",
+      );
+      resetForm();
+    } catch (error) {
+      setActionError(
+        error instanceof Error &&
+          !["TimeoutError", "TypeError", "AbortError", "SyntaxError"].includes(
+            error.name,
+          )
+          ? error.message
+          : "Хариу хүлээх хугацаа дууслаа. Дахин илгээхээс өмнө жагсаалтаа шинэчилж шалгана уу.",
+      );
+    } finally {
+      actionRef.current = false;
+      setBusy(false);
+    }
+  }
+  async function handleDelete() {
+    if (!deleteTarget || actionRef.current) return;
+    actionRef.current = true;
+    setBusy(true);
+    setActionError(null);
+    try {
+      const response = await fetch(`/api/contests/${deleteTarget.id}`, {
+        method: "DELETE",
+        signal: AbortSignal.timeout(30000),
+      });
+      const json = await response.json();
+      if (!response.ok || !json.ok)
+        throw new Error(json.error || "Уралдааныг устгаж чадсангүй.");
+      requestRef.current += 1;
+      setLoading(false);
+      setLoadError(null);
+      setContests((current) =>
+        current.filter((contest) => contest.id !== deleteTarget.id),
+      );
+      invalidateCache("/api/contests");
+      setNotice("Уралдааныг устгалаа.");
+      setDeleteTarget(null);
+    } catch {
+      setActionError(
+        "Устгалын хариу ирсэнгүй. Жагсаалтаа шинэчилж шалгана уу.",
+      );
+    } finally {
+      actionRef.current = false;
+      setBusy(false);
     }
   }
 
-
-  function toggleGrade(grade: string) {
-    setTargetGrades(prev => 
-      prev.includes(grade) 
-        ? prev.filter(g => g !== grade)
-        : [...prev, grade]
-    );
-  }
-
-  function getStatusBadge(status: string) {
-    const styles = {
-      active: "bg-green-500/20 text-green-400 border-green-500/40",
-      upcoming: "bg-blue-500/20 text-blue-400 border-blue-500/40",
-      ended: "bg-slate-500/20 text-slate-400 border-slate-500/40",
-    };
-    const labels = {
-      active: "Идэвхтэй",
-      upcoming: "Удахгүй",
-      ended: "Дууссан",
-    };
-    return (
-      <span className={`px-2 py-1 rounded-full text-xs border ${styles[status as keyof typeof styles] || styles.ended}`}>
-        {labels[status as keyof typeof labels] || status}
-      </span>
-    );
-  }
-
-  if (loading) {
-    return (
-      <DashboardLayout>
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="text-slate-400">Ачаалж байна...</div>
-        </div>
-      </DashboardLayout>
-    );
-  }
-
-  const filteredContests = searchQuery
-    ? contests.filter(
-        (c) =>
-          c.title.toLowerCase().includes(searchQuery) ||
-          c.description.toLowerCase().includes(searchQuery) ||
-          c.authorName.toLowerCase().includes(searchQuery) ||
-          c.authorEmail.toLowerCase().includes(searchQuery)
-      )
-    : contests;
-
-  const activeContests = filteredContests.filter(c => c.status === "active");
-  const upcomingContests = filteredContests.filter(c => c.status === "upcoming");
-  const endedContests = filteredContests.filter(c => c.status === "ended");
-
+  const query = searchInput.trim().toLowerCase();
+  const filteredContests = contests.filter(
+    (contest) =>
+      (statusFilter === "all" || contest.status === statusFilter) &&
+      (!query ||
+        [
+          contest.title,
+          contest.description,
+          contest.authorName,
+          contest.authorEmail,
+        ].some((value) => value?.toLowerCase().includes(query))),
+  );
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-violet-300 via-purple-300 to-pink-300 bg-clip-text text-transparent">
-            Уралдаан
-          </h1>
+      <div className="mv-page space-y-6 xl:space-y-8">
+        <header className="mv-page-header">
+          <div>
+            <p className="mv-eyebrow">БҮТЭЭЛЧ СОРИЛТ</p>
+            <h1 className="mv-title">Уралдаанууд</h1>
+            <p className="mv-subtitle">
+              Шинэ санаагаа бүтээл болгож, бусдаас суралцаарай.
+            </p>
+          </div>
           {session?.role === "teacher" && (
             <button
+              type="button"
+              className="mv-button-primary"
               onClick={() => {
                 resetForm();
-                setShowCreateForm(!showCreateForm);
+                setShowCreateForm(true);
               }}
-              className="px-4 py-2 rounded-full bg-gradient-to-r from-violet-500 to-purple-500 text-white font-medium hover:shadow-lg transition-all"
             >
-              {showCreateForm ? "✕ Цуцлах" : "+ Шинэ уралдаан"}
+              + Уралдаан нэмэх
             </button>
           )}
-        </div>
-
-        {showCreateForm && session?.role === "teacher" && (
-          <div className="glass-panel p-6 rounded-2xl space-y-4">
-            <h2 className="text-xl font-semibold text-slate-200">
-              {editingId ? "Уралдаан засах" : "Шинэ уралдаан үүсгэх"}
-            </h2>
-            <form onSubmit={handleSaveContest} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Гарчиг</label>
-                <input
-                  type="text"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="w-full px-4 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-slate-100 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Тайлбар</label>
-                <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={4}
-                  className="w-full px-4 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-slate-100 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                  required
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1">Эхлэх огноо</label>
-                  <input
-                    type="datetime-local"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full px-4 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-slate-100 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1">Дуусах огноо</label>
-                  <input
-                    type="datetime-local"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full px-4 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-slate-100 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                    required
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Шагнал (XP)</label>
-                <input
-                  type="number"
-                  value={prize}
-                  onChange={(e) => setPrize(Number(e.target.value))}
-                  min="0"
-                  className="w-full px-4 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-slate-100 focus:outline-none focus:ring-2 focus:ring-violet-500"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">Зорилтот анги (хоосон = бүх анги)</label>
-                <div className="flex gap-2">
-                  {["10", "11", "12"].map(grade => (
-                    <button
-                      key={grade}
-                      type="button"
-                      onClick={() => toggleGrade(grade)}
-                      className={`px-3 py-1 rounded-full text-sm transition-all ${
-                        targetGrades.includes(grade)
-                          ? "bg-violet-500 text-white"
-                          : "bg-slate-700/50 text-slate-300 hover:bg-slate-700"
-                      }`}
-                    >
-                      {grade}р анги
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  type="submit"
-                  disabled={creating}
-                  className="px-6 py-2 rounded-full bg-gradient-to-r from-violet-500 to-purple-500 text-white font-medium hover:shadow-lg transition-all disabled:opacity-50"
-                >
-                  {creating ? "Хадгалж байна..." : editingId ? "Хадгалах" : "Үүсгэх"}
-                </button>
-                <button
-                  type="button"
-                  onClick={resetForm}
-                  className="px-6 py-2 rounded-full bg-slate-700/50 text-slate-300 hover:bg-slate-700 transition-all"
-                >
-                  Цуцлах
-                </button>
-              </div>
-            </form>
-          </div>
+        </header>
+        {notice && (
+          <p
+            role="status"
+            className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3 text-sm text-emerald-200"
+          >
+            {notice}
+          </p>
         )}
-
-        {loadError ? (
-          <div className="glass-panel p-12 rounded-2xl text-center">
-            <p className="text-red-300">{loadError}</p>
+        <div className="mv-panel grid gap-4 p-4 sm:p-5 xl:grid-cols-[minmax(240px,1fr)_auto] xl:items-end">
+          <div className="min-w-0">
+            <label htmlFor="contest-search" className="mv-label">
+              Уралдаан хайх
+            </label>
+            <input
+              id="contest-search"
+              type="search"
+              className="mv-field"
+              placeholder="Уралдааны нэр, сэдэв, багш…"
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+            />
           </div>
-        ) : contests.length === 0 ? (
-          <div className="glass-panel p-12 rounded-2xl text-center">
-            <p className="text-slate-400">Одоогоор уралдаан байхгүй байна.</p>
+          <div
+            role="group"
+            aria-label="Уралдааны төлөв"
+            className="flex flex-wrap gap-2 xl:justify-end"
+          >
+            {[
+              { id: "all", label: "Бүгд" },
+              ...Object.entries(statusInfo).map(([id, item]) => ({
+                id,
+                label: item.label,
+              })),
+            ].map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                aria-pressed={statusFilter === item.id}
+                onClick={() => setStatusFilter(item.id)}
+                className={`min-h-11 rounded-xl border px-4 py-2 text-sm transition-colors ${statusFilter === item.id ? "border-violet-400/50 bg-violet-500/15 text-violet-200" : "border-white/10 text-slate-300 hover:bg-white/5"}`}
+              >
+                {item.label}{" "}
+                <span className="ml-1 tabular-nums opacity-70">
+                  {item.id === "all"
+                    ? contests.length
+                    : contests.filter((contest) => contest.status === item.id)
+                        .length}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+        {loading ? (
+          <div role="status" className="mv-panel p-8 text-slate-300">
+            Уралдаануудыг ачаалж байна…
+          </div>
+        ) : loadError ? (
+          <div role="alert" className="mv-panel p-8 text-center">
+            <p className="text-slate-300">{loadError}</p>
+            <button
+              type="button"
+              className="mv-button-primary mt-4"
+              onClick={() => {
+                invalidateCache("/api/contests");
+                void fetchContests();
+              }}
+            >
+              Дахин оролдох
+            </button>
+          </div>
+        ) : filteredContests.length === 0 ? (
+          <div className="mv-panel p-8 text-center">
+            <h2 className="text-lg font-semibold text-white">
+              {query || statusFilter !== "all"
+                ? "Тохирох уралдаан олдсонгүй"
+                : "Шинэ уралдааныг хүлээж байна"}
+            </h2>
+            <p className="mt-2 text-sm text-slate-400">
+              {query || statusFilter !== "all"
+                ? "Өөр үгээр хайх эсвэл шүүлтүүрээ цэвэрлээрэй."
+                : "Уралдаан нэмэгдэхэд хугацаа, сэдэв, шагнал нь энд харагдана."}
+            </p>
+            {(query || statusFilter !== "all") && (
+              <button
+                type="button"
+                className="mv-button-secondary mt-4"
+                onClick={() => {
+                  setSearchInput("");
+                  setStatusFilter("all");
+                }}
+              >
+                Шүүлтүүр цэвэрлэх
+              </button>
+            )}
           </div>
         ) : (
           <div className="space-y-8">
-            {activeContests.length > 0 && (
-              <div>
-                <h2 className="text-xl font-semibold text-slate-200 mb-4">Идэвхтэй уралдаан</h2>
-                <div className="grid gap-4">
-                  {activeContests.map((contest) => {
-                    const isAuthor = session?.role === "teacher" && session.email === contest.authorEmail;
-                    return (
-                      <Link
-                        key={contest.id}
-                        href={`/contests/${contest.id}`}
-                        className="glass-panel p-6 rounded-2xl hover:border-violet-500/50 transition-all block"
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <h3 className="text-lg font-semibold text-slate-200 mb-1">{contest.title}</h3>
-                            <p className="text-sm text-slate-400 mb-2">{contest.description}</p>
-                            <div className="flex items-center gap-4 mb-3">
-                            {getStatusBadge(contest.status)}
-                            {isAuthor && (
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    startEdit(contest);
-                                  }}
-                                    className="px-3 py-1 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 text-xs"
-                                >
-                                  Засах
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    handleDelete(contest.id);
-                                  }}
-                                    className="px-3 py-1 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 text-xs"
-                                >
-                                  Устгах
-                                </button>
-                              </div>
-                            )}
-                        </div>
-                        <div className="flex items-center gap-4 text-xs text-slate-500">
-                          <span>👤 {contest.authorName}</span>
-                          <span>🎯 {contest.participants.length} оролцогч</span>
-                          <span>🏆 {contest.prize} XP</span>
-                          <span>📅 {new Date(contest.endDate).toLocaleDateString("mn-MN")}-н дуустай</span>
+            {(Object.keys(statusInfo) as Array<Contest["status"]>).map(
+              (status) => {
+                const group = filteredContests.filter(
+                  (contest) => contest.status === status,
+                );
+                if (!group.length) return null;
+                return (
+                  <section
+                    key={status}
+                    aria-labelledby={`contest-group-${status}`}
+                  >
+                    <h2
+                      id={`contest-group-${status}`}
+                      className="mb-4 flex flex-wrap items-center gap-3 text-xl font-semibold tracking-tight text-white"
+                    >
+                      {statusInfo[status].heading}
+                      <span className="rounded-lg bg-white/5 px-2.5 py-1 text-sm font-medium tabular-nums text-slate-400">
+                        {group.length}
+                      </span>
+                    </h2>
+                    <div className="grid items-stretch gap-5 xl:grid-cols-2 2xl:grid-cols-3">
+                      {group.map((contest) => {
+                        const winner =
+                          status === "ended"
+                            ? [...(contest.submissions || [])].sort(
+                                (a, b) =>
+                                  (b.votes?.length || 0) -
+                                  (a.votes?.length || 0),
+                              )[0]
+                            : null;
+                        const isAuthor =
+                          session?.role === "teacher" &&
+                          session.email === contest.authorEmail;
+                        return (
+                          <article
+                            key={contest.id}
+                            className="mv-panel flex min-w-0 flex-col p-5 transition-colors hover:border-violet-500/40 sm:p-6"
+                          >
+                            <div className="mb-4 flex items-center justify-between gap-3">
+                              <span
+                                className={`rounded-lg border px-3 py-1 text-sm font-medium ${statusInfo[status].color}`}
+                              >
+                                {statusInfo[status].label}
+                              </span>
+                              <span className="text-lg font-semibold tabular-nums tracking-tight text-violet-300">
+                                {contest.prize} XP
+                              </span>
                             </div>
-                          </div>
-                        </div>
-                      </Link>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {upcomingContests.length > 0 && (
-              <div>
-                <h2 className="text-xl font-semibold text-slate-200 mb-4">Удахгүй эхлэх уралдаан</h2>
-                <div className="grid gap-4">
-                  {upcomingContests.map((contest) => {
-                    const isAuthor = session?.role === "teacher" && session.email === contest.authorEmail;
-                    return (
-                      <Link
-                        key={contest.id}
-                        href={`/contests/${contest.id}`}
-                        className="glass-panel p-6 rounded-2xl hover:border-violet-500/50 transition-all block"
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <h3 className="text-lg font-semibold text-slate-200 mb-1">{contest.title}</h3>
-                            <p className="text-sm text-slate-400 mb-2">{contest.description}</p>
-                            <div className="flex items-center gap-4 mb-3">
-                            {getStatusBadge(contest.status)}
-                            {isAuthor && (
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    startEdit(contest);
-                                  }}
-                                    className="px-3 py-1 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 text-xs"
-                                >
-                                  Засах
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    handleDelete(contest.id);
-                                  }}
-                                    className="px-3 py-1 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 text-xs"
-                                >
-                                  Устгах
-                                </button>
+                            <Link
+                              href={`/contests/${contest.id}`}
+                              className="min-w-0 flex-1"
+                            >
+                              <h3 className="break-words text-xl font-semibold leading-7 tracking-tight text-white hover:text-violet-300">
+                                {contest.title}
+                              </h3>
+                              <p className="mt-3 line-clamp-3 whitespace-pre-line break-words text-sm leading-7 text-slate-300">
+                                {contest.description}
+                              </p>
+                            </Link>
+                            <dl className="mt-5 grid grid-cols-1 gap-3 text-sm text-slate-300 sm:grid-cols-2">
+                              <div>
+                                <dt className="text-sm text-slate-400">Багш</dt>
+                                <dd className="mt-1 break-words font-medium text-slate-200">
+                                  {contest.authorName}
+                                </dd>
                               </div>
-                            )}
-                        </div>
-                        <div className="flex items-center gap-4 text-xs text-slate-500">
-                          <span>👤 {contest.authorName}</span>
-                          <span>🏆 {contest.prize} XP</span>
-                          <span>📅 {new Date(contest.startDate).toLocaleDateString("mn-MN")}-с эхэлнэ</span>
-                            </div>
-                          </div>
-                        </div>
-                      </Link>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {endedContests.length > 0 && (
-              <div>
-                <h2 className="text-xl font-semibold text-slate-200 mb-4">Дууссан уралдаан</h2>
-                <div className="grid gap-4">
-                  {endedContests.map((contest) => {
-                    const winner = contest.submissions.length > 0 
-                      ? contest.submissions.sort((a, b) => b.votes.length - a.votes.length)[0]
-                      : null;
-                    const isAuthor = session?.role === "teacher" && session.email === contest.authorEmail;
-                    return (
-                      <Link
-                        key={contest.id}
-                        href={`/contests/${contest.id}`}
-                        className="glass-panel p-6 rounded-2xl hover:border-violet-500/50 transition-all block"
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <h3 className="text-lg font-semibold text-slate-200 mb-1">{contest.title}</h3>
-                            <p className="text-sm text-slate-400 mb-2">{contest.description}</p>
+                              <div>
+                                <dt className="text-sm text-slate-400">
+                                  {status === "upcoming"
+                                    ? "Эхлэх хугацаа"
+                                    : "Дуусах хугацаа"}
+                                </dt>
+                                <dd className="mt-1 tabular-nums">
+                                  <time
+                                    dateTime={
+                                      status === "upcoming"
+                                        ? contest.startDate
+                                        : contest.endDate
+                                    }
+                                  >
+                                    {new Date(
+                                      status === "upcoming"
+                                        ? contest.startDate
+                                        : contest.endDate,
+                                    ).toLocaleString("mn-MN", {
+                                      year: "numeric",
+                                      month: "2-digit",
+                                      day: "2-digit",
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                      hourCycle: "h23",
+                                    })}
+                                  </time>
+                                </dd>
+                              </div>
+                            </dl>
                             {winner && (
-                              <div className="mb-2 px-3 py-1 rounded-lg bg-yellow-500/20 text-yellow-400 text-xs inline-block">
+                              <p className="mt-4 rounded-xl bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
                                 🏆 Ялагч: {winner.userName}
-                              </div>
+                              </p>
                             )}
-                            <div className="flex items-center gap-4 mb-3">
-                            {getStatusBadge(contest.status)}
-                            {isAuthor && (
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    startEdit(contest);
-                                  }}
-                                    className="px-3 py-1 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 text-xs"
-                                >
-                                  Засах
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    handleDelete(contest.id);
-                                  }}
-                                    className="px-3 py-1 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-400 text-xs"
-                                >
-                                  Устгах
-                                </button>
-                              </div>
-                            )}
-                        </div>
-                        <div className="flex items-center gap-4 text-xs text-slate-500">
-                          <span>👤 {contest.authorName}</span>
-                          <span>🎯 {contest.participants.length} оролцогч</span>
-                          <span>🏆 {contest.prize} XP</span>
+                            <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4">
+                              <Link
+                                href={`/contests/${contest.id}`}
+                                className="mv-button-secondary"
+                                aria-label={`${contest.title} — дэлгэрэнгүй`}
+                              >
+                                Дэлгэрэнгүй →
+                              </Link>
+                              {isAuthor ? (
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    className="min-h-11 rounded-xl px-3 text-sm text-sky-300 hover:bg-sky-500/10"
+                                    onClick={() => startEdit(contest)}
+                                    aria-label={`${contest.title} засах`}
+                                  >
+                                    Засах
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="min-h-11 rounded-xl px-3 text-sm text-rose-300 hover:bg-rose-500/10"
+                                    onClick={() => {
+                                      setDeleteTarget(contest);
+                                      setActionError(null);
+                                    }}
+                                    aria-label={`${contest.title} устгах`}
+                                  >
+                                    Устгах
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-sm text-slate-400">
+                                  {contest.participants?.length || 0} оролцогч
+                                </span>
+                              )}
                             </div>
-                          </div>
-                        </div>
-                      </Link>
-                    );
-                  })}
-                </div>
-              </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </section>
+                );
+              },
             )}
           </div>
         )}
       </div>
+      <Modal
+        open={showCreateForm && session?.role === "teacher"}
+        onClose={resetForm}
+        title={editingId ? "Уралдаан засах" : "Шинэ уралдаан"}
+        wide
+        busy={busy}
+      >
+        <form onSubmit={handleSaveContest} className="space-y-5">
+          <fieldset disabled={busy} className="space-y-5">
+            <div>
+              <label htmlFor="contest-title" className="mv-label">
+                Гарчиг *
+              </label>
+              <input
+                id="contest-title"
+                className="mv-field"
+                required
+                maxLength={200}
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+              />
+            </div>
+            <div>
+              <label htmlFor="contest-description" className="mv-label">
+                Сэдэв, шаардлага *
+              </label>
+              <textarea
+                id="contest-description"
+                className="mv-field"
+                rows={5}
+                required
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+              />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label htmlFor="contest-start" className="mv-label">
+                  Эхлэх хугацаа *
+                </label>
+                <input
+                  id="contest-start"
+                  type="datetime-local"
+                  className="mv-field"
+                  required
+                  value={startDate}
+                  onChange={(event) => setStartDate(event.target.value)}
+                />
+              </div>
+              <div>
+                <label htmlFor="contest-end" className="mv-label">
+                  Дуусах хугацаа *
+                </label>
+                <input
+                  id="contest-end"
+                  type="datetime-local"
+                  className="mv-field"
+                  required
+                  min={startDate || undefined}
+                  value={endDate}
+                  onChange={(event) => setEndDate(event.target.value)}
+                />
+              </div>
+            </div>
+            <p className="text-sm text-slate-400">
+              Огноо, цаг таны төхөөрөмжийн цагийн бүсээр харагдана.
+            </p>
+            <div>
+              <label htmlFor="contest-prize" className="mv-label">
+                Шагналын XP *
+              </label>
+              <input
+                id="contest-prize"
+                type="number"
+                min={0}
+                step={1}
+                required
+                className="mv-field"
+                value={prize}
+                onChange={(event) => setPrize(Number(event.target.value))}
+              />
+            </div>
+            <fieldset>
+              <legend className="mv-label">Хамрагдах анги</legend>
+              <p className="mb-3 text-sm text-slate-400">
+                Анги сонгоогүй бол бүх ангид харагдана.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {["9", "10", "11", "12"].map((grade) => (
+                  <button
+                    key={grade}
+                    type="button"
+                    aria-pressed={targetGrades.includes(grade)}
+                    onClick={() =>
+                      setTargetGrades((current) =>
+                        current.includes(grade)
+                          ? current.filter((value) => value !== grade)
+                          : [...current, grade],
+                      )
+                    }
+                    className={`min-h-11 rounded-xl border px-4 text-sm ${targetGrades.includes(grade) ? "border-violet-400 bg-violet-500/20 text-white" : "border-slate-700 text-slate-300"}`}
+                  >
+                    {grade}-р анги
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+          </fieldset>
+          {actionError && (
+            <p
+              role="alert"
+              className="rounded-xl bg-rose-500/10 p-3 text-sm text-rose-200"
+            >
+              {actionError}
+            </p>
+          )}
+          <div className="flex flex-wrap justify-end gap-3">
+            <button
+              type="button"
+              className="mv-button-secondary"
+              disabled={busy}
+              onClick={resetForm}
+            >
+              Цуцлах
+            </button>
+            <button type="submit" className="mv-button-primary" disabled={busy}>
+              {busy
+                ? "Хадгалж байна…"
+                : editingId
+                  ? "Өөрчлөлт хадгалах"
+                  : "Уралдаан үүсгэх"}
+            </button>
+          </div>
+        </form>
+      </Modal>
+      <Modal
+        open={!!deleteTarget}
+        onClose={() => {
+          setDeleteTarget(null);
+          setActionError(null);
+        }}
+        title="Уралдаан устгах"
+        busy={busy}
+      >
+        <p className="break-words text-slate-300">
+          “{deleteTarget?.title}” уралдааныг устгах уу? Энэ үйлдлийг буцаах
+          боломжгүй.
+        </p>
+        {actionError && (
+          <p role="alert" className="mt-3 text-sm text-rose-200">
+            {actionError}
+          </p>
+        )}
+        <div className="mt-6 flex flex-wrap justify-end gap-3">
+          <button
+            type="button"
+            className="mv-button-secondary"
+            disabled={busy}
+            onClick={() => setDeleteTarget(null)}
+          >
+            Болих
+          </button>
+          <button
+            type="button"
+            className="mv-button-primary !bg-rose-600"
+            disabled={busy}
+            onClick={() => void handleDelete()}
+          >
+            {busy ? "Устгаж байна…" : "Устгах"}
+          </button>
+        </div>
+      </Modal>
     </DashboardLayout>
   );
 }
-
 export default function ContestsPage() {
   return (
-    <Suspense fallback={
-      <DashboardLayout>
-        <div className="p-8 text-slate-400">Ачаалж байна...</div>
-      </DashboardLayout>
-    }>
+    <Suspense
+      fallback={
+        <DashboardLayout>
+          <p role="status" className="mv-page text-slate-300">
+            Уралдаануудыг ачаалж байна…
+          </p>
+        </DashboardLayout>
+      }
+    >
       <ContestsContent />
     </Suspense>
   );

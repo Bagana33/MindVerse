@@ -32,6 +32,10 @@ export async function POST(req: Request) {
     const role: Role = roleRaw === "teacher" ? "teacher" : "student";
     const grade = body?.grade ? body.grade.toString().trim() : undefined;
 
+    if (mode === 'signup' && role !== 'student') {
+      return NextResponse.json({ ok: false, error: 'Багшийн эрхтэй бүртгэлийг зөвхөн сургуулийн удирдлага үүсгэнэ.' }, { status: 403 });
+    }
+
     if (!email) {
       return NextResponse.json({ ok: false, error: "Email шаардлагатай" }, { status: 400 });
     }
@@ -62,6 +66,10 @@ export async function POST(req: Request) {
 
     if (mode === "signup") {
       try {
+        const existingAccount = await getUser(email, { bypassCache: true });
+        if (existingAccount?.role === 'teacher') {
+          return NextResponse.json({ ok: false, error: 'Энэ бүртгэлээр нэвтрэх эсвэл нууц үгээ сэргээх сонголтыг ашиглана уу.' }, { status: 400 });
+        }
         const created = await createUser(email, password, name, role, grade);
         sessionUserName = created.name;
         sessionNickname = created.nickname;
@@ -123,4 +131,3 @@ export async function POST(req: Request) {
     }, { status: 500 });
   }
 }
-

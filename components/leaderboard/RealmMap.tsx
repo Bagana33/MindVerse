@@ -1,9 +1,13 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useSession } from "../auth/useSession";
-import { generatePersonalizedTitle, getPersonalizedTitleShort } from "../../lib/rpgTitleGenerator";
+import Modal from "../ui/Modal";
+import {
+  generatePersonalizedTitle,
+  getPersonalizedTitleShort,
+} from "../../lib/rpgTitleGenerator";
 
 export type LeaderboardUser = {
   email: string;
@@ -42,10 +46,11 @@ export const REALMS: RealmInfo[] = [
     x: 18,
     y: 62,
     minXp: 0,
-    maxXp: 200,
+    maxXp: 199,
     titles: ["Pixel Wanderer", "Sketch Nomad"],
     skills: ["Дизайны суурь", "Скетч зураг", "Typography"],
-    description: "Бүх шинэхэн сурагчдын аялал эндээс эхэлнэ. Энэ бол цагаан цаастай нүүр тулж, хамгийн их алдаа гаргаж, ноорог зурдаг хатуу ширүүн боловч суурь тавигддаг нутаг юм.",
+    description:
+      "Бүх шинэхэн сурагчдын аялал эндээс эхэлнэ. Энэ бол цагаан цаастай нүүр тулж, хамгийн их алдаа гаргаж, ноорог зурдаг хатуу ширүүн боловч суурь тавигддаг нутаг юм.",
     themeColor: "from-amber-500 via-orange-500 to-yellow-600",
     accentBorder: "border-amber-500/70",
     badgeBg: "bg-amber-500/20 text-amber-300",
@@ -58,10 +63,11 @@ export const REALMS: RealmInfo[] = [
     x: 20,
     y: 24,
     minXp: 200,
-    maxXp: 450,
+    maxXp: 449,
     titles: ["Layout Ranger", "Color Alchemist"],
     skills: ["UI/UX дизайн", "Өнгөний зохицол", "Wireframing"],
-    description: "Хэрэглэгчийн сэтгэл зүйг ойлгож, зөв бүтэц гаргах нууцлаг ойн жимээр аялна. Даалгавраа сайн хийсэн сурагчид Өнгөний Боомтоор дамжин дараагийн том хотууд руу аялна.",
+    description:
+      "Хэрэглэгчийн сэтгэл зүйг ойлгож, зөв бүтэц гаргах нууцлаг ойн жимээр аялна. Даалгавраа сайн хийсэн сурагчид Өнгөний Боомтоор дамжин дараагийн том хотууд руу аялна.",
     themeColor: "from-emerald-500 via-teal-500 to-green-600",
     accentBorder: "border-emerald-500/70",
     badgeBg: "bg-emerald-500/20 text-emerald-300",
@@ -74,10 +80,11 @@ export const REALMS: RealmInfo[] = [
     x: 82,
     y: 65,
     minXp: 450,
-    maxXp: 750,
+    maxXp: 749,
     titles: ["Keyframe Knight", "Motion Ninja"],
     skills: ["Motion Graphics", "VFX (After Effects)", "2D Animation"],
-    description: "Хамгийн их тэвчээр шаардах газар. Компьютерын хүчин чадал шалгасан хүнд эффектүүд, гацсан төслүүдтэй тулалдах хатуу ширүүн боловч маш хүчирхэг, сонирхолтой бүс.",
+    description:
+      "Хамгийн их тэвчээр шаардах газар. Компьютерын хүчин чадал шалгасан хүнд эффектүүд, гацсан төслүүдтэй тулалдах хатуу ширүүн боловч маш хүчирхэг, сонирхолтой бүс.",
     themeColor: "from-red-600 via-rose-600 to-orange-600",
     accentBorder: "border-rose-500/70",
     badgeBg: "bg-rose-500/20 text-rose-300",
@@ -90,10 +97,11 @@ export const REALMS: RealmInfo[] = [
     x: 50,
     y: 15,
     minXp: 750,
-    maxXp: 1000,
+    maxXp: 999,
     titles: ["3D Warlord", "Polygon Sensei"],
     skills: ["3D Modeling", "3D Camera Tracking", "Compositing"],
-    description: "Маш нарийн чимхлүүр, орон зайн баримжаа шаардсан 3D ертөнц. Зөвхөн цөөн тооны тууштай сурагчид л энэхүү мөсөн оргилд хүрч, хүнд объектуудыг амжилттай байршуулна.",
+    description:
+      "Маш нарийн чимхлүүр, орон зайн баримжаа шаардсан 3D ертөнц. Зөвхөн цөөн тооны тууштай сурагчид л энэхүү мөсөн оргилд хүрч, хүнд объектуудыг амжилттай байршуулна.",
     themeColor: "from-sky-400 via-indigo-500 to-cyan-500",
     accentBorder: "border-sky-400/70",
     badgeBg: "bg-sky-500/20 text-sky-300",
@@ -106,10 +114,11 @@ export const REALMS: RealmInfo[] = [
     x: 84,
     y: 22,
     minXp: 1000,
-    maxXp: 1500,
+    maxXp: 1499,
     titles: ["Prompt Wizard", "AI Architect"],
     skills: ["Advanced AI Prompting", "Concept Art", "Generative Design"],
-    description: "Хиймэл оюун ухааны хүчийг ашиглан нүд ирмэхийн зуур гайхамшгийг бүтээдэг, уламжлалт дүрмээс гадуур орших хөвөгч хот.",
+    description:
+      "Хиймэл оюун ухааны хүчийг ашиглан нүд ирмэхийн зуур гайхамшгийг бүтээдэг, уламжлалт дүрмээс гадуур орших хөвөгч хот.",
     themeColor: "from-cyan-400 via-blue-500 to-purple-600",
     accentBorder: "border-cyan-400/70",
     badgeBg: "bg-cyan-500/20 text-cyan-300",
@@ -121,11 +130,12 @@ export const REALMS: RealmInfo[] = [
     icon: "👑",
     x: 50,
     y: 50,
-    minXp: 500,
-    maxXp: 999999,
+    minXp: 1500,
+    maxXp: Number.POSITIVE_INFINITY,
     titles: ["Mindverse Champion", "Art Director"],
     skills: ["Бүх ур чадварын нэгдэл", "Портфолио", "Агентлагийн төслүүд"],
-    description: "Сурагчдын эцсийн зогсоол буюу хамгийн шилдэг бүтээлүүдээ танилцуулдаг, сар бүрийн том уралдаан (Weekly Brief Arena) зохиогддог төв континент.",
+    description:
+      "Сурагчдын эцсийн зогсоол буюу хамгийн шилдэг бүтээлүүдээ танилцуулдаг, сар бүрийн том уралдаан (Weekly Brief Arena) зохиогддог төв континент.",
     themeColor: "from-amber-400 via-purple-500 to-pink-500",
     accentBorder: "border-purple-500/70",
     badgeBg: "bg-purple-500/20 text-purple-200",
@@ -134,10 +144,14 @@ export const REALMS: RealmInfo[] = [
 
 /** Classify user into primary Realm by XP */
 export function getUserRealm(xp: number): RealmInfo {
+  if (xp >= 1500)
+    return REALMS.find((r) => r.id === "central_hub") || REALMS[5];
   if (xp >= 1000) return REALMS.find((r) => r.id === "ai_cloud") || REALMS[5];
-  if (xp >= 750) return REALMS.find((r) => r.id === "peak_polygons") || REALMS[3];
+  if (xp >= 750)
+    return REALMS.find((r) => r.id === "peak_polygons") || REALMS[3];
   if (xp >= 450) return REALMS.find((r) => r.id === "render_hell") || REALMS[2];
-  if (xp >= 200) return REALMS.find((r) => r.id === "forest_users") || REALMS[1];
+  if (xp >= 200)
+    return REALMS.find((r) => r.id === "forest_users") || REALMS[1];
   return REALMS.find((r) => r.id === "draft_desert") || REALMS[0];
 }
 
@@ -151,362 +165,330 @@ export function getUserRpgTitle(xp: number): string {
   return "🎨 Pixel Wanderer";
 }
 
+const realmRange = (realm: RealmInfo) =>
+  Number.isFinite(realm.maxXp)
+    ? `${realm.minXp.toLocaleString("en-US")}–${realm.maxXp.toLocaleString("en-US")} XP`
+    : `${realm.minXp.toLocaleString("en-US")}+ XP`;
+const userName = (user: LeaderboardUser) =>
+  user.nickname || user.name || user.email.split("@")[0];
+
+function HeroAvatar({
+  user,
+  large = false,
+}: {
+  user: LeaderboardUser;
+  large?: boolean;
+}) {
+  return (
+    <span
+      className={`relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-700 font-semibold text-slate-100 ${large ? "h-20 w-20 text-2xl" : "h-10 w-10 text-sm"}`}
+    >
+      <span aria-hidden="true">{userName(user)[0]?.toUpperCase()}</span>
+      {user.avatarUrl && (
+        <img
+          src={user.avatarUrl}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          width={80}
+          height={80}
+          className="absolute inset-0 h-full w-full object-cover"
+          onError={(event) => {
+            event.currentTarget.style.display = "none";
+          }}
+        />
+      )}
+    </span>
+  );
+}
+
 export function RealmMap({ users }: { users: LeaderboardUser[] }) {
   const { session } = useSession();
-  const router = useRouter();
   const [selectedRealm, setSelectedRealm] = useState<RealmInfo | null>(null);
-  const [selectedUser, setSelectedUser] = useState<LeaderboardUser | null>(null);
-  const [activeTabFilter, setActiveTabFilter] = useState<string>("all");
-
-  // Map users to realms
+  const [selectedUser, setSelectedUser] = useState<LeaderboardUser | null>(
+    null,
+  );
   const usersByRealm = useMemo(() => {
-    const map: Record<string, LeaderboardUser[]> = {};
-    REALMS.forEach((r) => (map[r.id] = []));
-    users.forEach((u) => {
-      const realm = getUserRealm(u.experience || 0);
-      map[realm.id].push(u);
-    });
-    return map;
+    const grouped: Record<string, LeaderboardUser[]> = Object.fromEntries(
+      REALMS.map((realm) => [realm.id, []]),
+    );
+    for (const user of users)
+      grouped[getUserRealm(user.experience || 0).id].push(user);
+    return grouped;
   }, [users]);
-
-  // Current logged in user object & realm
-  const currentUser = useMemo(() => {
-    if (!session?.email) return null;
-    return users.find((u) => u.email === session.email) || null;
-  }, [session?.email, users]);
-
-  const currentUserRealm = currentUser ? getUserRealm(currentUser.experience) : null;
+  const currentUser = users.find((user) => user.email === session?.email);
+  const currentRealm = currentUser
+    ? getUserRealm(currentUser.experience)
+    : null;
+  const heroTitle = selectedUser
+    ? generatePersonalizedTitle(selectedUser)
+    : null;
 
   return (
-    <div className="space-y-6">
-      {/* Map Header Card */}
-      <div className="relative overflow-hidden rounded-3xl border border-purple-500/30 glass-panel p-6 shadow-[0_20px_60px_rgba(139,92,246,0.25)]">
-        <div className="absolute top-0 right-0 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-gradient-to-r from-amber-500 to-purple-600 text-white uppercase tracking-wider shadow-lg">
-                ⚔️ RPG World Map
-              </span>
-              <span className="text-xs text-purple-300 font-semibold">Mindverse Realm</span>
-            </div>
-            <h2 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight bg-gradient-to-r from-amber-200 via-violet-200 to-pink-200 bg-clip-text text-transparent">
-              Дизайны Хаант Улс
-            </h2>
-            <p className="text-xs md:text-sm text-slate-300 max-w-2xl mt-1 leading-relaxed">
-              Баатруудын аялал, XP түвшин болон эзэлсэн газар нутаг. Газрын зургийн бүс дээр дарж тухайн нутгийн сурагчид ба цолыг харна уу.
-            </p>
-          </div>
-
-          {currentUser && currentUserRealm && (
-            <div className="glass-card rounded-2xl p-4 border border-amber-400/40 bg-gradient-to-br from-amber-500/10 via-purple-500/10 to-dark-900 flex items-center gap-3 shrink-0 shadow-[0_0_25px_rgba(251,191,36,0.2)]">
-              <div className="relative w-12 h-12 rounded-full border-2 border-amber-400 flex items-center justify-center bg-dark-800 overflow-hidden shadow-lg">
-                {currentUser.avatarUrl ? (
-                  <img src={currentUser.avatarUrl} alt={currentUser.name} className="w-full h-full object-cover" />
-                ) : (
-                  <span className="text-lg font-bold text-amber-300">
-                    {(currentUser.nickname || currentUser.name || currentUser.email)[0]?.toUpperCase()}
-                  </span>
-                )}
-                <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-dark-900 animate-pulse" />
-              </div>
-              <div>
-                <div className="text-[10px] uppercase font-bold text-amber-400 tracking-wider">🌟 Байршил: {currentUserRealm.icon}</div>
-                <div className="text-sm font-bold text-white truncate max-w-[160px]">
-                  {currentUser.nickname || currentUser.name || currentUser.email.split("@")[0]}
-                </div>
-                <div className="text-xs font-semibold text-purple-300">
-                  {getPersonalizedTitleShort(currentUser)} ({Math.round(currentUser.experience)} XP)
-                </div>
-                <div className="text-[10px] text-slate-400 mt-0.5 italic">
-                  {generatePersonalizedTitle(currentUser).subtitle}
-                </div>
-              </div>
-            </div>
-          )}
+    <section className="space-y-5" aria-labelledby="realm-title">
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+        <div>
+          <h2
+            id="realm-title"
+            className="text-xl font-bold text-white sm:text-2xl"
+          >
+            Дизайны хаант улс
+          </h2>
+          <p
+            id="realm-map-description"
+            className="mt-2 max-w-2xl text-sm leading-6 text-slate-400"
+          >
+            XP ахих тусам шинэ бүс нээгдэнэ. Газрын зураг эсвэл бүсийн
+            жагсаалтаас сонгож, сурагчид болон эзэмших ур чадварыг хараарай.
+          </p>
         </div>
+        {currentRealm && (
+          <button
+            type="button"
+            onClick={() => setSelectedRealm(currentRealm)}
+            className="mv-button-secondary shrink-0"
+          >
+            <span aria-hidden="true">{currentRealm.icon}</span> Таны бүсийг
+            харах
+          </button>
+        )}
       </div>
 
-      {/* Main Interactive Map View */}
-      <div className="relative rounded-3xl border-2 border-purple-500/30 overflow-hidden bg-slate-950 shadow-[0_25px_80px_rgba(0,0,0,0.8)] aspect-[4/3] md:aspect-[16/10] group">
-        {/* Background Map Image */}
-        <img
-          src="/mindverse-map.jpg"
-          alt="Дизайны Хаант Улс Map"
-          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-[1.01]"
-        />
-
-        {/* Dark Vignette Overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-slate-950/40 pointer-events-none" />
-
-        {/* Map Realm Pins & Regions */}
-        {REALMS.map((realm) => {
-          const realmUsers = usersByRealm[realm.id] || [];
-          const isSelected = selectedRealm?.id === realm.id;
-          const isUserHere = currentUserRealm?.id === realm.id;
-
-          return (
-            <div
-              key={realm.id}
-              style={{ left: `${realm.x}%`, top: `${realm.y}%` }}
-              className="absolute -translate-x-1/2 -translate-y-1/2 z-20 cursor-pointer group/pin"
-              onClick={() => setSelectedRealm(realm)}
-            >
-              {/* Outer Pulsing Aura Ring */}
-              <div className={`absolute -inset-4 rounded-full bg-gradient-to-r ${realm.themeColor} opacity-30 blur-md animate-ping pointer-events-none ${isSelected ? 'opacity-70 scale-125' : ''}`} />
-
-              {/* Pin Container Card */}
-              <div
-                className={`relative flex items-center gap-2 px-3.5 py-2 rounded-2xl glass-panel border-2 backdrop-blur-md shadow-2xl transition-all duration-300 group-hover/pin:scale-110 ${
-                  isSelected
-                    ? "border-amber-400 bg-dark-900/90 shadow-[0_0_35px_rgba(251,191,36,0.6)] scale-110"
-                    : isUserHere
-                    ? "border-emerald-400 bg-dark-900/90 shadow-[0_0_30px_rgba(52,211,153,0.5)]"
-                    : `${realm.accentBorder} bg-dark-950/85 hover:border-purple-400`
-                }`}
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px] 2xl:grid-cols-[minmax(0,1fr)_320px] 2xl:gap-5">
+        <div
+          className="mv-panel relative isolate aspect-[4/3] overflow-hidden !p-0 sm:aspect-[16/10] xl:aspect-auto xl:min-h-[480px]"
+          aria-describedby="realm-map-description"
+        >
+          <img
+            src="/mindverse-map.jpg"
+            alt=""
+            width={1600}
+            height={1000}
+            loading="lazy"
+            decoding="async"
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+          <div
+            className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950/75 via-slate-950/10 to-slate-950/35"
+            aria-hidden="true"
+          />
+          {REALMS.map((realm) => {
+            const count = usersByRealm[realm.id].length;
+            const isMe = currentRealm?.id === realm.id;
+            return (
+              <button
+                key={realm.id}
+                type="button"
+                onClick={() => setSelectedRealm(realm)}
+                aria-label={`${realm.nameMn}, ${realmRange(realm)}, ${count} сурагч${isMe ? ", таны бүс" : ""}`}
+                aria-haspopup="dialog"
+                className={`absolute z-10 flex min-h-12 min-w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center gap-2 rounded-2xl border-2 bg-slate-950/90 px-2 py-2 text-white shadow-lg transition-colors hover:border-white focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-white sm:px-3 ${isMe ? "border-amber-300" : realm.accentBorder}`}
+                style={{ left: `${realm.x}%`, top: `${realm.y}%` }}
               >
-                <span className="text-xl md:text-2xl filter drop-shadow-md">{realm.icon}</span>
-                <div className="hidden sm:block text-left pr-1">
-                  <div className="text-[11px] font-black text-white leading-tight drop-shadow-sm whitespace-nowrap">
-                    {realm.nameMn}
-                  </div>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    <span className={`px-1.5 py-0.2 text-[9px] font-bold rounded-full ${realm.badgeBg}`}>
-                      {realm.minXp} - {realm.maxXp === 999999 ? "∞" : realm.maxXp} XP
-                    </span>
-                    <span className="text-[10px] text-slate-300 font-semibold">
-                      👥 {realmUsers.length}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Counter Badge for Mobile */}
-                <span className="sm:hidden text-[10px] font-bold text-white bg-purple-600/80 px-1.5 py-0.5 rounded-full">
-                  {realmUsers.length}
+                <span aria-hidden="true" className="text-2xl sm:text-3xl">
+                  {realm.icon}
                 </span>
-
-                {/* Floating Student Avatars in this Realm */}
-                {realmUsers.length > 0 && (
-                  <div className="flex -space-x-2 overflow-hidden ml-1">
-                    {realmUsers.slice(0, 3).map((u) => (
-                      <div
-                        key={u.email}
-                        title={`${u.nickname || u.name || u.email} (${Math.round(u.experience)} XP)`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedUser(u);
-                        }}
-                        className={`w-6 h-6 rounded-full border-2 border-dark-900 flex items-center justify-center text-[9px] font-bold text-white overflow-hidden shadow-md cursor-pointer hover:scale-125 transition-transform ${
-                          u.email === session?.email ? "ring-2 ring-amber-400" : ""
-                        }`}
-                        style={{ backgroundColor: u.avatarColor || "#6366f1" }}
-                      >
-                        {u.avatarUrl ? (
-                          <img src={u.avatarUrl} alt={u.name} className="w-full h-full object-cover" />
-                        ) : (
-                          (u.nickname || u.name || u.email)[0]?.toUpperCase()
-                        )}
-                      </div>
-                    ))}
-                    {realmUsers.length > 3 && (
-                      <div className="w-6 h-6 rounded-full border-2 border-dark-900 bg-slate-800 text-[8px] font-bold text-slate-300 flex items-center justify-center">
-                        +{realmUsers.length - 3}
-                      </div>
-                    )}
-                  </div>
+                <span className="hidden max-w-[150px] text-left 2xl:block">
+                  <span className="block text-sm font-semibold leading-5">
+                    {realm.nameMn}
+                  </span>
+                  <span className="mt-1 block text-xs text-slate-300">
+                    {count} сурагч
+                  </span>
+                </span>
+                {isMe && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-amber-300 px-2 py-0.5 text-xs font-bold text-slate-950"
+                  >
+                    Та
+                  </span>
                 )}
-              </div>
+              </button>
+            );
+          })}
+          <p className="absolute bottom-3 left-3 right-3 text-center text-xs text-slate-200 sm:bottom-4 sm:text-sm">
+            6 бүс · Бүтээл бүр аяллын нэг алхам
+          </p>
+        </div>
 
-              {/* User Marker indicator if user is in this realm */}
-              {isUserHere && (
-                <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-gradient-to-r from-emerald-400 to-teal-500 text-slate-950 font-black text-[9px] px-2 py-0.5 rounded-full shadow-lg border border-white animate-bounce whitespace-nowrap">
-                  🌟 ТА ЭНД БАЙНА
-                </div>
-              )}
-            </div>
-          );
-        })}
+        <div
+          className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1 xl:gap-2"
+          aria-label="Бүсүүдийн жагсаалт"
+        >
+          {REALMS.map((realm) => (
+            <button
+              key={realm.id}
+              type="button"
+              aria-haspopup="dialog"
+              onClick={() => setSelectedRealm(realm)}
+              className={`mv-panel flex h-full items-start gap-3 !p-4 text-left transition-colors hover:border-violet-400/40 hover:bg-white/5 xl:!p-3.5 ${currentRealm?.id === realm.id ? "!border-amber-400/60" : ""}`}
+            >
+              <span
+                aria-hidden="true"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/5 text-2xl"
+              >
+                {realm.icon}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold leading-6 text-white">
+                  {realm.nameMn}
+                </span>
+                <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs leading-5">
+                  <span className="text-violet-300">{realmRange(realm)}</span>
+                  <span className="text-slate-400">
+                    {usersByRealm[realm.id].length} сурагч
+                  </span>
+                </span>
+                {currentRealm?.id === realm.id && (
+                  <span className="mt-1 block text-xs font-medium text-amber-200">
+                    Таны бүс
+                  </span>
+                )}
+              </span>
+              <span aria-hidden="true" className="pt-1 text-slate-500">
+                ↗
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Realm Detail Modal Drawer */}
-      {selectedRealm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in">
-          <div className="relative w-full max-w-2xl bg-dark-900 border-2 border-purple-500/40 rounded-3xl p-6 md:p-8 shadow-[0_25px_90px_rgba(139,92,246,0.3)] max-h-[90vh] overflow-y-auto">
-            {/* Close Button */}
-            <button
-              onClick={() => setSelectedRealm(null)}
-              className="absolute top-4 right-4 w-9 h-9 rounded-full bg-dark-800 border border-white/10 text-slate-400 hover:text-white flex items-center justify-center transition-colors"
-            >
-              ✕
-            </button>
-
-            {/* Realm Modal Header */}
-            <div className="flex items-center gap-4 mb-6">
-              <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${selectedRealm.themeColor} flex items-center justify-center text-3xl shadow-xl border border-white/20`}>
-                {selectedRealm.icon}
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${selectedRealm.badgeBg}`}>
-                    {selectedRealm.minXp} - {selectedRealm.maxXp === 999999 ? "∞" : selectedRealm.maxXp} XP
-                  </span>
-                  <span className="text-xs text-slate-400">{selectedRealm.nameEn}</span>
-                </div>
-                <h3 className="text-2xl font-black text-white mt-1">{selectedRealm.nameMn}</h3>
-              </div>
-            </div>
-
-            {/* Description & Details */}
-            <p className="text-sm text-slate-300 leading-relaxed mb-6 bg-dark-800/60 p-4 rounded-2xl border border-white/5">
-              {selectedRealm.description}
-            </p>
-
-            {/* Skills & Titles Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-              <div className="bg-dark-800/40 border border-white/5 p-4 rounded-2xl">
-                <h4 className="text-xs font-bold uppercase text-purple-400 tracking-wider mb-2">🎯 Эзэмших Ур чадварууд</h4>
-                <div className="flex flex-wrap gap-1.5">
-                  {selectedRealm.skills.map((skill) => (
-                    <span key={skill} className="px-2.5 py-1 rounded-lg text-xs font-medium bg-purple-500/10 text-purple-200 border border-purple-500/20">
-                      {skill}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              <div className="bg-dark-800/40 border border-white/5 p-4 rounded-2xl">
-                <h4 className="text-xs font-bold uppercase text-amber-400 tracking-wider mb-2">🏆 Олгох Баатрын Цолууд</h4>
-                <div className="flex flex-wrap gap-1.5">
-                  {selectedRealm.titles.map((title) => (
-                    <span key={title} className="px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-500/10 text-amber-300 border border-amber-500/20">
-                      ⚔️ {title}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Students currently in this Realm */}
+      <Modal
+        open={!!selectedRealm}
+        onClose={() => setSelectedRealm(null)}
+        title={
+          selectedRealm
+            ? `${selectedRealm.icon} ${selectedRealm.nameMn}`
+            : "Бүсийн мэдээлэл"
+        }
+        wide
+      >
+        {selectedRealm && (
+          <div className="space-y-6">
             <div>
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                  <span>👥 Энэ бүсэд аялж буй баатрууд</span>
-                  <span className="px-2 py-0.5 rounded-full text-xs bg-purple-600/30 text-purple-300">
-                    {(usersByRealm[selectedRealm.id] || []).length} сурагч
-                  </span>
-                </h4>
-              </div>
-
-              {(usersByRealm[selectedRealm.id] || []).length === 0 ? (
-                <div className="text-center py-6 text-xs text-slate-500 border border-dashed border-white/10 rounded-2xl">
-                  Одоогоор энэ бүсэд хүрсэн сурагч байхгүй байна. Анхны баатар болоорой! 🚀
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-60 overflow-y-auto pr-1">
-                  {(usersByRealm[selectedRealm.id] || []).map((u) => {
-                    const isMe = session?.email === u.email;
-                    return (
-                      <div
-                        key={u.email}
-                        onClick={() => router.push(`/profile?user=${encodeURIComponent(u.email)}`)}
-                        className={`flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer hover:border-purple-500/50 ${
-                          isMe
-                            ? "border-amber-400/80 bg-gradient-to-r from-amber-500/15 to-purple-500/15"
-                            : "border-white/5 bg-dark-800/60 hover:bg-dark-800"
-                        }`}
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div
-                            className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white overflow-hidden shadow-md shrink-0"
-                            style={{ backgroundColor: u.avatarColor || "#6366f1" }}
-                          >
-                            {u.avatarUrl ? (
-                              <img src={u.avatarUrl} alt={u.name} className="w-full h-full object-cover" />
-                            ) : (
-                              (u.nickname || u.name || u.email)[0]?.toUpperCase()
-                            )}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="text-xs font-bold text-white truncate">
-                              {u.nickname || u.name || u.email.split("@")[0]} {isMe && <span className="text-amber-400 text-[10px]">(Та)</span>}
-                            </div>
-                            <div className="text-[10px] text-amber-300 font-semibold">{getPersonalizedTitleShort(u)}</div>
-                            <div className="text-[9px] text-slate-500 italic">{generatePersonalizedTitle(u).subtitle}</div>
-                          </div>
-                        </div>
-                        <div className="text-xs font-extrabold text-amber-300 shrink-0">
-                          {Math.round(u.experience)} XP
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+              <span className="inline-flex rounded-full bg-violet-500/15 px-3 py-1 text-sm font-semibold text-violet-200">
+                {realmRange(selectedRealm)}
+              </span>
+              <p className="mt-4 text-sm leading-7 text-slate-300 sm:text-base sm:leading-8">
+                {selectedRealm.description}
+              </p>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Single Student Hero Badge Modal */}
-      {selectedUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fade-in">
-          <div className="relative w-full max-w-sm bg-dark-900 border-2 border-amber-400/50 rounded-3xl p-6 text-center shadow-[0_20px_70px_rgba(251,191,36,0.3)]">
-            <button
-              onClick={() => setSelectedUser(null)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-white"
-            >
-              ✕
-            </button>
-
-            <div className="w-20 h-20 mx-auto rounded-full border-4 border-amber-400 flex items-center justify-center bg-dark-800 overflow-hidden shadow-2xl mb-4">
-              {selectedUser.avatarUrl ? (
-                <img src={selectedUser.avatarUrl} alt={selectedUser.name} className="w-full h-full object-cover" />
-              ) : (
-                <span className="text-2xl font-bold text-amber-300">
-                  {(selectedUser.nickname || selectedUser.name || selectedUser.email)[0]?.toUpperCase()}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <section className="rounded-2xl border border-white/10 p-4">
+                <h3 className="mb-3 text-sm font-semibold text-white">
+                  Эзэмших ур чадвар
+                </h3>
+                <ul className="space-y-2 text-sm leading-5 text-slate-300">
+                  {selectedRealm.skills.map((skill) => (
+                    <li key={skill}>• {skill}</li>
+                  ))}
+                </ul>
+              </section>
+              <section className="rounded-2xl border border-white/10 p-4">
+                <h3 className="mb-3 text-sm font-semibold text-white">
+                  Авах цол
+                </h3>
+                <ul className="space-y-2 text-sm leading-5 text-amber-200">
+                  {selectedRealm.titles.map((title) => (
+                    <li key={title}>{title}</li>
+                  ))}
+                </ul>
+              </section>
+            </div>
+            <section>
+              <h3 className="mb-3 text-base font-semibold text-white">
+                Энэ бүсийн сурагчид{" "}
+                <span className="text-sm font-normal text-slate-400">
+                  · {usersByRealm[selectedRealm.id].length}
                 </span>
+              </h3>
+              {usersByRealm[selectedRealm.id].length === 0 ? (
+                <p className="rounded-2xl border border-dashed border-white/15 px-4 py-8 text-center text-sm leading-6 text-slate-400">
+                  Одоогийн шүүлтүүрээр энэ бүсэд сурагч алга. XP цуглуулж, энэ
+                  бүсийн анхны аялагч болоорой.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {usersByRealm[selectedRealm.id].map((user) => (
+                    <li key={user.email}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedRealm(null);
+                          setSelectedUser(user);
+                        }}
+                        className="flex w-full items-center gap-3 rounded-xl border border-white/10 px-3 py-3 text-left hover:bg-white/5"
+                      >
+                        <HeroAvatar user={user} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block break-words text-sm font-semibold text-white">
+                            {userName(user)}
+                            {session?.email === user.email ? " · Та" : ""}
+                          </span>
+                          <span className="mt-1 block text-sm leading-6 text-violet-300">
+                            {getPersonalizedTitleShort(user)}
+                          </span>
+                        </span>
+                        <span className="shrink-0 text-sm font-semibold tabular-nums text-amber-200">
+                          {Math.round(user.experience).toLocaleString("en-US")}{" "}
+                          XP
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               )}
-            </div>
-
-            <h3 className="text-xl font-bold text-white">
-              {selectedUser.nickname || selectedUser.name || selectedUser.email.split("@")[0]}
-            </h3>
-            {(() => {
-              const t = generatePersonalizedTitle(selectedUser);
-              return (
-                <>
-                  <p className="text-base font-extrabold text-amber-300 mt-1">{t.emoji} {t.title}</p>
-                  <p className="text-[11px] text-slate-400 italic mt-0.5">{t.subtitle}</p>
-                </>
-              );
-            })()}
-
-            <div className="mt-4 p-3 rounded-2xl bg-dark-800 border border-white/5 flex items-center justify-around">
-              <div>
-                <div className="text-[10px] text-slate-400 uppercase font-bold">XP Оноо</div>
-                <div className="text-lg font-black text-white">{Math.round(selectedUser.experience)}</div>
-              </div>
-              <div className="w-px h-8 bg-white/10" />
-              <div>
-                <div className="text-[10px] text-slate-400 uppercase font-bold">Байрлал Нутаг</div>
-                <div className="text-sm font-bold text-purple-300">
-                  {getUserRealm(selectedUser.experience).icon} {getUserRealm(selectedUser.experience).nameEn}
-                </div>
-              </div>
-            </div>
-
-            <button
-              onClick={() => {
-                setSelectedUser(null);
-                router.push(`/profile?user=${encodeURIComponent(selectedUser.email)}`);
-              }}
-              className="mt-5 w-full py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 text-white font-bold text-xs hover:shadow-lg transition-all"
-            >
-              Профайл руу зочлох →
-            </button>
+            </section>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </Modal>
+      <Modal
+        open={!!selectedUser}
+        onClose={() => setSelectedUser(null)}
+        title="Аялагчийн мэдээлэл"
+        footer={
+          selectedUser && (
+            <Link
+              href={`/profile?user=${encodeURIComponent(selectedUser.email)}`}
+              className="mv-button-primary w-full justify-center"
+            >
+              Профайл харах →
+            </Link>
+          )
+        }
+      >
+        {selectedUser && (
+          <div className="space-y-5 text-center">
+            <HeroAvatar user={selectedUser} large />
+            <div>
+              <h3 className="break-words text-xl font-bold text-white">
+                {userName(selectedUser)}
+              </h3>
+              <p className="mt-2 text-base font-semibold text-amber-200">
+                {heroTitle?.emoji} {heroTitle?.title}
+              </p>
+              <p className="mt-2 text-sm leading-6 text-slate-400">
+                {heroTitle?.subtitle}
+              </p>
+            </div>
+            <dl className="grid grid-cols-2 gap-4 rounded-2xl border border-white/10 p-4">
+              <div>
+                <dt className="text-sm text-slate-400">Цуглуулсан XP</dt>
+                <dd className="mt-1 text-xl font-bold text-white">
+                  {Math.round(selectedUser.experience).toLocaleString("en-US")}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-sm text-slate-400">Одоогийн бүс</dt>
+                <dd className="mt-1 text-sm font-semibold leading-5 text-violet-200">
+                  {getUserRealm(selectedUser.experience).nameMn}
+                </dd>
+              </div>
+            </dl>
+          </div>
+        )}
+      </Modal>
+    </section>
   );
 }

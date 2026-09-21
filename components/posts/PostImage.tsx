@@ -1,94 +1,84 @@
 "use client";
-import React, { useState, useRef, useEffect } from 'react';
 
-interface PostImageProps {
+import { useState } from "react";
+
+type PostImageProps = {
   src: string;
   alt: string;
   className?: string;
-  rounded?: string; // tailwind rounded utility override
+  rounded?: string;
+  priority?: boolean;
+  sizes?: string;
+};
+
+// Resize public Cloudinary uploads at the CDN. Leave signed/private and other
+// providers untouched, and always retain the original for the full-size viewer.
+export function getPostImageSources(src: string) {
+  try {
+    const url = new URL(src);
+    const marker = "/image/upload/";
+    if (
+      url.protocol !== "https:" ||
+      url.hostname !== "res.cloudinary.com" ||
+      !url.pathname.includes(marker) ||
+      url.pathname.includes("/s--") ||
+      url.search
+    ) return { src, srcSet: undefined };
+
+    const resize = (width: number) => src.replace(marker, `${marker}f_auto,q_auto,c_limit,w_${width}/`);
+    return {
+      src: resize(960),
+      srcSet: [480, 768, 960, 1440].map((width) => `${resize(width)} ${width}w`).join(", "),
+    };
+  } catch {
+    return { src, srcSet: undefined };
+  }
 }
 
-// Utility to join class names
-function cn(...classes: (string | undefined | false | null)[]) {
-  return classes.filter(Boolean).join(' ');
-}
-
-export const PostImage: React.FC<PostImageProps> = ({ src, alt, className, rounded = 'rounded-2xl' }) => {
-  const imgRef = useRef<HTMLImageElement | null>(null);
-  const [loaded, setLoaded] = useState(false);
-  const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
-
-  useEffect(() => {
-    const img = imgRef.current;
-    if (!img) return;
-    if (img.complete && img.naturalWidth) {
-      setNatural({ w: img.naturalWidth, h: img.naturalHeight });
-      setLoaded(true);
-    }
-  }, []);
-
-  const onLoad = () => {
-    if (imgRef.current) {
-      setNatural({ w: imgRef.current.naturalWidth, h: imgRef.current.naturalHeight });
-      setLoaded(true);
-    }
-  };
-
-  const orientation = natural ? (natural.w === natural.h ? 'square' : natural.w > natural.h ? 'landscape' : 'portrait') : 'unknown';
-
-  // Relaxed sizing: a single max height for consistency, allow full containment
-  const sizeClass = 'max-h-[600px]';
+function ImageContent({ src, alt, priority = false, sizes }: Pick<PostImageProps, "src" | "alt" | "priority" | "sizes">) {
+  const [status, setStatus] = useState<"loading" | "loaded" | "error">("loading");
+  const [original, setOriginal] = useState(false);
+  const sources = original ? { src, srcSet: undefined } : getPostImageSources(src);
 
   return (
-    <div
-      className={cn(
-        'group relative overflow-hidden border border-slate-700/50 shadow-lg transition-all duration-400 bg-slate-950/10 backdrop-blur-sm',
-        rounded,
-        sizeClass,
-        className
+    <>
+      {status === "loading" && (
+        <div aria-hidden="true" className="absolute inset-0 bg-nc-panel/60 motion-safe:animate-pulse" />
       )}
-    >
-      {/* Decorative elements now only on hover for cleaner idle look */}
-      <div className="absolute inset-0 bg-gradient-to-br from-violet-600/0 via-fuchsia-500/0 to-sky-500/0 group-hover:from-violet-600/15 group-hover:via-fuchsia-500/10 group-hover:to-sky-500/15 transition-opacity duration-500" aria-hidden="true" />
-      <div
-        className="absolute inset-0 pointer-events-none mix-blend-overlay opacity-0 group-hover:opacity-25 transition-opacity duration-500"
-        style={{
-          backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.15) 1px, transparent 0)',
-          backgroundSize: '6px 6px'
-        }}
-        aria-hidden="true"
-      />
-      {/* Edge frame subtle until hover */}
-      <div className="absolute inset-0 rounded-2xl ring-1 ring-inset ring-violet-400/10 group-hover:ring-violet-400/30 transition duration-500 pointer-events-none" aria-hidden="true" />
-
-      {/* Skeleton loader */}
-      {!loaded && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="w-full h-full animate-pulse bg-gradient-to-br from-slate-800/60 via-slate-700/40 to-slate-800/60" />
-        </div>
+      {status === "error" ? (
+        <span className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center text-sm text-nc-muted" role="status">
+          <span className="material-symbols-outlined text-3xl" aria-hidden="true">broken_image</span>
+          Зургийг ачаалж чадсангүй.
+        </span>
+      ) : (
+        <img
+          src={sources.src}
+          srcSet={sources.srcSet}
+          sizes={sizes || "(max-width: 767px) calc(100vw - 32px), (max-width: 1279px) 700px, 760px"}
+          alt={alt}
+          width={1200}
+          height={900}
+          loading={priority ? "eager" : "lazy"}
+          fetchPriority={priority ? "high" : "auto"}
+          decoding="async"
+          onLoad={() => setStatus("loaded")}
+          onError={() => {
+            if (!original && sources.src !== src) setOriginal(true);
+            else setStatus("error");
+          }}
+          className={`block h-full w-full object-contain motion-safe:transition-opacity ${status === "loaded" ? "opacity-100" : "opacity-0"}`}
+        />
       )}
+    </>
+  );
+}
 
-      <img
-        ref={imgRef}
-        src={src}
-        alt={alt}
-        loading="lazy"
-        decoding="async"
-        onLoad={onLoad}
-        className={cn(
-          'w-full h-full object-contain transition-transform duration-700',
-          loaded ? 'opacity-100' : 'opacity-0',
-          'group-hover:scale-[1.03]'
-        )}
-        style={{
-          objectPosition: 'center'
-        }}
-      />
-
-      {/* Subtle top sheen */}
-      <div className="absolute top-0 left-0 right-0 h-16 bg-gradient-to-b from-white/5 to-transparent group-hover:from-white/15 pointer-events-none transition-colors duration-500" aria-hidden="true" />
+export function PostImage({ src, alt, className = "", rounded = "rounded-2xl", priority = false, sizes }: PostImageProps) {
+  return (
+    <div className={`relative aspect-[4/3] w-full overflow-hidden bg-nc-panel ${rounded} ${className}`}>
+      <ImageContent key={src} src={src} alt={alt} priority={priority} sizes={sizes} />
     </div>
   );
-};
+}
 
 export default PostImage;

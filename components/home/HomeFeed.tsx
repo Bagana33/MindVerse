@@ -307,7 +307,7 @@ export function HomeFeed() {
   const [hasMore, setHasMore] = useState<boolean>(true);
   const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
-  const [selectedGrade, setSelectedGrade] = useState<string>("all"); // Grade filter: "all", "10", "11", "12", "Р"
+  const [selectedGrade, setSelectedGrade] = useState<string>("all"); // Grade filter: "all", "9", "10", "11", "12", "Р"
 
   // Read search query from URL params
   useEffect(() => {
@@ -902,7 +902,7 @@ export function HomeFeed() {
         {/* Grade Filter */}
         <div className="flex items-center gap-2 flex-wrap rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
           <span className="text-xs font-medium text-slate-400">Анги:</span>
-          {['all', '10', '11', '12'].map(grade => (
+          {['all', '9', '10', '11', '12'].map(grade => (
             <button
               key={grade}
               onClick={() => setSelectedGrade(grade)}

@@ -1,13 +1,12 @@
 "use client";
 
-import { FormEvent, useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { FormEvent, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { BrandLogo } from "../layout/BrandLogo";
 
 type Mode = "signin" | "signup" | "forgot";
 
 export function LoginForm() {
-  const router = useRouter();
   const [mode, setMode] = useState<Mode>("signin");
   const [forgotStep, setForgotStep] = useState<1 | 2>(1);
   const [email, setEmail] = useState("");
@@ -17,557 +16,583 @@ export function LoginForm() {
   const [resetToken, setResetToken] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [role, setRole] = useState<"student" | "teacher">("student");
-  const [grade, setGrade] = useState<string>("10"); // Default to grade 10
+  const [grade, setGrade] = useState("10");
   const [rememberMe, setRememberMe] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [resendUntil, setResendUntil] = useState(0);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const requestRef = useRef<AbortController | null>(null);
+  const navigatingRef = useRef(false);
+  const headingRef = useRef<HTMLHeadingElement>(null);
 
-  // Load saved email from localStorage
   useEffect(() => {
-    const savedEmail = localStorage.getItem('mindverse_email');
-    const savedRemember = localStorage.getItem('mindverse_remember') === 'true';
-    if (savedEmail && savedRemember) {
-      setEmail(savedEmail);
-      setRememberMe(true);
+    try {
+      if (localStorage.getItem("mindverse_remember") === "true") {
+        setEmail(localStorage.getItem("mindverse_email") || "");
+        setRememberMe(true);
+      }
+    } catch {
+      /* Remembering an email is optional when browser storage is blocked. */
     }
+    return () => {
+      requestRef.current?.abort("unmounted");
+    };
   }, []);
 
-  // Countdown timer for OTP resend
   useEffect(() => {
-    if (resendCooldown <= 0) return;
-    const timer = setInterval(() => {
-      setResendCooldown((c) => Math.max(0, c - 1));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [resendCooldown]);
-
-  async function handleSendResetCode(e?: FormEvent) {
-    if (e) e.preventDefault();
-    setStatus(null);
-    setError(null);
-
-    const cleanEmail = email.trim().toLowerCase();
-    if (!cleanEmail || !cleanEmail.includes("@")) {
-      return setError("Зөв имэйл хаяг оруулна уу");
-    }
-
-    setLoading(true);
-    try {
-      const res = await fetch("/api/auth/send-reset-code", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: cleanEmail }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || !json.ok) {
-        setError(json.error || `Код илгээхэд алдаа гарлаа (${res.status})`);
-        return;
-      }
-
-      setResetToken(json.resetToken);
-      setForgotStep(2);
-      setResendCooldown(60);
-      if (json.devCode) {
-        setOtpCode(json.devCode);
-      }
-      setStatus(json.message || `Таны "${cleanEmail}" имэйл рүү 6 оронтой код илгээгдлээ.`);
-    } catch (err: any) {
-      setError(err.message || "Сүлжээний алдаа гарлаа");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    setStatus(null);
-    setError(null);
-
-    if (mode === "forgot") {
-      if (forgotStep === 1) {
-        return handleSendResetCode(e);
-      }
-
-      const cleanCode = otpCode.trim();
-      if (!cleanCode || cleanCode.length !== 6) {
-        return setError("Имэйлээр ирсэн 6 оронтой баталгаажуулах кодыг оруулна уу");
-      }
-      if (!newPassword || newPassword.length < 6) {
-        return setError("Шинэ нууц үг хамгийн багадаа 6 тэмдэгт байх ёстой");
-      }
-      if (newPassword !== confirmPassword) {
-        return setError("Шинэ нууц үг хоорондоо таарахгүй байна");
-      }
-
-      setLoading(true);
-      try {
-        const res = await fetch("/api/auth/reset-password", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: email.trim().toLowerCase(),
-            code: cleanCode,
-            resetToken,
-            newPassword,
-            confirmPassword,
-          }),
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok || !json.ok) {
-          setError(json.error || `Нууц үг солиход алдаа гарлаа (${res.status})`);
-          return;
-        }
-
-        setStatus("✓ Нууц үг амжилттай солигдлоо! Шинэ нууц үгээрээ нэвтэрнэ үү.");
-        setOtpCode("");
-        setNewPassword("");
-        setConfirmPassword("");
-        setResetToken("");
-        setForgotStep(1);
-        setTimeout(() => {
-          setMode("signin");
-          setStatus(null);
-        }, 1800);
-      } catch (err: any) {
-        setError(err.message || "Серверийн алдаа гарлаа");
-      } finally {
-        setLoading(false);
-      }
+    if (!resendUntil) {
+      setResendCooldown(0);
       return;
     }
+    const update = () =>
+      setResendCooldown(
+        Math.max(0, Math.ceil((resendUntil - Date.now()) / 1000)),
+      );
+    update();
+    const interval = window.setInterval(update, 1000);
+    return () => window.clearInterval(interval);
+  }, [resendUntil]);
 
+  function switchMode(next: Mode) {
+    if (requestRef.current || navigatingRef.current) return;
+    setMode(next);
+    setForgotStep(1);
+    setResendUntil(0);
+    setOtpCode("");
+    setResetToken("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setPassword("");
+    setShowPassword(false);
+    setError(null);
+    setStatus(null);
+    headingRef.current?.focus();
+  }
+
+  async function submitRequest(
+    url: string,
+    body: Record<string, unknown>,
+    onSuccess: (json: any) => void,
+  ) {
+    if (requestRef.current || navigatingRef.current) return;
+    const controller = new AbortController();
+    requestRef.current = controller;
+    const timeout = window.setTimeout(() => controller.abort("timeout"), 25000);
     setLoading(true);
+    setError(null);
+    setStatus(null);
     try {
-
-      // Simple client-side validation
-      if (mode === "signup") {
-        if (!name || name.trim().length < 2) {
-          setLoading(false);
-          return setError("Нэрээ зөв оруулна уу (хамгийн багадаа 2 тэмдэгт)");
-        }
-        if (!password || password.length < 6) {
-          setLoading(false);
-          return setError("Нууц үг хамгийн багадаа 6 тэмдэгт байх ёстой");
-        }
-      }
-      // Save email if remember me is checked
-      if (rememberMe) {
-        localStorage.setItem('mindverse_email', email);
-        localStorage.setItem('mindverse_remember', 'true');
-      } else {
-        localStorage.removeItem('mindverse_email');
-        localStorage.removeItem('mindverse_remember');
-      }
-
-      // Call the /api/auth/login endpoint
-      const res = await fetch("/api/auth/login", {
+      const response = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, name, mode, role, grade: role === "student" ? grade : undefined }),
+        body: JSON.stringify(body),
+        signal: controller.signal,
       });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok || !json.ok) {
-        if (json.error) {
-          setError(json.error);
-        } else if (res.status === 401) {
-          setError("Email эсвэл нууц үг буруу байна");
-        } else {
-          setError(`Серверийн алдаа гарлаа (${res.status})`);
-        }
-        return;
+      const json = await response.json().catch(() => null);
+      if (!response.ok || !json?.ok)
+        throw new Error(
+          json?.error || "Хүсэлтийг гүйцэтгэж чадсангүй. Дахин оролдоно уу.",
+        );
+      if (!controller.signal.aborted) onSuccess(json);
+    } catch (cause) {
+      if (controller.signal.reason !== "unmounted") {
+        setError(
+          controller.signal.aborted
+            ? "Хариу удаж байна. Холболтоо шалгаад дахин оролдоно уу."
+            : cause instanceof Error
+              ? cause.message
+              : "Сүлжээний алдаа гарлаа.",
+        );
       }
-      setStatus("Амжилттай нэвтэрлээ!");
-      // Redirect to home after a short delay
-      setTimeout(() => router.push("/"), 600);
-    } catch (err: any) {
-      setError(err.message ?? "Алдаа гарлаа.");
     } finally {
-      setLoading(false);
+      window.clearTimeout(timeout);
+      if (controller.signal.reason !== "unmounted" && !navigatingRef.current)
+        setLoading(false);
+      if (requestRef.current === controller) requestRef.current = null;
     }
   }
 
+  async function sendResetCode() {
+    if (resendCooldown > 0 || requestRef.current) return;
+    const cleanEmail = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      setError("Зөв имэйл хаяг оруулна уу.");
+      return;
+    }
+    await submitRequest(
+      "/api/auth/send-reset-code",
+      { email: cleanEmail },
+      (json) => {
+        setEmail(cleanEmail);
+        setResetToken(json.resetToken || "");
+        setForgotStep(2);
+        setResendUntil(Date.now() + 60000);
+        setOtpCode(json.devCode || "");
+        setStatus(
+          json.message ||
+            "Баталгаажуулах код илгээгдлээ. Ирсэн имэйл болон спам хавтсаа шалгана уу.",
+        );
+      },
+    );
+  }
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (requestRef.current || navigatingRef.current) return;
+    setError(null);
+    if (mode === "forgot") {
+      if (forgotStep === 1) {
+        await sendResetCode();
+        return;
+      }
+      if (!/^\d{6}$/.test(otpCode)) {
+        setError("6 оронтой баталгаажуулах код оруулна уу.");
+        return;
+      }
+      if (newPassword.length < 6) {
+        setError("Нууц үг хамгийн багадаа 6 тэмдэгт байна.");
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        setError("Шинэ нууц үгүүд хоорондоо таарахгүй байна.");
+        return;
+      }
+      await submitRequest(
+        "/api/auth/reset-password",
+        {
+          email: email.trim().toLowerCase(),
+          code: otpCode,
+          resetToken,
+          newPassword,
+          confirmPassword,
+        },
+        () => {
+          setMode("signin");
+          setForgotStep(1);
+          setOtpCode("");
+          setResetToken("");
+          setNewPassword("");
+          setConfirmPassword("");
+          setPassword("");
+          setStatus("Нууц үг шинэчлэгдлээ. Шинэ нууц үгээрээ нэвтэрнэ үү.");
+          headingRef.current?.focus();
+        },
+      );
+      return;
+    }
+    if (mode === "signup" && name.trim().length < 2) {
+      setError("Нэр хамгийн багадаа 2 тэмдэгт байна.");
+      return;
+    }
+    if (mode === "signup" && password.length < 6) {
+      setError("Нууц үг хамгийн багадаа 6 тэмдэгт байна.");
+      return;
+    }
+    const cleanEmail = email.trim().toLowerCase();
+    await submitRequest(
+      "/api/auth/login",
+      {
+        email: cleanEmail,
+        password,
+        name: name.trim(),
+        mode,
+        role: "student",
+        grade,
+      },
+      () => {
+        try {
+          if (rememberMe) {
+            localStorage.setItem("mindverse_email", cleanEmail);
+            localStorage.setItem("mindverse_remember", "true");
+          } else {
+            localStorage.removeItem("mindverse_email");
+            localStorage.removeItem("mindverse_remember");
+          }
+        } catch {}
+        setStatus("Амжилттай нэвтэрлээ. Нүүр хуудсыг нээж байна…");
+        // A fresh document ensures a previous account's in-flight session cannot
+        // overwrite the session cookie just established by this login.
+        navigatingRef.current = true;
+        window.location.replace("/");
+      },
+    );
+  }
+
+  const heading =
+    mode === "signin"
+      ? "Эргээд тавтай морил."
+      : mode === "signup"
+        ? "Бүтээлч аяллаа эхлүүлье."
+        : forgotStep === 1
+          ? "Нууц үгээ сэргээх"
+          : "Шинэ нууц үг тохируулах";
+  const passwordType = showPassword ? "text" : "password";
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden">
-      {/* Animated background orbs */}
-      <div className="fixed inset-0 -z-10">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-violet-500/20 rounded-full blur-3xl animate-float" />
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-float" style={{ animationDelay: '2s' }} />
-        <div className="absolute top-1/2 right-1/3 w-96 h-96 bg-pink-500/20 rounded-full blur-3xl animate-float" style={{ animationDelay: '4s' }} />
+    <main className="flex min-h-dvh flex-col bg-slate-950 px-4 py-5 sm:px-8 sm:py-7 lg:px-10">
+      <div className="mx-auto mb-6 flex w-full max-w-[1120px] items-center justify-between gap-4 lg:mb-8">
+        <Link
+          href="/"
+          aria-label="Mind Verse нүүр хуудас"
+          className="flex items-center gap-3 text-lg font-bold text-white"
+        >
+          <BrandLogo size="sm" /> Mind Verse
+        </Link>
+        <Link
+          href="/"
+          className="min-h-11 inline-flex items-center text-sm text-slate-300 hover:text-white"
+        >
+          Зочноор үзэх →
+        </Link>
       </div>
-
-      <div className="relative w-full max-w-5xl rounded-3xl overflow-hidden shadow-[0_40px_100px_rgba(139,92,246,0.4)] border border-slate-800/50">
-        <div className="grid md:grid-cols-2">
-          {/* Left side - Gradient hero */}
-          <section className="relative bg-gradient-to-br from-violet-600 via-purple-600 to-pink-500 text-white px-10 py-12 flex flex-col justify-between overflow-hidden">
-            {/* Decorative elements */}
-            <div className="absolute -top-20 -right-20 w-64 h-64 bg-white/10 rounded-full blur-3xl" />
-            <div className="absolute -bottom-20 -left-20 w-64 h-64 bg-white/10 rounded-full blur-3xl" />
-            
-            <div className="relative z-10">
-              <div className="flex items-center gap-3 mb-8">
-                <BrandLogo size="lg" className="border border-white/30 shadow-[0_12px_30px_rgba(255,255,255,0.3)] neon-glow" />
-                <div>
-                  <h3 className="text-xl font-bold">Mind Verse</h3>
-                  <p className="text-xs text-white/90">
-                    Graphic design lab · Creative learning
-                  </p>
-                </div>
-              </div>
-              
-              <h1 className="text-3xl md:text-4xl font-extrabold leading-tight mb-4 neon-text">
-                Welcome back!
-              </h1>
-              <p className="text-base text-white/90 leading-relaxed">
-                Dive into graphic design challenges, share works-in-progress, and level up your visual thinking. New here? Create an account in seconds.
-              </p>
-
-              {/* Feature highlights */}
-              <div className="mt-8 space-y-3">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                    ✨
-                  </div>
-                  <span className="text-sm text-white/90">Gamified learning with XP rewards</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                    🏆
-                  </div>
-                  <span className="text-sm text-white/90">Compete on the leaderboard</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                    🎨
-                  </div>
-                  <span className="text-sm text-white/90">Share your creative work</span>
-                </div>
-              </div>
+      <div className="mx-auto mb-auto grid w-full max-w-[1120px] overflow-hidden rounded-3xl border border-white/10 bg-[#101320] shadow-2xl shadow-black/15 lg:mt-auto lg:grid-cols-[0.95fr_1.05fr]">
+        <aside className="relative hidden flex-col justify-center overflow-hidden border-r border-white/10 bg-gradient-to-br from-violet-950/80 via-[#151329] to-[#101320] p-8 lg:flex xl:p-12">
+          <div aria-hidden="true" className="pointer-events-none absolute -right-20 -top-24 h-72 w-72 rounded-full border-[36px] border-violet-400/[0.07]" />
+          <div>
+            <p className="mv-eyebrow">Дизайн лаборатори</p>
+            <h2 className="mt-4 text-4xl font-bold leading-[1.15] tracking-tight text-white xl:text-5xl">
+              Санаагаа
+              <br />
+              бүтээл болго.
+            </h2>
+            <p className="mt-5 max-w-[32ch] text-base leading-7 text-slate-300">
+              Хичээлээ судалж, бүтээлээ хуваалцаж, бусдаас суралцах таны орон
+              зай.
+            </p>
+          </div>
+          <ul className="mt-9 space-y-5 border-t border-white/10 pt-7 text-sm leading-6 text-slate-300">
+            <li className="flex items-start gap-3"><span aria-hidden="true" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-violet-300/15 bg-violet-400/10 text-xl">🎨</span><span><strong className="block font-semibold text-white">Өөрийн бүтээлийн орон зай</strong>Хийсэн ажлаа нэг дор цуглуулж, хуваалцаарай.</span></li>
+            <li className="flex items-start gap-3"><span aria-hidden="true" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-violet-300/15 bg-violet-400/10 text-xl">💬</span><span><strong className="block font-semibold text-white">Хамтдаа суралцах</strong>Сэтгэгдэл, зөвлөгөөгөөр дараагийн бүтээлээ сайжруулаарай.</span></li>
+            <li className="flex items-start gap-3"><span aria-hidden="true" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-violet-300/15 bg-violet-400/10 text-xl">🏆</span><span><strong className="block font-semibold text-white">Ахиц бүрээ харах</strong>Хичээл, сорилтод оролцож XP цуглуулаарай.</span></li>
+          </ul>
+        </aside>
+        <section
+          className="mx-auto w-full min-w-0 max-w-[544px] p-5 sm:p-8 xl:px-12 xl:py-10"
+          aria-labelledby="auth-heading"
+        >
+          {mode !== "forgot" && (
+            <div
+              className="mb-6 flex rounded-xl border border-white/5 bg-slate-950/70 p-1"
+              role="group"
+              aria-label="Нэвтрэх эсвэл бүртгүүлэх"
+            >
+              {(["signin", "signup"] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  disabled={loading}
+                  aria-pressed={mode === value}
+                  onClick={() => switchMode(value)}
+                  className={`min-h-11 flex-1 rounded-lg px-3 text-sm font-semibold transition-colors ${mode === value ? "bg-violet-600 text-white" : "text-slate-400 hover:text-white"}`}
+                >
+                  {value === "signin" ? "Нэвтрэх" : "Бүртгүүлэх"}
+                </button>
+              ))}
             </div>
-
-            {/* Bottom decoration */}
-            <div className="relative z-10 mt-8">
-              <div className="flex items-center gap-2 text-xs text-white/70">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span>Бүх систем ажиллаж байна</span>
-              </div>
-            </div>
-          </section>
-
-          {/* Right side - Form */}
-          <section className="glass-panel border-0 px-10 py-10">
-            <form onSubmit={handleSubmit} className="space-y-5">
-              <div>
-                <h2 className="text-2xl font-bold bg-gradient-to-r from-violet-400 to-purple-400 bg-clip-text text-transparent">
-                  {mode === "signin"
-                    ? "Нэвтрэх"
-                    : mode === "signup"
-                    ? "Бүртгүүлэх"
-                    : forgotStep === 1
-                    ? "🔑 Нууц үг сэргээх"
-                    : "🔐 Код баталгаажуулах"}
-                </h2>
-                <p className="text-sm text-slate-400 mt-2">
-                  {mode === "signin"
-                    ? "Өөрийн бүртгэлтэй имэйлээр нэвтэрнэ үү."
-                    : mode === "signup"
-                    ? "Шинээр бүртгүүлж Mind Verse-д нэгдээрэй."
-                    : forgotStep === 1
-                    ? "Бүртгэлтэй имэйл хаягаа оруулан 6 оронтой код хүлээн авна уу."
-                    : `Таны "${email}" хаяг руу илгээсэн 6 оронтой кодыг оруулаад шинэ нууц үгээ тохируулна уу.`}
-                </p>
-              </div>
-
-              {/* Step 1 or Signin/Signup: Email Input */}
+          )}
+          <h1
+            id="auth-heading"
+            ref={headingRef}
+            tabIndex={-1}
+            className="text-2xl font-bold leading-tight tracking-tight text-white outline-none sm:text-3xl"
+          >
+            {heading}
+          </h1>
+          <p className="mb-6 mt-3 text-sm leading-6 text-slate-400">
+            {mode === "signin"
+              ? "Өөрийн бүртгэлээр үргэлжлүүлээрэй."
+              : mode === "signup"
+                ? "Мэдээллээ оруулаад хамтдаа суралцаж эхлээрэй."
+                : forgotStep === 1
+                  ? "Бүртгэлтэй имэйлд тань баталгаажуулах код илгээнэ."
+                  : "Имэйлээр ирсэн кодоо оруулаад шинэ нууц үгээ сонгоорой."}
+          </p>
+          <form
+            onSubmit={handleSubmit}
+            className="space-y-5"
+            aria-busy={loading}
+          >
+            <fieldset disabled={loading} className="min-w-0 space-y-4">
               {(mode !== "forgot" || forgotStep === 1) && (
-                <div className="space-y-2 text-sm">
-                  <label className="block font-semibold text-slate-200">📧 Имэйл</label>
+                <div>
+                  <label htmlFor="auth-email" className="mv-label">
+                    Имэйл хаяг
+                  </label>
                   <input
+                    id="auth-email"
+                    name="email"
                     type="email"
+                    autoComplete="email"
+                    autoCapitalize="none"
+                    spellCheck={false}
                     required
-                    className="w-full rounded-xl glass-panel border-slate-700/50 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all"
-                    placeholder="you@example.com"
+                    maxLength={254}
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(event) => setEmail(event.target.value)}
+                    placeholder="you@example.com"
+                    className="mv-field"
                   />
                 </div>
               )}
-
-              {/* Forgot Step 2: Email Badge & OTP Input */}
+              {mode === "signup" && (
+                <div>
+                  <label htmlFor="auth-name" className="mv-label">
+                    Таны нэр
+                  </label>
+                  <input
+                    id="auth-name"
+                    name="name"
+                    autoComplete="name"
+                    required
+                    minLength={2}
+                    maxLength={80}
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    className="mv-field"
+                  />
+                </div>
+              )}
               {mode === "forgot" && forgotStep === 2 && (
                 <>
-                  <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-violet-500/10 border border-violet-500/30 text-xs">
-                    <div className="flex items-center gap-2 text-slate-300">
-                      <span>📧</span>
-                      <span className="font-semibold text-violet-300 truncate max-w-[200px] sm:max-w-[260px]">{email}</span>
-                    </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-violet-500/25 bg-violet-500/10 px-3 py-2 text-sm">
+                    <span className="min-w-0 break-all text-violet-200">
+                      {email}
+                    </span>
                     <button
                       type="button"
                       onClick={() => {
                         setForgotStep(1);
+                        setResetToken("");
                         setOtpCode("");
+                        setResendUntil(0);
                         setError(null);
+                        setStatus(null);
                       }}
-                      className="text-violet-400 hover:text-violet-200 underline font-medium text-xs ml-2 cursor-pointer"
+                      className="min-h-11 font-semibold text-violet-300"
                     >
-                      Солих
+                      Имэйл солих
                     </button>
                   </div>
-
-                  <div className="space-y-2 text-sm">
-                    <div className="flex items-center justify-between">
-                      <label className="block font-semibold text-slate-200">🔢 Баталгаажуулах 6 оронтой код</label>
-                      <button
-                        type="button"
-                        disabled={resendCooldown > 0 || loading}
-                        onClick={() => handleSendResetCode()}
-                        className="text-xs text-violet-400 hover:text-violet-300 disabled:text-slate-500 disabled:cursor-not-allowed font-medium transition-colors cursor-pointer"
-                      >
-                        {resendCooldown > 0 ? `Дахин илгээх (${resendCooldown}с)` : "Дахин код авах"}
-                      </button>
-                    </div>
+                  <div>
+                    <label htmlFor="auth-otp" className="mv-label">
+                      6 оронтой баталгаажуулах код
+                    </label>
                     <input
-                      type="text"
+                      id="auth-otp"
+                      name="code"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      pattern="[0-9]{6}"
                       maxLength={6}
                       required
-                      className="w-full rounded-xl glass-panel border-slate-700/50 px-4 py-3 text-center text-xl font-bold tracking-[0.4em] font-mono text-cyan-300 placeholder:text-slate-600 focus:outline-none focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 transition-all"
-                      placeholder="••••••"
                       value={otpCode}
-                      onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
+                      onChange={(event) =>
+                        setOtpCode(event.target.value.replace(/\D/g, ""))
+                      }
+                      className="mv-field text-center font-mono text-xl tracking-[0.3em]"
+                      placeholder="000000"
                     />
-                  </div>
-
-                  <div className="space-y-2 text-sm">
-                    <label className="block font-semibold text-slate-200">🔒 Шинэ нууц үг</label>
-                    <input
-                      type="password"
-                      required
-                      className="w-full rounded-xl glass-panel border-slate-700/50 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all"
-                      placeholder="Хамгийн багадаа 6 тэмдэгт"
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="space-y-2 text-sm">
-                    <label className="block font-semibold text-slate-200">🔒 Шинэ нууц үг давтах</label>
-                    <input
-                      type="password"
-                      required
-                      className="w-full rounded-xl glass-panel border-slate-700/50 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all"
-                      placeholder="Нууц үгээ дахин оруулна уу"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                    />
+                    <button
+                      type="button"
+                      disabled={resendCooldown > 0 || loading}
+                      onClick={() => void sendResetCode()}
+                      className="mt-1 min-h-11 text-sm font-semibold text-violet-300 disabled:text-slate-500"
+                    >
+                      {resendCooldown > 0
+                        ? `Код дахин авах · ${resendCooldown} сек`
+                        : "Код дахин авах"}
+                    </button>
                   </div>
                 </>
               )}
-
-              {mode === "signup" && (
-                <div className="space-y-2 text-sm">
-                  <label className="block font-semibold text-slate-200">👤 Нэр (Display name)</label>
-                  <input
-                    className="w-full rounded-xl glass-panel border-slate-700/50 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all"
-                    placeholder="Жишээ: Enkhtuya D."
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                  />
-                </div>
-              )}
-
-              {mode !== "forgot" && (
-                <div className="space-y-2 text-sm">
-                  <div className="flex items-center justify-between">
-                    <label className="block font-semibold text-slate-200">🔒 Нууц үг</label>
-                    {mode === "signin" && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setMode("forgot");
-                          setForgotStep(1);
-                          setError(null);
-                          setStatus(null);
-                        }}
-                        className="text-xs text-violet-400 hover:text-violet-300 font-medium transition-colors cursor-pointer"
-                      >
-                        Нууц үгээ мартсан уу?
-                      </button>
-                    )}
-                  </div>
-                  <input
-                    type="password"
-                    required
-                    className="w-full rounded-xl glass-panel border-slate-700/50 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
-                </div>
-              )}
-
-              {mode === "signin" && (
-                <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer hover:text-slate-200 transition-colors">
-                  <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    className="w-4 h-4 rounded border-slate-600 bg-slate-800/50 text-violet-500 focus:ring-violet-500/20 focus:ring-2 cursor-pointer"
-                  />
-                  <span>Имэйл хаягаа санах</span>
-                </label>
-              )}
-
-              {mode === "signup" && (
-                <div className="space-y-3 text-sm">
-                  <label className="block font-semibold text-slate-200">
-                    👥 Хэрэглэгчийн төрөл
+              {mode !== "forgot" ? (
+                <div>
+                  <label htmlFor="auth-password" className="mv-label">
+                    Нууц үг
                   </label>
-                  <p className="text-xs text-slate-400 -mt-1">
-                    Сурагчид XP цуглуулж, багш нар даалгавар үүсгэнэ
-                  </p>
-                  <div className="grid grid-cols-2 gap-3">
-                    <label className={`flex flex-col items-center justify-center gap-2 cursor-pointer rounded-xl border-2 px-4 py-5 transition-all duration-300 ${
-                      role === "student" 
-                        ? "border-violet-500 bg-gradient-to-br from-violet-500/20 to-purple-500/20 text-white shadow-[0_8px_24px_rgba(139,92,246,0.5)] scale-105" 
-                        : "border-slate-700/50 text-slate-400 hover:border-violet-500/30 hover:bg-slate-800/30 hover:text-slate-300"
-                    }`}>
-                      <input
-                        type="radio"
-                        name="role"
-                        value="student"
-                        checked={role === "student"}
-                        onChange={() => setRole("student")}
-                        className="hidden"
-                      />
-                      <span className="text-4xl">🎓</span>
-                      <span className="font-bold text-base">Сурагч</span>
-                      <span className="text-xs text-center opacity-80">XP цуглуулах, хичээл хийх</span>
-                    </label>
-                    <label className={`flex flex-col items-center justify-center gap-2 cursor-pointer rounded-xl border-2 px-4 py-5 transition-all duration-300 ${
-                      role === "teacher" 
-                        ? "border-violet-500 bg-gradient-to-br from-violet-500/20 to-purple-500/20 text-white shadow-[0_8px_24px_rgba(139,92,246,0.5)] scale-105" 
-                        : "border-slate-700/50 text-slate-400 hover:border-violet-500/30 hover:bg-slate-800/30 hover:text-slate-300"
-                    }`}>
-                      <input
-                        type="radio"
-                        name="role"
-                        value="teacher"
-                        checked={role === "teacher"}
-                        onChange={() => setRole("teacher")}
-                        className="hidden"
-                      />
-                      <span className="text-4xl">👨‍🏫</span>
-                      <span className="font-bold text-base">Багш</span>
-                      <span className="text-xs text-center opacity-80">Даалгавар үүсгэх, үнэлэх</span>
-                    </label>
+                  <div className="relative">
+                    <input
+                      id="auth-password"
+                      name="password"
+                      type={passwordType}
+                      autoComplete={
+                        mode === "signup" ? "new-password" : "current-password"
+                      }
+                      required
+                      minLength={mode === "signup" ? 6 : undefined}
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      className="mv-field pr-20"
+                    />
+                    <button
+                      type="button"
+                      aria-pressed={showPassword}
+                      aria-label={
+                        showPassword ? "Нууц үгийг нуух" : "Нууц үгийг харуулах"
+                      }
+                      onClick={() => setShowPassword((value) => !value)}
+                      className="absolute inset-y-0 right-2 min-h-11 min-w-14 rounded-lg text-sm font-semibold text-slate-300 hover:text-white"
+                    >
+                      {showPassword ? "Нуух" : "Харах"}
+                    </button>
                   </div>
+                  {mode === "signup" && (
+                    <p className="mt-2 text-sm text-slate-400">
+                      Хамгийн багадаа 6 тэмдэгт.
+                    </p>
+                  )}
                 </div>
-              )}
-
-              {mode === "signup" && role === "student" && (
-                <div className="space-y-3 text-sm">
-                  <label className="block font-semibold text-slate-200">
-                    🎒 Анги
-                  </label>
-                  <p className="text-xs text-slate-400 -mt-1">
-                    Та хэддүгээр анги вэ?
-                  </p>
-                  <div className="grid grid-cols-3 gap-3">
-                    {["10", "11", "12"].map((gradeOption) => (
-                      <label
-                        key={gradeOption}
-                        className={`flex items-center justify-center cursor-pointer rounded-xl border-2 px-4 py-4 transition-all duration-300 ${
-                          grade === gradeOption
-                            ? "border-violet-500 bg-gradient-to-br from-violet-500/20 to-purple-500/20 text-white shadow-[0_8px_24px_rgba(139,92,246,0.4)] scale-105"
-                            : "border-slate-700/50 text-slate-400 hover:border-violet-500/30 hover:bg-slate-800/30 hover:text-slate-300"
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name="grade"
-                          value={gradeOption}
-                          checked={grade === gradeOption}
-                          onChange={() => setGrade(gradeOption)}
-                          className="hidden"
-                        />
-                        <span className="text-lg font-bold">{gradeOption} анги</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full rounded-xl bg-gradient-to-r from-violet-500 to-purple-500 text-white font-bold py-4 mt-6 shadow-[0_20px_40px_rgba(139,92,246,0.5)] hover:shadow-[0_24px_48px_rgba(139,92,246,0.7)] hover:scale-[1.02] disabled:opacity-60 disabled:shadow-none transition-all duration-300 text-base cursor-pointer"
-              >
-                {loading
-                  ? "⏳ Түр хүлээнэ үү..."
-                  : mode === "signin"
-                  ? "🚀 Нэвтрэх"
-                  : mode === "signup"
-                  ? "✨ Шинээр бүртгүүлэх"
-                  : forgotStep === 1
-                  ? "📩 Баталгаажуулах код илгээх"
-                  : "✨ Баталгаажуулж нууц үг шинэчлэх"}
-              </button>
-
-              <div className="relative my-6">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-slate-700/50"></div>
-                </div>
-                <div className="relative flex justify-center text-xs">
-                  <span className="px-3 bg-slate-950 text-slate-500">эсвэл</span>
-                </div>
-              </div>
-
-              {mode === "forgot" ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMode("signin");
-                    setForgotStep(1);
-                    setOtpCode("");
-                    setError(null);
-                    setStatus(null);
-                  }}
-                  className="w-full rounded-xl border-2 border-slate-700 hover:border-violet-500/50 bg-slate-900/50 hover:bg-slate-800/50 text-slate-200 font-semibold py-3.5 transition-all duration-300 cursor-pointer"
-                >
-                  ← Нэвтрэх хэсэг рүү буцах
-                </button>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMode((m) => (m === "signin" ? "signup" : "signin"));
-                    setError(null);
-                    setStatus(null);
-                  }}
-                  className="w-full rounded-xl border-2 border-slate-700 hover:border-violet-500/50 bg-slate-900/50 hover:bg-slate-800/50 text-slate-200 font-semibold py-3.5 transition-all duration-300 cursor-pointer"
-                >
-                  {mode === "signin" 
-                    ? "📝 Шинээр бүртгүүлэх" 
-                    : "🔑 Нэвтрэх хэсэг рүү шилжих"}
-                </button>
+                forgotStep === 2 && (
+                  <>
+                    <div>
+                      <label htmlFor="auth-new-password" className="mv-label">
+                        Шинэ нууц үг
+                      </label>
+                      <input
+                        id="auth-new-password"
+                        name="newPassword"
+                        type={passwordType}
+                        autoComplete="new-password"
+                        required
+                        minLength={6}
+                        value={newPassword}
+                        onChange={(event) => setNewPassword(event.target.value)}
+                        className="mv-field"
+                      />
+                      <p className="mt-2 text-sm text-slate-400">
+                        Хамгийн багадаа 6 тэмдэгт.
+                      </p>
+                    </div>
+                    <div>
+                      <label
+                        htmlFor="auth-confirm-password"
+                        className="mv-label"
+                      >
+                        Шинэ нууц үгээ давтах
+                      </label>
+                      <input
+                        id="auth-confirm-password"
+                        name="confirmPassword"
+                        type={passwordType}
+                        autoComplete="new-password"
+                        required
+                        minLength={6}
+                        value={confirmPassword}
+                        onChange={(event) =>
+                          setConfirmPassword(event.target.value)
+                        }
+                        className="mv-field"
+                      />
+                    </div>
+                    <label className="flex min-h-11 items-center gap-3 text-sm text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={showPassword}
+                        onChange={(event) =>
+                          setShowPassword(event.target.checked)
+                        }
+                        className="h-4 w-4 accent-violet-500"
+                      />
+                      Нууц үгээ харах
+                    </label>
+                  </>
+                )
               )}
-
-              {status && (
-                <div className="px-4 py-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl">
-                  <p className="text-sm text-emerald-400 font-medium">{status}</p>
+              {mode === "signin" && (
+                <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                  <label className="flex min-h-11 items-center gap-2 text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={rememberMe}
+                      onChange={(event) => setRememberMe(event.target.checked)}
+                      className="h-4 w-4 accent-violet-500"
+                    />
+                    Имэйлээ санах
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => switchMode("forgot")}
+                    className="min-h-11 font-semibold text-violet-300 hover:text-violet-200"
+                  >
+                    Нууц үг мартсан уу?
+                  </button>
                 </div>
               )}
-              {error && (
-                <div className="px-4 py-3 bg-red-500/10 border border-red-500/30 rounded-xl">
-                  <p className="text-sm text-red-400 font-medium">✕ {error}</p>
+              {mode === "signup" && (
+                <div>
+                  <label htmlFor="auth-grade" className="mv-label">
+                    Анги
+                  </label>
+                  <select
+                    id="auth-grade"
+                    name="grade"
+                    value={grade}
+                    onChange={(event) => setGrade(event.target.value)}
+                    className="mv-field"
+                  >
+                    {["9", "10", "11", "12"].map((value) => (
+                      <option key={value} value={value}>
+                        {value}-р анги
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-2 text-sm leading-6 text-slate-400">
+                    Сурагчийн бүртгэл үүснэ. Багш нар одоо байгаа бүртгэлээрээ
+                    нэвтэрнэ үү.
+                  </p>
                 </div>
               )}
-            </form>
-          </section>
-        </div>
+            </fieldset>
+            {error && (
+              <p
+                role="alert"
+                className="rounded-xl border border-rose-500/25 bg-rose-500/10 p-3 text-sm leading-6 text-rose-200"
+              >
+                {error}
+              </p>
+            )}
+            {status && (
+              <p
+                role="status"
+                className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3 text-sm leading-6 text-emerald-200"
+              >
+                {status}
+              </p>
+            )}
+            <button
+              type="submit"
+              disabled={
+                loading ||
+                (mode === "forgot" && forgotStep === 1 && resendCooldown > 0)
+              }
+              className="mv-button-primary w-full"
+            >
+              {loading
+                ? "Түр хүлээнэ үү…"
+                : mode === "signin"
+                  ? "Нэвтрэх"
+                  : mode === "signup"
+                    ? "Бүртгэл үүсгэх"
+                    : forgotStep === 1
+                      ? "Баталгаажуулах код авах"
+                      : "Нууц үг шинэчлэх"}
+            </button>
+            {mode === "forgot" && (
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => switchMode("signin")}
+                className="mv-button-secondary w-full"
+              >
+                ← Нэвтрэх хэсэгт буцах
+              </button>
+            )}
+          </form>
+        </section>
       </div>
-    </div>
+    </main>
   );
 }

@@ -9,8 +9,8 @@ module.exports = {
     extend: {
       colors: {
         nc: {
-          bg: "#0a0e1a",
-          panel: "#0d1321",
+          bg: "#090c16",
+          panel: "#111522",
           panel2: "#0f1626",
           border: "#1e293b",
           ink: "#f0f4f8",
@@ -26,9 +26,9 @@ module.exports = {
           900: "#4c1d95",
         },
         dark: {
-          950: "#050505",
-          900: "#0F0F11",
-          800: "#18181B",
+          950: "#090c16",
+          900: "#111522",
+          800: "#191e2e",
           700: "#27272A",
         },
       },
@@ -36,7 +36,7 @@ module.exports = {
         "nc-soft": "0 8px 32px rgba(0,0,0,0.35)",
       },
       fontFamily: {
-        sans: ["Plus Jakarta Sans", "system-ui", "-apple-system", "Segoe UI", "Roboto", "sans-serif"],
+        sans: ["var(--font-sans)", "system-ui", "-apple-system", "Segoe UI", "Roboto", "sans-serif"],
       },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',

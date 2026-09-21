@@ -3,50 +3,46 @@ import { getSessionFromCookies } from "../../../lib/session";
 import { createLesson, getAllLessons } from "../../../lib/lessons";
 import { addNotification } from "../../../lib/notifications";
 import { getAllUsers } from "../../../lib/users";
-import { getCached, setCached, invalidateServerCache } from "../../../lib/serverCache";
+import { getOrLoadCached, invalidateServerCache } from "../../../lib/serverCache";
+import { supabase } from "../../../lib/supabase";
 
-// GET: Fetch all lessons with high-concurrency server cache
+// GET: Share concurrent reads while keeping session-specific responses off public caches.
 export async function GET() {
-  const session = await getSessionFromCookies();
-  const cacheKey = `lessons:${session ? `${session.role}:${session.email}` : 'public'}`;
-  const cached = getCached<any>(cacheKey, 60_000);
-  if (cached) {
-    return NextResponse.json(cached, {
-      headers: {
-        'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=120',
-      },
+  const headers = { 'Cache-Control': 'private, no-store', 'Vary': 'Cookie' };
+  try {
+    const session = await getSessionFromCookies();
+    const cacheKey = `lessons:${session ? `${session.role}:${session.email}` : 'public'}`;
+    const result = await getOrLoadCached(cacheKey, async () => {
+      // One deadline covers the lesson list, attachments, questions, and grade lookup.
+      const signal = AbortSignal.timeout(10_000);
+      const [allLessons, studentResult] = await Promise.all([
+        getAllLessons(true, signal),
+        session?.role === "student"
+          ? supabase.from('users').select('grade')
+              .ilike('email', session.email.toLowerCase().trim()).limit(1).abortSignal(signal)
+          : Promise.resolve(null),
+      ]);
+      if (studentResult?.error) throw studentResult.error;
+
+      let lessons = allLessons;
+      if (session?.role === "student") {
+        const userGrade = studentResult?.data?.[0]?.grade;
+        lessons = allLessons.filter((lesson) => {
+          if (!lesson.targetGrades || lesson.targetGrades.length === 0) return true;
+          if (!userGrade) return false;
+          return lesson.targetGrades.includes(userGrade);
+        });
+      }
+      return { ok: true, lessons };
+    }, 60_000);
+    return NextResponse.json(result, { headers });
+  } catch (error) {
+    console.error('Error loading lessons:', error);
+    return NextResponse.json({ ok: false, error: 'Хичээлүүдийг ачаалж чадсангүй. Дахин оролдоно уу.' }, {
+      status: 503,
+      headers,
     });
   }
-  
-  // Fetch all lessons via batch queries
-  const allLessons = await getAllLessons(true);
-  
-  // Filter lessons based on student grade
-  let lessons = allLessons;
-  if (session && session.role === "student") {
-    const { getUser } = await import("../../../lib/users");
-    const user = await getUser(session.email);
-    const userGrade = user?.grade;
-    
-    // Filter: show lessons with matching grade or no target grades (all grades)
-    lessons = allLessons.filter(lesson => {
-      if (!lesson.targetGrades || lesson.targetGrades.length === 0) {
-        return true; // Show to all grades
-      }
-      if (!userGrade) {
-        return false; // Student has no grade set
-      }
-      return lesson.targetGrades.includes(userGrade);
-    });
-  }
-  
-  const resObj = { ok: true, lessons };
-  setCached(cacheKey, resObj, 60_000);
-  return NextResponse.json(resObj, {
-    headers: {
-      'Cache-Control': 'public, s-maxage=30, stale-while-revalidate=120',
-    },
-  });
 }
 
 

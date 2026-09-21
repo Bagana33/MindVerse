@@ -7,6 +7,12 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    color-scheme: dark;
+    --mv-background: #090c16;
+    --mv-surface: #111522;
+    --mv-border: rgba(164, 174, 207, 0.13);
+  }
   html {
     scroll-behavior: smooth;
     text-rendering: optimizeLegibility;
@@ -16,13 +22,64 @@
 
   body {
     @apply bg-slate-950 text-slate-300;
-    font-family: var(--font-plus-jakarta-sans, 'Plus Jakarta Sans', sans-serif);
-    background-color: #050505;
+    font-family: var(--font-sans), system-ui, sans-serif;
+    background-color: var(--mv-background);
     overflow-x: hidden;
   }
 }
 
 @layer utilities {
+  .mv-page { @apply mx-auto w-full max-w-[1440px] space-y-6 pb-12 sm:space-y-8; }
+  .mv-page-header { @apply flex flex-col gap-4 border-b border-white/10 pb-6 sm:flex-row sm:items-center sm:justify-between; }
+  .mv-eyebrow { @apply mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-violet-300; }
+  .mv-title { @apply text-2xl font-bold leading-tight tracking-tight text-white sm:text-3xl lg:text-4xl; text-wrap: balance; }
+  .mv-subtitle { @apply mt-3 max-w-2xl text-sm leading-relaxed text-slate-400 sm:text-base; }
+  .mv-panel { @apply rounded-2xl border border-white/10 bg-[#111522] p-5 sm:p-6; box-shadow: 0 1px 0 rgba(255,255,255,.025) inset; }
+  .mv-button-primary { @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50; }
+  .mv-button-secondary { @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 px-5 py-3 text-sm font-medium text-slate-200 transition-colors hover:border-violet-400/50 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50; }
+  .mv-field { @apply w-full min-w-0 rounded-xl border border-white/15 bg-slate-950/60 px-4 py-3 text-base text-slate-100 placeholder:text-slate-500 focus:border-violet-400 focus:outline-none focus:ring-2 focus:ring-violet-500/25 disabled:cursor-not-allowed disabled:opacity-50; }
+  .mv-label { @apply mb-2 block text-sm font-medium text-slate-200; }
+  .mv-modal { @apply m-auto w-[calc(100%-2rem)] max-w-xl overflow-hidden rounded-2xl border border-white/15 bg-[#101320] p-0 text-slate-200 shadow-2xl; }
+  .mv-modal-wide { @apply max-w-4xl; }
+  .mv-modal::backdrop { background: rgb(2 6 23 / 82%); backdrop-filter: blur(5px); }
+  .mv-status { @apply rounded-2xl border border-white/10 bg-white/[0.025] px-6 py-12 text-center; }
+  .mv-shell, .mv-main { background: var(--mv-background); }
+  .mv-main { scrollbar-gutter: stable; scroll-padding-top: 24px; }
+  .mv-workspace { width: 100%; max-width: 1520px; margin-inline: auto; padding: 24px 16px 96px; }
+  .mv-sidebar { width: 232px; background: #0c101c; border-right: 1px solid var(--mv-border); }
+  .mv-nav-item { @apply flex min-h-12 w-full items-center gap-3 rounded-xl border border-transparent px-3 text-left text-sm font-medium text-slate-400 transition-colors hover:bg-white/5 hover:text-white; }
+  .mv-nav-item[aria-current="page"], .mv-nav-item[data-active="true"] { border-color: rgb(139 92 246 / 25%); background: rgb(139 92 246 / 13%); color: #ede9fe; box-shadow: 3px 0 0 #a78bfa inset; }
+  .mv-nav-item .material-symbols-outlined { font-size: 23px; flex-shrink: 0; }
+  .mv-nav-caption { @apply px-3 pb-2 pt-5 text-[10px] font-semibold uppercase tracking-[.16em] text-slate-500; }
+  .mv-feed-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; }
+  .mv-feed { min-width: 0; order: 2; }
+  .mv-feed-rail { display: contents; }
+  .mv-creators { order: 1; }
+  .mv-feed-extras { order: 3; min-width: 0; }
+  .mv-feed-card { scroll-margin-top: 24px; }
+  .mv-scroll-area { scrollbar-width: thin; scrollbar-color: #3e4358 transparent; }
+  @media (min-width: 640px) { .mv-workspace { padding: 28px 24px 96px; } }
+  @media (min-width: 1024px) {
+    .mv-workspace { padding: 32px 28px 96px; }
+    .mv-page-header { min-height: 116px; padding-bottom: 28px; }
+    .mv-title { font-size: clamp(30px, 2.3vw, 40px); line-height: 1.18; letter-spacing: -.035em; }
+    .mv-feed-card .mv-feed-art { max-height: 540px; }
+    .mv-modal { max-height: calc(100dvh - 64px); border-radius: 24px; box-shadow: 0 32px 100px #0008; }
+    .mv-modal-wide { max-width: 1040px; }
+  }
+  @media (min-width: 1280px) {
+    .mv-feed-layout { grid-template-columns: minmax(0, 1fr) 304px; gap: 28px; align-items: start; }
+    .mv-feed { order: 1; }
+    .mv-feed-rail { display: flex; flex-direction: column; gap: 24px; order: 2; }
+    .mv-creators { order: 0; }
+    .mv-feed-extras { order: 0; }
+  }
+  @media (min-width: 1536px) {
+    .mv-sidebar { width: 256px; }
+    .mv-workspace { padding: 40px 40px 104px; }
+    .mv-feed-layout { grid-template-columns: minmax(0, 1fr) 336px; gap: 32px; }
+    .mv-feed-card .mv-feed-art { max-height: 580px; }
+  }
   .glass-panel {
     @apply bg-slate-900/40 backdrop-blur-xl border border-slate-800/50;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
@@ -104,5 +161,23 @@
 
   .glow-text {
     text-shadow: 0 0 20px rgba(139, 92, 246, 0.5);
+  }
+}
+/* Shared interaction defaults: visible focus and quiet motion on every route. */
+:where(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid #c4b5fd;
+  outline-offset: 4px;
+}
+
+button, a, input, textarea, select { -webkit-tap-highlight-color: transparent; }
+input, textarea, select { font-size: max(1em, 16px); }
+[hidden] { display: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

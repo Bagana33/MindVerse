@@ -1,9 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useParams } from "next/navigation";
 import { DashboardLayout } from "../../../components/layout/DashboardLayout";
 import { useSession } from "../../../components/auth/useSession";
+import Modal from "../../../components/ui/Modal";
+import { invalidateCache } from "../../../lib/fetchCache";
 import Link from "next/link";
 
 type ContestSubmission = {
@@ -33,390 +35,595 @@ type Contest = {
   createdAt: string;
 };
 
+function normalizeContest(contest: Contest): Contest {
+  return {
+    ...contest,
+    targetGrades: contest.targetGrades || [],
+    participants: contest.participants || [],
+    submissions: (contest.submissions || []).map((submission) => ({
+      ...submission,
+      votes: submission.votes || [],
+    })),
+  };
+}
+
 export default function ContestDetailPage() {
   const { session } = useSession();
   const params = useParams();
-  const router = useRouter();
+  const contestId = String(params.id);
   const [contest, setContest] = useState<Contest | null>(null);
   const [loading, setLoading] = useState(true);
-  
-  // Submission states
+  const [loadError, setLoadError] = useState("");
   const [showSubmitForm, setShowSubmitForm] = useState(false);
   const [fileUrl, setFileUrl] = useState("");
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState("");
   const [uploadingFile, setUploadingFile] = useState(false);
-  const [filePreview, setFilePreview] = useState<string | null>(null);
   const [votingId, setVotingId] = useState<string | null>(null);
+  const [voteError, setVoteError] = useState("");
+  const [notice, setNotice] = useState("");
+  const requestRef = useRef(0);
+  const actionRef = useRef(false);
+  const uploadRef = useRef(false);
+  const voteRef = useRef(false);
 
-  useEffect(() => {
-    fetchContest();
-  }, [params.id]);
-
-  async function fetchContest() {
+  const fetchContest = useCallback(async () => {
+    const request = ++requestRef.current;
+    setLoading(true);
+    setLoadError("");
     try {
-      const res = await fetch(`/api/contests/${params.id}`);
-      if (res.ok) {
-        const json = await res.json();
-        setContest(json.contest);
-      } else {
-        router.push("/contests");
-      }
-    } catch (err) {
-      console.error("Failed to fetch contest:", err);
-      router.push("/contests");
+      const response = await fetch(`/api/contests/${contestId}`, {
+        signal: AbortSignal.timeout(15000),
+        cache: "no-store",
+      });
+      if (response.status === 404)
+        throw new Error(
+          "Энэ уралдаан олдсонгүй. Устгагдсан эсвэл холбоос нь өөрчлөгдсөн байж болно.",
+        );
+      const json = await response.json();
+      if (!response.ok || !json.ok || !json.contest)
+        throw new Error("Уралдааныг ачаалж чадсангүй. Дахин оролдоно уу.");
+      if (request === requestRef.current)
+        setContest(normalizeContest(json.contest));
+    } catch (error) {
+      if (request === requestRef.current)
+        setLoadError(
+          error instanceof Error &&
+            ![
+              "TimeoutError",
+              "TypeError",
+              "AbortError",
+              "SyntaxError",
+            ].includes(error.name)
+            ? error.message
+            : "Холболт удаан байна. Дахин оролдоно уу.",
+        );
     } finally {
-      setLoading(false);
+      if (request === requestRef.current) setLoading(false);
     }
-  }
+  }, [contestId]);
+  useEffect(() => {
+    setContest(null);
+    setShowSubmitForm(false);
+    setFileUrl("");
+    setDescription("");
+    setSubmitError("");
+    setVoteError("");
+    setNotice("");
+    void fetchContest();
+    return () => {
+      requestRef.current += 1;
+    };
+  }, [fetchContest]);
 
-  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setSubmitError(null);
-
-    if (file.size > 50 * 1024 * 1024) {
-      const mb = (file.size / (1024 * 1024)).toFixed(1);
-      setSubmitError(`Файлын хэмжээ 50MB-аас бага байх ёстой (${mb}MB илэрлээ)`);
+  async function handleFileUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    const field = event.currentTarget;
+    if (!file || uploadRef.current || actionRef.current) return;
+    setSubmitError("");
+    if (!file.type.startsWith("image/")) {
+      setSubmitError("Зураг файл сонгоно уу.");
+      field.value = "";
       return;
     }
-
+    if (file.size > 50 * 1024 * 1024) {
+      setSubmitError("Зургийн хэмжээ 50 MB-аас бага байх ёстой.");
+      field.value = "";
+      return;
+    }
+    uploadRef.current = true;
     setUploadingFile(true);
+    const request = requestRef.current;
     try {
-      const signRes = await fetch("/api/uploads/sign", {
+      const signResponse = await fetch("/api/uploads/sign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ folder: "neoncanvas/contests" }),
+        signal: AbortSignal.timeout(15000),
       });
-
-      if (!signRes.ok) throw new Error("Cloudinary баталгаажуулалт амжилтгүй боллоо");
-      const signData = await signRes.json();
-      if (!signData.ok || !signData.cloudName || !signData.apiKey || !signData.signature) {
-        throw new Error("Upload тохиргоо буруу байна");
-      }
-
-      const { cloudName, apiKey, folder, timestamp, signature } = signData;
+      const sign = await signResponse.json();
+      if (
+        !signResponse.ok ||
+        !sign.ok ||
+        !sign.cloudName ||
+        !sign.apiKey ||
+        !sign.signature
+      )
+        throw new Error(
+          "Зураг байршуулах холболт амжилтгүй. Дахин оролдоно уу.",
+        );
       const form = new FormData();
       form.append("file", file);
-      form.append("api_key", apiKey);
-      form.append("timestamp", String(timestamp));
-      form.append("signature", signature);
-      form.append("folder", folder);
-
-      const uploadRes = await fetch(
-        `https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`,
-        { method: "POST", body: form }
+      form.append("api_key", sign.apiKey);
+      form.append("timestamp", String(sign.timestamp));
+      form.append("signature", sign.signature);
+      form.append("folder", sign.folder);
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${sign.cloudName}/auto/upload`,
+        { method: "POST", body: form, signal: AbortSignal.timeout(90000) },
       );
-
-      if (!uploadRes.ok) {
-        throw new Error("Файл upload хийхэд алдаа гарлаа");
-      }
-
-      const uploadJson = await uploadRes.json();
-      if (!uploadJson?.secure_url) {
-        throw new Error("Upload линк буцаж ирсэнгүй");
-      }
-
-      const fileUrl = uploadJson.secure_url;
-      setFileUrl(fileUrl);
-      setFilePreview(fileUrl);
-    } catch (err: any) {
-      console.error("Upload error:", err);
-      setSubmitError(err.message || "Файл upload хийхэд алдаа гарлаа");
+      const json = await response.json();
+      if (!response.ok || !json.secure_url)
+        throw new Error("Зургийг байршуулж чадсангүй. Дахин оролдоно уу.");
+      if (request === requestRef.current) setFileUrl(json.secure_url);
+    } catch {
+      if (request === requestRef.current)
+        setSubmitError(
+          "Зураг байршуулалт амжилтгүй. Холболтоо шалгаад дахин оролдоно уу.",
+        );
     } finally {
+      uploadRef.current = false;
       setUploadingFile(false);
+      field.value = "";
     }
   }
-
-  async function handleSubmit() {
+  async function handleSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    if (actionRef.current || uploadRef.current) return;
     if (!fileUrl) {
-      setSubmitError("Файл upload хийх шаардлагатай");
+      setSubmitError("Эхлээд бүтээлийн зургаа байршуулна уу.");
       return;
     }
-
+    actionRef.current = true;
     setSubmitting(true);
-    setSubmitError(null);
+    setSubmitError("");
+    const request = requestRef.current;
     try {
-      const res = await fetch(`/api/contests/${params.id}/submit`, {
+      const response = await fetch(`/api/contests/${contestId}/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileUrl, description }),
+        body: JSON.stringify({ fileUrl, description: description.trim() }),
+        signal: AbortSignal.timeout(30000),
       });
-
-        const json = await res.json();
-      if (json.ok) {
-        setContest(json.contest);
-        setShowSubmitForm(false);
-        setFileUrl("");
+      const json = await response.json();
+      if (!response.ok || !json.ok || !json.contest)
+        throw new Error(json.error || "Бүтээлийг илгээж чадсангүй.");
+      if (request !== requestRef.current) return;
+      setContest(normalizeContest(json.contest));
+      invalidateCache("/api/contests");
+      setShowSubmitForm(false);
+      setFileUrl("");
       setDescription("");
-        setFilePreview(null);
-      } else {
-        setSubmitError(json.error || "Илгээхэд алдаа гарлаа");
-      }
-    } catch (err) {
-      console.error("Submit error:", err);
-      setSubmitError("Илгээхэд алдаа гарлаа");
+      setNotice("Таны бүтээлийг хүлээн авлаа.");
+    } catch (error) {
+      if (request === requestRef.current)
+        setSubmitError(
+          error instanceof Error &&
+            ![
+              "TimeoutError",
+              "TypeError",
+              "AbortError",
+              "SyntaxError",
+            ].includes(error.name)
+            ? error.message
+            : "Хариу ирсэнгүй. Дахин илгээхээс өмнө уралдаанаа шинэчилж шалгана уу.",
+        );
     } finally {
+      actionRef.current = false;
       setSubmitting(false);
     }
   }
-
   async function handleVote(submissionId: string) {
-    if (!session) return;
+    if (!session || voteRef.current) return;
+    voteRef.current = true;
     setVotingId(submissionId);
+    setVoteError("");
+    const request = requestRef.current;
     try {
-      const res = await fetch(`/api/contests/${params.id}/vote`, {
+      const response = await fetch(`/api/contests/${contestId}/vote`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ submissionId }),
+        signal: AbortSignal.timeout(15000),
       });
-
-      const json = await res.json();
-      if (json.ok) {
-      setContest(json.contest);
+      const json = await response.json();
+      if (!response.ok || !json.ok || !json.contest)
+        throw new Error(json.error || "Саналыг хадгалж чадсангүй.");
+      if (request === requestRef.current) {
+        setContest(normalizeContest(json.contest));
+        invalidateCache("/api/contests");
+        setNotice("Таны саналыг шинэчиллээ.");
       }
-    } catch (err) {
-      console.error("Vote error:", err);
+    } catch (error) {
+      if (request === requestRef.current)
+        setVoteError(
+          error instanceof Error &&
+            ![
+              "TimeoutError",
+              "TypeError",
+              "AbortError",
+              "SyntaxError",
+            ].includes(error.name)
+            ? error.message
+            : "Саналын хариу ирсэнгүй. Хуудсаа шинэчилж шалгана уу.",
+        );
     } finally {
+      voteRef.current = false;
       setVotingId(null);
     }
   }
 
-  if (loading || !contest) {
+  if (loading || loadError || !contest)
     return (
       <DashboardLayout>
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="text-slate-400">Ачаалж байна...</div>
+        <div className="mv-page space-y-5">
+          <Link href="/contests" className="mv-button-secondary">
+            ← Уралдаанууд
+          </Link>
+          <div className="mv-panel p-8" role={loading ? "status" : "alert"}>
+            {loading ? (
+              <p className="text-slate-300">Уралдааныг ачаалж байна…</p>
+            ) : (
+              <>
+                <h1 className="text-xl font-semibold text-white">
+                  Уралдааныг нээж чадсангүй
+                </h1>
+                <p className="mt-3 text-slate-300">
+                  {loadError || "Мэдээлэл олдсонгүй."}
+                </p>
+                <button
+                  type="button"
+                  className="mv-button-primary mt-5"
+                  onClick={() => void fetchContest()}
+                >
+                  Дахин оролдох
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </DashboardLayout>
     );
-  }
-
-  const hasSubmitted = contest.submissions.some(s => s.userEmail === session?.email);
-  const canSubmit = session?.role === "student" && contest.status === "active" && !hasSubmitted;
-  const sortedSubmissions = [...contest.submissions].sort((a, b) => b.votes.length - a.votes.length);
-
+  const hasSubmitted = contest.submissions.some(
+    (submission) => submission.userEmail === session?.email,
+  );
+  const canSubmit =
+    session?.role === "student" && contest.status === "active" && !hasSubmitted;
+  const sortedSubmissions = [...contest.submissions].sort(
+    (a, b) => b.votes.length - a.votes.length,
+  );
+  const statusLabel = {
+    active: "Идэвхтэй",
+    upcoming: "Удахгүй эхэлнэ",
+    ended: "Дууссан",
+  }[contest.status];
+  const closeSubmit = () => {
+    setShowSubmitForm(false);
+    setSubmitError("");
+  };
   return (
     <DashboardLayout>
-      <div className="space-y-6">
-        <Link href="/contests" className="text-sm text-violet-400 hover:text-violet-300">
-          ← Буцах
+      <div className="mv-page space-y-6 xl:space-y-8">
+        <Link href="/contests" className="mv-button-secondary">
+          ← Уралдаанууд
         </Link>
-
-        <div className="glass-panel p-6 rounded-2xl space-y-4">
-          <div>
-              <h1 className="text-2xl font-bold mb-2">{contest.title}</h1>
-              <p className="text-slate-400 mb-4">{contest.description}</p>
-
-            <div className="flex items-center gap-4 mb-4">
-              {contest.status === "active" && (
-                <span className="px-3 py-1 rounded-full bg-green-500/20 text-green-400 border border-green-500/40 text-sm">
-                  Идэвхтэй
-                </span>
-              )}
-              {contest.status === "upcoming" && (
-                <span className="px-3 py-1 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/40 text-sm">
-                  Удахгүй
-                </span>
-              )}
-              {contest.status === "ended" && (
-                <span className="px-3 py-1 rounded-full bg-slate-500/20 text-slate-400 border border-slate-500/40 text-sm">
-                  Дууссан
-                </span>
-              )}
+        <header className="mv-panel grid gap-6 p-5 sm:p-7 xl:grid-cols-[minmax(0,1fr)_320px] xl:gap-8 xl:p-8 2xl:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="min-w-0">
+            <p className="mv-eyebrow">{statusLabel}</p>
+            <h1 className="mv-title max-w-3xl break-words">{contest.title}</h1>
+            <p className="mt-5 max-w-[70ch] whitespace-pre-line break-words text-base leading-8 text-slate-300">
+              {contest.description}
+            </p>
           </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              <div>
-                <div className="text-slate-500 mb-1">Эхлэх огноо</div>
-              <div className="font-medium">{new Date(contest.startDate).toLocaleDateString("mn-MN")}</div>
-            </div>
-              <div>
-                <div className="text-slate-500 mb-1">Дуусах огноо</div>
-              <div className="font-medium">{new Date(contest.endDate).toLocaleDateString("mn-MN")}</div>
-            </div>
-              <div>
-                <div className="text-slate-500 mb-1">Оролцогч</div>
-              <div className="font-medium">{contest.participants.length}</div>
-            </div>
-              <div>
-                <div className="text-slate-500 mb-1">Шагнал</div>
-              <div className="font-medium text-violet-400">{contest.prize} XP</div>
+          <dl className="grid content-start gap-x-4 gap-y-5 border-t border-white/10 pt-5 sm:grid-cols-2 xl:border-l xl:border-t-0 xl:pl-7 xl:pt-1">
+            {[
+              {
+                label: "Эхлэх хугацаа",
+                value: new Date(contest.startDate).toLocaleString("mn-MN", {
+                  year: "numeric",
+                  month: "2-digit",
+                  day: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hourCycle: "h23",
+                }),
+              },
+              {
+                label: "Дуусах хугацаа",
+                value: new Date(contest.endDate).toLocaleString("mn-MN", {
+                  year: "numeric",
+                  month: "2-digit",
+                  day: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hourCycle: "h23",
+                }),
+              },
+              {
+                label: "Оролцогч",
+                value: `${contest.participants.length} сурагч`,
+              },
+              { label: "Шагнал", value: `${contest.prize} XP` },
+            ].map((item) => (
+              <div key={item.label}>
+                <dt className="text-sm text-slate-400">{item.label}</dt>
+                <dd className="mt-1.5 break-words text-base font-semibold leading-6 tabular-nums text-white">
+                  {item.value}
+                </dd>
               </div>
+            ))}
+          </dl>
+        </header>
+        {notice && (
+          <p
+            role="status"
+            className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-sm text-emerald-200"
+          >
+            {notice}
+          </p>
+        )}
+        {canSubmit && (
+          <section className="mv-panel flex flex-col gap-4 bg-violet-500/[0.035] p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+            <div>
+              <h2 className="text-lg font-semibold text-white">
+                Бүтээлээ хуваалцаарай
+              </h2>
+              <p className="mt-1 text-sm leading-7 text-slate-400">
+                Шаардлагаа шалгаад бүтээлийн зургаа байршуулна уу.
+              </p>
             </div>
-            </div>
-          </div>
-
-          {canSubmit && (
-          <div className="glass-panel p-6 rounded-2xl space-y-4">
-            <h2 className="text-xl font-semibold text-slate-200">Бүтээл илгээх</h2>
-            {!showSubmitForm ? (
-              <button
-                onClick={() => setShowSubmitForm(true)}
-                className="px-6 py-3 rounded-full bg-gradient-to-r from-violet-500 to-purple-500 text-white font-medium hover:shadow-lg transition-all"
-              >
-                + Бүтээл илгээх
-              </button>
-            ) : (
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">Файл</label>
-                    <input
-                      type="file"
-                      accept="image/*"
-                    onChange={handleFileUpload}
-                    disabled={uploadingFile}
-                    className="w-full px-4 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-slate-100"
-                    />
-                  {uploadingFile && <p className="text-xs text-slate-400 mt-1">Upload хийж байна...</p>}
-                  {filePreview && (
-                    <div className="mt-4 relative">
-                      <img src={filePreview} alt="Preview" className="max-w-full max-h-64 rounded-lg" />
-                      <button
-                        onClick={() => {
-                          setFilePreview(null);
-                          setFileUrl("");
-                        }}
-                        className="absolute top-2 right-2 px-2 py-1 rounded bg-slate-900/80 text-white text-xs"
-                      >
-                        Устгах
-                      </button>
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">Тайлбар (сонголттой)</label>
-                  <textarea
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    rows={3}
-                    className="w-full px-4 py-2 rounded-lg bg-slate-800/50 border border-slate-700 text-slate-100"
-                    placeholder="Бүтээлийн тайлбар..."
-                  />
-              </div>
-                {submitError && <p className="text-sm text-red-400">{submitError}</p>}
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleSubmit}
-                    disabled={submitting || !fileUrl}
-                    className="px-6 py-2 rounded-full bg-gradient-to-r from-violet-500 to-purple-500 text-white font-medium hover:shadow-lg transition-all disabled:opacity-50"
-                  >
-                    {submitting ? "Илгээж байна..." : "Илгээх"}
-                  </button>
-                <button
-                  onClick={() => {
-                    setShowSubmitForm(false);
-                      setFileUrl("");
-                    setDescription("");
-                      setFilePreview(null);
-                      setSubmitError(null);
-                  }}
-                    className="px-6 py-2 rounded-full bg-slate-700/50 text-slate-300 hover:bg-slate-700 transition-all"
-                >
-                    Цуцлах
-                </button>
-                </div>
-              </div>
-            )}
+            <button
+              type="button"
+              className="mv-button-primary shrink-0"
+              onClick={() => setShowSubmitForm(true)}
+            >
+              + Бүтээл илгээх
+            </button>
+          </section>
+        )}
+        {!session && contest.status === "active" && (
+          <div className="mv-panel flex flex-wrap items-center justify-between gap-4 p-5">
+            <p className="text-sm text-slate-300">
+              Нэвтэрч бүтээл илгээх, санал өгөх боломжтой.
+            </p>
+            <Link href="/login" className="mv-button-primary">
+              Нэвтрэх
+            </Link>
           </div>
         )}
-
-        {hasSubmitted && contest.status === "active" && (
-          <div className="glass-panel p-4 rounded-2xl bg-green-500/10 border border-green-500/30">
-            <p className="text-green-400 text-sm">✅ Та аль хэдийн бүтээл илгээсэн байна.</p>
+        {hasSubmitted && (
+          <p className="rounded-xl border border-violet-500/25 bg-violet-500/10 p-4 text-sm text-violet-200">
+            ✓ Таны бүтээл энэ уралдаанд бүртгэгдсэн.
+          </p>
+        )}
+        {contest.status === "ended" && sortedSubmissions.length > 0 && (
+          <div className="mv-panel border-amber-500/30 bg-amber-500/5 p-6">
+            <p className="text-sm text-amber-300">🏆 Уралдааны ялагч</p>
+            <h2 className="mt-2 break-words text-xl font-semibold text-white">
+              {sortedSubmissions[0].userName}
+            </h2>
+            <p className="mt-1 text-sm text-amber-200">
+              {sortedSubmissions[0].votes.length} санал · {contest.prize} XP
+            </p>
           </div>
         )}
-
-        {contest.status === "ended" && contest.submissions.length > 0 && (
-          <div className="glass-panel p-6 rounded-2xl bg-yellow-500/10 border border-yellow-500/30">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-2xl">🏆</span>
-        <div>
-                <div className="font-semibold text-yellow-400">
-                  Ялагч: {sortedSubmissions[0].userName}
-                </div>
-                <div className="text-sm text-yellow-300/80">
-                  +{contest.prize} XP
-                </div>
-              </div>
+        <section aria-labelledby="contest-submissions-title">
+          <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+            <h2
+              id="contest-submissions-title"
+              className="text-xl font-semibold tracking-tight text-white sm:text-2xl"
+            >
+              Оролцогчдын бүтээлүүд{" "}
+              <span className="ml-1 text-base text-slate-400">
+                ({contest.submissions.length})
+              </span>
+            </h2>
+            <span className="text-sm text-slate-400">
+              Саналын тоогоор эрэмбэлсэн
+            </span>
+          </div>
+          {voteError && (
+            <p
+              role="alert"
+              className="mb-4 rounded-xl border border-rose-500/25 bg-rose-500/10 p-3 text-sm text-rose-200"
+            >
+              {voteError}
+            </p>
+          )}
+          {!sortedSubmissions.length ? (
+            <div className="mv-panel p-8 text-center">
+              <h3 className="text-lg font-semibold text-white">
+                Анхны бүтээлийг хүлээж байна
+              </h3>
+              <p className="mt-2 text-sm text-slate-400">
+                Илгээсэн бүтээлүүд энд харагдана.
+              </p>
             </div>
-          </div>
-        )}
-
-        <div className="glass-panel p-6 rounded-2xl">
-          <h2 className="text-xl font-semibold text-slate-200 mb-4">
-            Оролцогчдын бүтээлүүд ({contest.submissions.length})
-          </h2>
-          {contest.submissions.length === 0 ? (
-            <p className="text-slate-400 text-center py-8">Одоогоор бүтээл байхгүй байна.</p>
           ) : (
-            <div className="grid gap-6">
+            <div className="grid items-stretch gap-5 sm:grid-cols-2 2xl:grid-cols-3">
               {sortedSubmissions.map((submission, index) => {
-                const isWinner = contest.status === "ended" && index === 0;
-                const isOwnSubmission = submission.userEmail === session?.email;
-                const hasVoted = session && submission.votes.includes(session.email);
-
+                const isOwn = submission.userEmail === session?.email;
+                const hasVoted =
+                  !!session && submission.votes.includes(session.email);
                 return (
-                  <div
+                  <article
                     key={submission.id}
-                    className={`p-4 rounded-xl border ${
-                      isWinner
-                        ? "bg-yellow-500/10 border-yellow-500/40"
-                        : "bg-slate-800/30 border-slate-700/50"
-                    }`}
+                    className={`mv-panel flex min-w-0 flex-col overflow-hidden ${contest.status === "ended" && index === 0 ? "border-amber-500/40" : ""}`}
                   >
-                    <div className="flex items-start justify-between mb-3">
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-semibold text-slate-200">{submission.userName}</span>
-                    {isWinner && (
-                            <span className="px-2 py-1 rounded-full bg-yellow-500/20 text-yellow-400 text-xs border border-yellow-500/40">
-                              🏆 Ялагч! +{contest.prize} XP
-                            </span>
-                          )}
-                          {isOwnSubmission && (
-                            <span className="px-2 py-1 rounded-full bg-blue-500/20 text-blue-400 text-xs border border-blue-500/40">
-                              Таны бүтээл
-                            </span>
-                          )}
-                        </div>
-                        {submission.description && (
-                          <p className="text-sm text-slate-400 mt-1">{submission.description}</p>
+                    <a
+                      href={submission.fileUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={`${submission.userName}-ийн бүтээлийг бүтнээр нээх`}
+                      className="group block overflow-hidden border-b border-white/10 bg-slate-950/60"
+                    >
+                      <img
+                        src={submission.fileUrl}
+                        alt={`${submission.userName}-ийн бүтээл`}
+                        loading="lazy"
+                        decoding="async"
+                        className="aspect-[4/3] max-h-[480px] w-full object-contain transition-transform duration-300 motion-safe:group-hover:scale-[1.02]"
+                      />
+                    </a>
+                    <div className="flex flex-1 flex-col p-5 sm:p-6">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="break-words text-lg font-semibold leading-7 tracking-tight text-white">
+                          {submission.userName}
+                        </h3>
+                        {isOwn && (
+                          <span className="rounded-lg bg-violet-500/15 px-2 py-1 text-sm text-violet-200">
+                            Таны бүтээл
+                          </span>
+                        )}
+                        {contest.status === "ended" && index === 0 && (
+                          <span className="text-sm text-amber-300">
+                            🏆 Ялагч
+                          </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-slate-400">👍 {submission.votes.length}</span>
-                        {contest.status === "active" && session && !isOwnSubmission && (
+                      {submission.description && (
+                        <p className="mt-3 whitespace-pre-line break-words text-sm leading-7 text-slate-300">
+                          {submission.description}
+                        </p>
+                      )}
+                      <div className="min-h-5 flex-1" aria-hidden="true" />
+                      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4">
+                        <span className="text-sm text-slate-300">
+                          👍 {submission.votes.length} санал
+                        </span>
+                        {contest.status === "active" && session && !isOwn && (
                           <button
-                            onClick={() => handleVote(submission.id)}
-                            disabled={votingId === submission.id}
-                            className={`px-3 py-1 rounded-full text-xs transition-all ${
+                            type="button"
+                            aria-pressed={hasVoted}
+                            disabled={votingId !== null}
+                            onClick={() => void handleVote(submission.id)}
+                            className={
                               hasVoted
-                                ? "bg-violet-500 text-white"
-                                : "bg-slate-700/50 text-slate-300 hover:bg-slate-700"
-                            }`}
+                                ? "mv-button-primary"
+                                : "mv-button-secondary"
+                            }
                           >
-                            {hasVoted ? "✓ Санал өгсөн" : "Санал өгөх"}
+                            {votingId === submission.id
+                              ? "Хадгалж байна…"
+                              : hasVoted
+                                ? "✓ Санал өгсөн"
+                                : "Санал өгөх"}
                           </button>
                         )}
                       </div>
                     </div>
-                    <div className="mt-3">
-                      <img 
-                        src={submission.fileUrl}
-                        alt={`${submission.userName}-н бүтээл`}
-                        className="w-full rounded-lg max-h-96 object-contain bg-slate-900/50"
-                      />
-                    </div>
-                  </div>
+                  </article>
                 );
               })}
             </div>
           )}
-        </div>
+        </section>
       </div>
+      <Modal
+        open={showSubmitForm && canSubmit}
+        onClose={closeSubmit}
+        title="Бүтээл илгээх"
+        wide
+        busy={submitting || uploadingFile}
+      >
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div>
+            <label htmlFor="contest-artwork" className="mv-label">
+              Бүтээлийн зураг *
+            </label>
+            <label
+              htmlFor="contest-artwork"
+              className={`relative inline-flex min-h-11 items-center gap-2 rounded-xl border border-violet-400/30 bg-violet-500/10 px-4 py-3 text-sm font-medium text-violet-200 transition-colors focus-within:ring-2 focus-within:ring-violet-400 focus-within:ring-offset-2 focus-within:ring-offset-slate-950 ${uploadingFile || submitting ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-violet-500/20"}`}
+            >
+              Зураг сонгох
+              <input
+                id="contest-artwork"
+                type="file"
+                accept="image/*"
+                onChange={handleFileUpload}
+                disabled={uploadingFile || submitting}
+                className="sr-only"
+                aria-describedby="contest-file-help"
+              />
+            </label>
+            <p id="contest-file-help" className="mt-2 text-sm text-slate-400">
+              Нэг зураг, хамгийн ихдээ 50 MB.
+            </p>
+            {uploadingFile && (
+              <p role="status" className="mt-3 text-sm text-violet-300">
+                Зургийг байршуулж байна…
+              </p>
+            )}
+            {fileUrl && (
+              <div className="mt-4 rounded-xl border border-white/10 p-3">
+                <img
+                  src={fileUrl}
+                  alt="Илгээх бүтээлийн урьдчилсан харагдац"
+                  className="mx-auto max-h-72 max-w-full rounded-lg object-contain"
+                />
+                <button
+                  type="button"
+                  disabled={submitting || uploadingFile}
+                  onClick={() => setFileUrl("")}
+                  className="mt-3 min-h-11 rounded-lg px-3 text-sm text-rose-300 hover:bg-rose-500/10"
+                >
+                  Зургийг хасах
+                </button>
+              </div>
+            )}
+          </div>
+          <div>
+            <label htmlFor="contest-artwork-description" className="mv-label">
+              Бүтээлийн тайлбар
+            </label>
+            <textarea
+              id="contest-artwork-description"
+              value={description}
+              disabled={submitting}
+              onChange={(event) => setDescription(event.target.value)}
+              rows={4}
+              className="mv-field"
+              placeholder="Санаа, ашигласан арга, шийдлээ товч тайлбарлаарай…"
+            />
+          </div>
+          {submitError && (
+            <p
+              role="alert"
+              className="rounded-xl bg-rose-500/10 p-3 text-sm text-rose-200"
+            >
+              {submitError}
+            </p>
+          )}
+          <div className="flex flex-wrap justify-end gap-3">
+            <button
+              type="button"
+              className="mv-button-secondary"
+              disabled={submitting || uploadingFile}
+              onClick={closeSubmit}
+            >
+              Болих
+            </button>
+            <button
+              type="submit"
+              className="mv-button-primary"
+              disabled={submitting || uploadingFile || !fileUrl}
+            >
+              {submitting ? "Илгээж байна…" : "Бүтээл илгээх"}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </DashboardLayout>
   );
 }

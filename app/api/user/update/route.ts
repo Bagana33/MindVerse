@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionFromCookies } from "../../../../lib/session";
+import { getSessionFromCookies, encodeSession, COOKIE_NAME, SESSION_COOKIE_OPTIONS } from "../../../../lib/session";
 import { updateUser } from "../../../../lib/users";
+import { getPublicAvatarUrl } from "../../../../lib/avatars";
+import { invalidateServerCache } from "../../../../lib/serverCache";
 
 export async function POST(request: NextRequest) {
   const session = await getSessionFromCookies();
@@ -33,8 +35,8 @@ export async function POST(request: NextRequest) {
     // Validate grade (optional)
     if (grade !== undefined) {
       const g = String(grade).trim();
-      if (!['10','11','12'].includes(g)) {
-        return NextResponse.json({ error: "Анги 10/11/12 байх ёстой" }, { status: 400 });
+      if (!['9','10','11','12'].includes(g)) {
+        return NextResponse.json({ error: "Анги 9/10/11/12 байх ёстой" }, { status: 400 });
       }
     }
 
@@ -52,20 +54,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Хэрэглэгч олдсонгүй" }, { status: 404 });
     }
 
-    return NextResponse.json({ 
+    invalidateServerCache('user_meta');
+    const avatar = getPublicAvatarUrl(user.email, user.avatarUrl);
+    const response = NextResponse.json({
       success: true,
       user: {
         email: user.email,
         name: user.name,
         nickname: user.nickname,
         bio: user.bio,
-        avatarUrl: user.avatarUrl,
+        avatarUrl: avatar,
         avatarColor: user.avatarColor,
         role: user.role,
         grade: (user as any).grade,
         experience: user.experience,
       }
     });
+    response.cookies.set(COOKIE_NAME, encodeSession({
+      ...session, name: user.name, nickname: user.nickname,
+      avatarUrl: avatar, avatarColor: user.avatarColor,
+    }), SESSION_COOKIE_OPTIONS);
+    return response;
   } catch (error: any) {
     console.error("Update profile error:", error);
     return NextResponse.json({ error: "Серверийн алдаа гарлаа" }, { status: 500 });

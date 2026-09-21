@@ -1,5 +1,6 @@
 // Supabase-based post storage
 import { supabase } from './supabase';
+import { getPublicAvatarUrl } from './avatars';
 
 export type ReactionType = 'FIRE' | 'WOW' | 'LOVE' | 'COOL' | 'STAR';
 export type PostReaction = { userEmail: string; type: ReactionType };
@@ -40,14 +41,14 @@ function dbToPost(
     author: authorName || dbRow.author_email, // Use provided name or fallback to email
     authorEmail: dbRow.author_email,
     authorGrade,
-    authorAvatarUrl,
+    authorAvatarUrl: getPublicAvatarUrl(dbRow.author_email, authorAvatarUrl),
     authorAvatarColor,
     points: reactionCount, // Points = number of reactions
     commentCount,
     createdAt: dbRow.created_at,
     imageUrl: dbRow.image_data,
     reactions: reactions.map(r => ({ userEmail: r.user_email, type: (r.type || 'FIRE').toUpperCase() })),
-    visibility: 'PUBLIC',
+    visibility: dbRow.visibility?.toUpperCase() === 'PRIVATE' ? 'PRIVATE' : 'PUBLIC',
   };
 }
 
@@ -76,13 +77,15 @@ export async function createPost(data: Omit<UserPost, "id" | "points" | "created
 }
 
 export async function getUserPosts(email: string): Promise<UserPost[]> {
+  const signal = AbortSignal.timeout(10_000);
   const { data: posts, error: postsError } = await supabase
     .from('posts')
     .select('*')
     .eq('author_email', email)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false }).abortSignal(signal);
 
-  if (postsError || !posts || posts.length === 0) return [];
+  if (postsError) throw postsError;
+  if (!posts || posts.length === 0) return [];
 
   const postIds = posts.map(p => p.id);
 
@@ -90,18 +93,20 @@ export async function getUserPosts(email: string): Promise<UserPost[]> {
   const [userRes, reactionsRes, commentsRes] = await Promise.all([
     supabase
       .from('users')
-      .select('email, name, nickname, grade, avatar_url, avatar_color')
+      .select('email, name, nickname, grade, avatar_color')
       .eq('email', email)
-      .single(),
+      .abortSignal(signal).maybeSingle(),
     supabase
       .from('reactions')
       .select('post_id, user_email, type')
-      .in('post_id', postIds),
+      .in('post_id', postIds).abortSignal(signal),
     supabase
       .from('comments')
       .select('post_id')
-      .in('post_id', postIds),
+      .in('post_id', postIds).abortSignal(signal),
   ]);
+
+  if (userRes.error || reactionsRes.error || commentsRes.error) throw userRes.error || reactionsRes.error || commentsRes.error;
 
   const user = userRes.data;
   const reactions = reactionsRes.data || [];
@@ -114,7 +119,7 @@ export async function getUserPosts(email: string): Promise<UserPost[]> {
 
   return posts.map(post => {
     const postReactions = reactions.filter(r => r.post_id === post.id);
-    return dbToPost(post, postReactions, authorName, user?.avatar_url, user?.avatar_color, commentCounts[post.id] || 0, user?.grade);
+    return dbToPost(post, postReactions, authorName, undefined, user?.avatar_color, commentCounts[post.id] || 0, user?.grade);
   });
 }
 
@@ -124,14 +129,19 @@ export async function getAllPosts(): Promise<UserPost[]> {
 }
 
 // Paginated posts with optional cursor (created_at before), grade filter, and database search query
-export async function getPostsPage(limit = 20, beforeISO?: string, grade?: string, search?: string): Promise<UserPost[]> {
+export async function getPostsPage(limit = 20, beforeISO?: string, grade?: string, search?: string, postId?: string): Promise<UserPost[]> {
   let posts: any[] = [];
+  // Bound the entire read, including the grade lookup and parallel enrichment.
+  const signal = AbortSignal.timeout(10_000);
 
   let query = supabase
     .from('posts')
     .select('*')
     .order('created_at', { ascending: false })
-    .limit(limit);
+    .limit(limit)
+    .abortSignal(signal);
+
+  if (postId) query = query.eq('id', postId);
 
   if (beforeISO) {
     query = query.lt('created_at', beforeISO);
@@ -139,21 +149,35 @@ export async function getPostsPage(limit = 20, beforeISO?: string, grade?: strin
 
   if (search && search.trim()) {
     const q = search.trim();
-    query = query.or(`title.ilike.%${q}%,description.ilike.%${q}%,text.ilike.%${q}%,author_email.ilike.%${q}%`);
+    // PostgreSQL text cannot contain NUL, so this literal search has no matches.
+    if (q.includes('\0')) return [];
+    // .or() accepts raw PostgREST grammar: quote values and escape its two
+    // special string characters. URL encoding is handled by the Supabase SDK.
+    // imatch + PostgreSQL's ***= prefix keeps case-insensitive substring search
+    // entirely literal, including %, _, * and regex syntax supplied by users.
+    // https://docs.postgrest.org/en/stable/references/api/url_grammar.html
+    // https://www.postgresql.org/docs/current/functions-matching.html#POSIX-METASYNTAX
+    const literal = `***=${q}`.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const value = `"${literal}"`;
+    query = query.or(['title', 'description', 'text', 'author_email']
+      .map(column => `${column}.imatch.${value}`).join(','));
   }
 
   if (grade && grade !== 'all') {
     const { data: usersWithGrade, error: usersError } = await supabase
       .from('users')
       .select('email')
-      .eq('grade', grade);
-    if (usersError || !usersWithGrade?.length) return [];
+      .eq('grade', grade)
+      .abortSignal(signal);
+    if (usersError) throw usersError;
+    if (!usersWithGrade?.length) return [];
     const authorEmails = usersWithGrade.map(u => u.email);
     query = query.in('author_email', authorEmails);
   }
 
   const { data: fetchedPosts, error: postsError } = await query;
-  if (postsError || !fetchedPosts || fetchedPosts.length === 0) return [];
+  if (postsError) throw postsError;
+  if (!fetchedPosts || fetchedPosts.length === 0) return [];
   posts = fetchedPosts;
 
   const authorEmails = [...new Set(posts.map(p => p.author_email))];
@@ -163,42 +187,72 @@ export async function getPostsPage(limit = 20, beforeISO?: string, grade?: strin
   const [usersRes, reactionsRes, commentsRes] = await Promise.all([
     supabase
       .from('users')
-      .select('email, name, nickname, grade, avatar_url, avatar_color')
-      .in('email', authorEmails),
+      .select('email, name, nickname, grade, avatar_color')
+      .in('email', authorEmails)
+      .abortSignal(signal),
     supabase
       .from('reactions')
       .select('post_id, user_email, type')
-      .in('post_id', postIds),
+      .in('post_id', postIds)
+      .abortSignal(signal),
     supabase
       .from('comments')
       .select('post_id')
-      .in('post_id', postIds),
+      .in('post_id', postIds)
+      .abortSignal(signal),
   ]);
 
+  const relatedError = usersRes.error || reactionsRes.error || commentsRes.error;
+  if (relatedError) throw relatedError;
+
   const userMap = new Map((usersRes.data || []).map((u: any) => [u.email, u]));
-  const reactions = reactionsRes.data || [];
+  const reactionsByPost = new Map<string, any[]>();
+  for (const reaction of reactionsRes.data || []) {
+    const postReactions = reactionsByPost.get(reaction.post_id) || [];
+    postReactions.push(reaction);
+    reactionsByPost.set(reaction.post_id, postReactions);
+  }
   const commentCounts: Record<string, number> = {};
   (commentsRes.data || []).forEach((c: any) => {
     commentCounts[c.post_id] = (commentCounts[c.post_id] || 0) + 1;
   });
 
   return posts.map(post => {
-    const postReactions = reactions.filter((r: any) => r.post_id === post.id);
+    const postReactions = reactionsByPost.get(post.id) || [];
     const user = userMap.get(post.author_email);
     const authorName = user?.nickname || user?.name || post.author_email;
-    return dbToPost(post, postReactions, authorName, user?.avatar_url, user?.avatar_color, commentCounts[post.id] || 0, user?.grade);
+    return dbToPost(post, postReactions, authorName, undefined, user?.avatar_color, commentCounts[post.id] || 0, user?.grade);
   });
 }
 
 
 export async function deletePost(postId: string, userEmail: string): Promise<boolean> {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('posts')
     .delete()
     .eq('id', postId)
-    .eq('author_email', userEmail);
+    .eq('author_email', userEmail)
+    .select('id').abortSignal(AbortSignal.timeout(10_000)).maybeSingle();
 
-  return !error;
+  return !error && !!data;
+}
+
+// Update only editable content; the ownership predicate is part of the write.
+// Existing IDs, timestamps, reactions, comments and visibility remain untouched.
+export async function updatePostContent(postId: string, userEmail: string, content: {
+  title: string; description: string; imageUrl?: string | null;
+}): Promise<UserPost | null> {
+  const changes: Record<string, string | null> = {
+    title: content.title, description: content.description, text: content.description,
+  };
+  if (content.imageUrl !== undefined) changes.image_data = content.imageUrl || null;
+  const { data, error } = await supabase.from('posts').update(changes)
+    .eq('id', postId).eq('author_email', userEmail)
+    .select('id').abortSignal(AbortSignal.timeout(10_000)).maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const posts = await getPostsPage(1, undefined, undefined, undefined, postId);
+  return posts[0] || null;
 }
 
 export async function toggleReactionWithType(
