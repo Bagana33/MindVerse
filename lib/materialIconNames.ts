@@ -8,6 +8,7 @@ export const MATERIAL_ICON_NAMES = [
   "add",
   "add_photo_alternate",
   "admin_panel_settings",
+  "auto_awesome",
   "broken_image",
   "casino",
   "chat_bubble_outline",

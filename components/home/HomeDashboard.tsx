@@ -647,6 +647,19 @@ export function HomeDashboard() {
         </button>
       </section>
 
+      <section aria-labelledby="poster-brief-heading" className="mb-6 flex flex-col gap-4 rounded-2xl border border-violet-400/20 bg-violet-500/[0.06] p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5 lg:mb-8">
+        <div className="flex min-w-0 items-start gap-3">
+          <span aria-hidden="true" className="material-symbols-outlined flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-500/15 text-2xl text-violet-300">auto_awesome</span>
+          <div className="min-w-0">
+            <h2 id="poster-brief-heading" className="text-base font-semibold leading-6 text-white">Дараагийн постерын санаагаа ол</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-300">Нэг товч дараад сэдэв, зорилго, хийх алхмаа аваарай.</p>
+          </div>
+        </div>
+        <Link href="/poster-brief" aria-describedby="poster-brief-heading" className="mv-button-secondary shrink-0 self-start sm:self-auto">
+          Санаа гаргах <span aria-hidden="true">→</span>
+        </Link>
+      </section>
+
       {shareError && <p role="alert" className="mb-5 rounded-xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm text-amber-200">{shareError}</p>}
       {sharedPostId && <div className="mb-5 flex items-center justify-between gap-4 rounded-xl border border-violet-400/20 bg-violet-500/5 p-4 text-sm text-slate-300"><span>Хуваалцсан бүтээл</span><Link href="/" className="min-h-11 flex items-center font-semibold text-violet-300">Бүх бүтээл →</Link></div>}
       {/* Main Content Grid */}

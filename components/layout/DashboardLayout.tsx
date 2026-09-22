@@ -23,6 +23,7 @@ const navItems = [
   { href: "/", label: "Нүүр", icon: "home" },
   { href: "/contests", label: "Уралдаан", icon: "emoji_events" },
   { href: "/lessons", label: "Хичээл", icon: "school" },
+  { href: "/poster-brief", label: "Постерын санаа", icon: "auto_awesome" },
   { href: "/leaderboard", label: "Шилдэг сурагчид", icon: "leaderboard" },
   { href: "/profile", label: "Миний хуудас", icon: "person", isProfile: true },
 ];
@@ -55,7 +56,7 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
     mainRef.current?.scrollTo({ top: 0, behavior: "instant" });
     setFunMenuOpen(pathname === '/game' || pathname === '/spinner');
     const pageName = pathname === '/' ? 'Бүтээлүүд' : ({
-      lessons: 'Хичээлүүд', contests: 'Уралдаан', leaderboard: 'Шилдэг сурагчид',
+      lessons: 'Хичээлүүд', contests: 'Уралдаан', leaderboard: 'Шилдэг сурагчид', 'poster-brief': 'Постерын санаа',
       profile: 'Профайл', admin: 'Удирдлага', spinner: 'Азын хүрд', game: 'Бүтээлийн санал хураалт',
     } as Record<string, string>)[pathname.split('/')[1]];
     document.title = pageName ? `${pageName} · Mind Verse` : 'Mind Verse';
@@ -370,7 +371,7 @@ export function DashboardLayout({ children }: { children: ReactNode }) {
           </div>
           <nav aria-label="Үндсэн цэс" className="mv-scroll-area flex-1 space-y-1 overflow-y-auto px-3 pb-5 2xl:px-4">
             <p className="mv-nav-caption">Нээж үзэх</p>
-            {navItems.slice(0, 4).map(item => {
+            {navItems.filter(item => !item.isProfile).map(item => {
               const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
               return <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} className="mv-nav-item">
                 <span className="material-symbols-outlined" aria-hidden="true">{item.icon}</span>
