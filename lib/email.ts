@@ -9,14 +9,12 @@ export type EmailResult = {
 
 function emailConfiguration() {
   const host = process.env.SMTP_HOST?.trim();
-  const user = host
-    ? process.env.SMTP_USER?.trim()
-    : process.env.GMAIL_USER?.trim();
-  const password = host
-    ? process.env.SMTP_PASS
-    : process.env.GMAIL_APP_PASSWORD?.replace(/\s/g, "");
+  const user = (process.env.SMTP_USER || process.env.GMAIL_USER)?.trim();
+  const password = (
+    process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD
+  )?.replace(/\s/g, "");
   if (!user || !password) return null;
-  const port = Number(process.env.SMTP_PORT || 587);
+  const port = Number(process.env.SMTP_PORT || (host ? 587 : 465));
   if (host && (!Number.isInteger(port) || port < 1 || port > 65535))
     return null;
   return { host, user, password, port };
